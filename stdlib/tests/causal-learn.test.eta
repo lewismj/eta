@@ -7,19 +7,43 @@
           std.collections)
   (begin
 
+    ;;@doc (contains-edge? g edge)
+    ;;@category Tests
+    ;;@module causal.learn.tests
+    ;; `.
+    ;;@example
+    ;; (contains-edge? 'x 'x)
     (defun contains-edge? (g edge)
       (any? (lambda (e) (equal? e edge)) g))
 
+    ;;@doc (undirected-edge a b)
+    ;;@category Tests
+    ;;@module causal.learn.tests
+    ;; Compute `undirected-edge`.
+    ;;@example
+    ;; (undirected-edge 1 1)
     (defun undirected-edge (a b)
       (if (string<? (symbol->string a) (symbol->string b))
           (list a '-- b)
           (list b '-- a)))
 
+    ;;@doc (connected? g a b)
+    ;;@category Tests
+    ;;@module causal.learn.tests
+    ;; Return whether `connected?` holds.
+    ;;@example
+    ;; (connected? 'x 1 1)
     (defun connected? (g a b)
       (or (contains-edge? g (list a '-> b))
           (contains-edge? g (list b '-> a))
           (contains-edge? g (undirected-edge a b))))
 
+    ;;@doc (make-chain-data n)
+    ;;@category Tests
+    ;;@module causal.learn.tests
+    ;; Construct `make-chain-data`.
+    ;;@example
+    ;; (make-chain-data 1)
     (defun make-chain-data (n)
       (let loop ((i 0) (acc '()))
         (if (= i n)
@@ -35,15 +59,33 @@
                                 (cons 'c c))
                           acc))))))
 
+    ;;@doc (make-row-xyz x y z)
+    ;;@category Tests
+    ;;@module causal.learn.tests
+    ;; Construct `make-row-xyz`.
+    ;;@example
+    ;; (make-row-xyz 1 1 1)
     (defun make-row-xyz (x y z)
       (list (cons 'x x) (cons 'y y) (cons 'z z)))
 
+    ;;@doc (repeat-row n row)
+    ;;@category Tests
+    ;;@module causal.learn.tests
+    ;; Compute `repeat-row`.
+    ;;@example
+    ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
       (let loop ((i 0) (acc '()))
         (if (= i n)
             acc
             (loop (+ i 1) (cons row acc)))))
 
+    ;;@doc (make-chi2-independent-data)
+    ;;@category Tests
+    ;;@module causal.learn.tests
+    ;; Construct `make-chi2-independent-data`.
+    ;;@example
+    ;; (make-chi2-independent-data)
     (defun make-chi2-independent-data ()
       (append
         (repeat-row 25 (make-row-xyz 0 0 0))
@@ -55,6 +97,12 @@
         (repeat-row 25 (make-row-xyz 1 0 1))
         (repeat-row 25 (make-row-xyz 1 1 1))))
 
+    ;;@doc (make-chi2-dependent-data)
+    ;;@category Tests
+    ;;@module causal.learn.tests
+    ;; Construct `make-chi2-dependent-data`.
+    ;;@example
+    ;; (make-chi2-dependent-data)
     (defun make-chi2-dependent-data ()
       (append
         (repeat-row 45 (make-row-xyz 0 0 0))

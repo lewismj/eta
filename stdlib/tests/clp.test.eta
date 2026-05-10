@@ -4,6 +4,12 @@
   (import std.test std.clp std.collections)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module clp.tests
+    ;; Unit tests for std.clp Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "std.clp"
         (list

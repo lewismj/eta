@@ -4,6 +4,12 @@
   (import std.test std.jupyter)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module jupyter.tests
+    ;; Unit tests for std.jupyter helpers Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "jupyter"
         (list

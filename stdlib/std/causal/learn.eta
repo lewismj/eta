@@ -33,18 +33,42 @@
 
     ;; -- Basic helpers ----------------------------------------------------
 
+    ;;@doc (%member? x xs)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%adjoin x xs)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%adjoin`.
+    ;;@example
+    ;; (%adjoin 1 '())
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    ;;@doc (%set-diff a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%set-diff`.
+    ;;@example
+    ;; (%set-diff 1 1)
     (defun %set-diff (a b)
       (filter (lambda (x) (not (%member? x b))) a))
 
+    ;;@doc (%normalize-vars vars)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%normalize-vars`.
+    ;;@example
+    ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
       (let loop ((rest vars) (acc '()))
         (if (null? rest)
@@ -54,6 +78,12 @@
                   (loop (cdr rest) acc)
                   (loop (cdr rest) (cons v acc)))))))
 
+    ;;@doc (%as-node-set x)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%as-node-set`.
+    ;;@example
+    ;; (%as-node-set 1)
     (defun %as-node-set (x)
       (cond
         ((null? x) '())
@@ -61,18 +91,42 @@
         ((list? x) (%normalize-vars x))
         (else (error "learn: expected symbol or list of symbols"))))
 
+    ;;@doc (%symbol<? a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%symbol<?` holds.
+    ;;@example
+    ;; (%symbol<? 1 1)
     (defun %symbol<? (a b)
       (string<? (symbol->string a) (symbol->string b)))
 
+    ;;@doc (%ordered-pair a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%ordered-pair`.
+    ;;@example
+    ;; (%ordered-pair 1 1)
     (defun %ordered-pair (a b)
       (if (%symbol<? a b) (list a b) (list b a)))
 
+    ;;@doc (%clip x lo hi)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%clip`.
+    ;;@example
+    ;; (%clip 1 'x 'x)
     (defun %clip (x lo hi)
       (cond
         ((< x lo) lo)
         ((> x hi) hi)
         (else x)))
 
+    ;;@doc (%assoc-get-equal alist key default)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%assoc-get-equal`.
+    ;;@example
+    ;; (%assoc-get-equal 'x 'x 'x)
     (defun %assoc-get-equal (alist key default)
       (let loop ((rest alist))
         (cond
@@ -80,6 +134,12 @@
           ((equal? key (car (car rest))) (cdr (car rest)))
           (else (loop (cdr rest))))))
 
+    ;;@doc (%assoc-set-equal alist key value)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%assoc-set-equal`.
+    ;;@example
+    ;; (%assoc-set-equal 'x 'x 1)
     (defun %assoc-set-equal (alist key value)
       (let loop ((rest alist) (acc '()) (done? #f))
         (cond
@@ -96,15 +156,33 @@
 
     ;; -- Data extraction --------------------------------------------------
 
+    ;;@doc (%obs-get obs var)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%obs-get`.
+    ;;@example
+    ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
       (let ((p (assq var obs)))
         (if p
             (cdr p)
             (error 'unknown-variable var))))
 
+    ;;@doc (%column-values data var)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%column-values`.
+    ;;@example
+    ;; (%column-values 'x 'x)
     (defun %column-values (data var)
       (map* (lambda (obs) (%obs-get obs var)) data))
 
+    ;;@doc (%all-nodes data)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%all-nodes`.
+    ;;@example
+    ;; (%all-nodes 'x)
     (defun %all-nodes (data)
       (sort %symbol<?
             (foldl (lambda (acc obs)
@@ -115,12 +193,30 @@
                    '()
                    data)))
 
+    ;;@doc (%same-length? xss n)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%same-length?` holds.
+    ;;@example
+    ;; (%same-length? 'x 1)
     (defun %same-length? (xss n)
       (every? (lambda (xs) (= (length xs) n)) xss))
 
+    ;;@doc (%columns-at cols i)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%columns-at`.
+    ;;@example
+    ;; (%columns-at '() 1)
     (defun %columns-at (cols i)
       (map* (lambda (col) (list-ref col i)) cols))
 
+    ;;@doc (%dot a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%dot`.
+    ;;@example
+    ;; (%dot 1 1)
     (defun %dot (a b)
       (if (or (null? a) (null? b))
           0.0
@@ -129,16 +225,40 @@
 
     ;; -- CI tests ---------------------------------------------------------
 
+    ;;@doc (%clip-correlation r)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%clip-correlation`.
+    ;;@example
+    ;; (%clip-correlation 'x)
     (defun %clip-correlation (r)
       (%clip r -0.999999 0.999999))
 
+    ;;@doc (%normal-cdf-approx z)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%normal-cdf-approx`.
+    ;;@example
+    ;; (%normal-cdf-approx 1)
     (defun %normal-cdf-approx (z)
       ;; Large-df t CDF is an accurate normal-CDF approximation.
       (stats:t-cdf z 1000000.0))
 
+    ;;@doc (%two-sided-p-from-z zscore)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%two-sided-p-from-z`.
+    ;;@example
+    ;; (%two-sided-p-from-z 'x)
     (defun %two-sided-p-from-z (zscore)
       (%clip (* 2.0 (- 1.0 (%normal-cdf-approx zscore))) 0.0 1.0))
 
+    ;;@doc (%safe-correlation xs ys)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%safe-correlation`.
+    ;;@example
+    ;; (%safe-correlation '() '())
     (defun %safe-correlation (xs ys)
       (let ((vx (stats:variance xs))
             (vy (stats:variance ys)))
@@ -148,6 +268,12 @@
             0.0
             (stats:correlation xs ys))))
 
+    ;;@doc (%residualize target z-cols)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%residualize`.
+    ;;@example
+    ;; (%residualize 'x 'x)
     (defun %residualize (target z-cols)
       (if (null? z-cols)
           target
@@ -164,8 +290,13 @@
                         (- yv (+ intercept (%dot betas row)))))
                     target))))))
 
+    ;;@doc (learn:ci-test:fisher-z data x y z alpha)
+    ;;@category Causal
+    ;;@module std.causal.learn
     ;; Partial-correlation CI test with Fisher-z transform.
     ;; Returns (independent? . p-value).
+    ;;@example
+    ;; (learn:ci-test:fisher-z 'x 1 1 1 'x)
     (defun learn:ci-test:fisher-z (data x y z alpha)
       (let* ((z-set (%as-node-set z))
              (xv (%column-values data x))
@@ -185,18 +316,42 @@
                    (p (%two-sided-p-from-z zscore)))
               (cons (> p alpha) p)))))
 
+    ;;@doc (%unique-values xs)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%unique-values`.
+    ;;@example
+    ;; (%unique-values '())
     (defun %unique-values (xs)
       (reverse (foldl (lambda (acc x) (%adjoin x acc)) '() xs)))
 
+    ;;@doc (%obs-project obs vars)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%obs-project`.
+    ;;@example
+    ;; (%obs-project 'x 'x)
     (defun %obs-project (obs vars)
       (map* (lambda (v) (cons v (%obs-get obs v))) vars))
 
+    ;;@doc (%obs-matches-key obs key)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%obs-matches-key`.
+    ;;@example
+    ;; (%obs-matches-key 'x 'x)
     (defun %obs-matches-key (obs key)
       (every? (lambda (kv)
                 (equal? (%obs-get obs (car kv))
                         (cdr kv)))
               key))
 
+    ;;@doc (%chi2-for-rows rows x y)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%chi2-for-rows`.
+    ;;@example
+    ;; (%chi2-for-rows '() 1 1)
     (defun %chi2-for-rows (rows x y)
       (let* ((x-levels (%unique-values (map* (lambda (obs) (%obs-get obs x)) rows)))
              (y-levels (%unique-values (map* (lambda (obs) (%obs-get obs y)) rows)))
@@ -233,11 +388,23 @@
                    (df (* (- rx 1) (- cy 1))))
               (cons chi2 (* 1.0 df))))))
 
+    ;;@doc (%cuberoot x)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%cuberoot`.
+    ;;@example
+    ;; (%cuberoot 1)
     (defun %cuberoot (x)
       (if (<= x 0.0)
           0.0
           (exp (/ (log x) 3.0))))
 
+    ;;@doc (%chi2-tail-approx chi2 df)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%chi2-tail-approx`.
+    ;;@example
+    ;; (%chi2-tail-approx 'x 'x)
     (defun %chi2-tail-approx (chi2 df)
       (if (or (<= df 0.0) (<= chi2 0.0))
           1.0
@@ -247,6 +414,11 @@
                  (cdf (%normal-cdf-approx z)))
             (%clip (- 1.0 cdf) 0.0 1.0))))
 
+    ;;@doc (learn:ci-test:chi2 data x y z alpha)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;;@example
+    ;; (learn:ci-test:chi2 'x 1 1 1 'x)
     ;; Discrete conditional-independence chi-square test.
     ;; Returns (independent? . p-value).
     (defun learn:ci-test:chi2 (data x y z alpha)
@@ -278,43 +450,133 @@
 
     ;; -- Graph representation ---------------------------------------------
 
+    ;;@doc (%edge-from e)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%edge-from`.
+    ;;@example
+    ;; (%edge-from 'x)
     (defun %edge-from (e) (car e))
+    ;;@doc (%edge-kind e)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%edge-kind`.
+    ;;@example
+    ;; (%edge-kind 'x)
     (defun %edge-kind (e) (cadr e))
+    ;;@doc (%edge-to e)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%edge-to`.
+    ;;@example
+    ;; (%edge-to 'x)
     (defun %edge-to (e) (caddr e))
 
+    ;;@doc (%directed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%directed-edge?` holds.
+    ;;@example
+    ;; (%directed-edge? 'x)
     (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    ;;@doc (%undirected-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%undirected-edge?` holds.
+    ;;@example
+    ;; (%undirected-edge? 'x)
     (defun %undirected-edge? (e) (eq? (%edge-kind e) '--))
 
+    ;;@doc (%make-undirected a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Construct `%make-undirected`.
+    ;;@example
+    ;; (%make-undirected 1 1)
     (defun %make-undirected (a b)
       (let ((ord (%ordered-pair a b)))
         (list (car ord) '-- (cadr ord))))
 
+    ;;@doc (%make-directed a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Construct `%make-directed`.
+    ;;@example
+    ;; (%make-directed 1 1)
     (defun %make-directed (a b)
       (list a '-> b))
 
+    ;;@doc (%edge-member? edge edges)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%edge-member?` holds.
+    ;;@example
+    ;; (%edge-member? 'x 'x)
     (defun %edge-member? (edge edges)
       (any? (lambda (e) (equal? e edge)) edges))
 
+    ;;@doc (%edge-adjoin edge edges)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%edge-adjoin`.
+    ;;@example
+    ;; (%edge-adjoin 'x 'x)
     (defun %edge-adjoin (edge edges)
       (if (%edge-member? edge edges) edges (cons edge edges)))
 
+    ;;@doc (%edge-remove edge edges)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%edge-remove`.
+    ;;@example
+    ;; (%edge-remove 'x 'x)
     (defun %edge-remove (edge edges)
       (filter (lambda (e) (not (equal? e edge))) edges))
 
+    ;;@doc (%has-undirected-edge? g a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%has-undirected-edge?` holds.
+    ;;@example
+    ;; (%has-undirected-edge? 'x 1 1)
     (defun %has-undirected-edge? (g a b)
       (%edge-member? (%make-undirected a b) g))
 
+    ;;@doc (%has-directed-edge? g a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%has-directed-edge?` holds.
+    ;;@example
+    ;; (%has-directed-edge? 'x 1 1)
     (defun %has-directed-edge? (g a b)
       (%edge-member? (%make-directed a b) g))
 
+    ;;@doc (%remove-undirected-edge g a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%remove-undirected-edge`.
+    ;;@example
+    ;; (%remove-undirected-edge 'x 1 1)
     (defun %remove-undirected-edge (g a b)
       (%edge-remove (%make-undirected a b) g))
 
+    ;;@doc (%adjacent? g a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%adjacent?` holds.
+    ;;@example
+    ;; (%adjacent? 'x 1 1)
     (defun %adjacent? (g a b)
       (or (%has-undirected-edge? g a b)
           (%has-directed-edge? g a b)
           (%has-directed-edge? g b a)))
 
+    ;;@doc (%neighbors-any g node)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%neighbors-any`.
+    ;;@example
+    ;; (%neighbors-any 'x 'x)
     (defun %neighbors-any (g node)
       (foldl (lambda (acc e)
                (let ((u (%edge-from e))
@@ -326,6 +588,12 @@
              '()
              g))
 
+    ;;@doc (%neighbors-undirected g node)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%neighbors-undirected`.
+    ;;@example
+    ;; (%neighbors-undirected 'x 'x)
     (defun %neighbors-undirected (g node)
       (foldl (lambda (acc e)
                (if (not (%undirected-edge? e))
@@ -339,6 +607,12 @@
              '()
              g))
 
+    ;;@doc (%directed-children g node)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%directed-children`.
+    ;;@example
+    ;; (%directed-children 'x 'x)
     (defun %directed-children (g node)
       (foldl (lambda (acc e)
                (if (and (%directed-edge? e) (eq? (%edge-from e) node))
@@ -347,9 +621,21 @@
              '()
              g))
 
+    ;;@doc (%pair-key a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%pair-key`.
+    ;;@example
+    ;; (%pair-key 1 1)
     (defun %pair-key (a b)
       (%ordered-pair a b))
 
+    ;;@doc (%edge<? a b)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%edge<?` holds.
+    ;;@example
+    ;; (%edge<? 1 1)
     (defun %edge<? (a b)
       (let* ((af (symbol->string (%edge-from a)))
              (bf (symbol->string (%edge-from b)))
@@ -364,9 +650,21 @@
           ((string<? bk ak) #f)
           (else (string<? at bt)))))
 
+    ;;@doc (%sort-edges edges)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%sort-edges`.
+    ;;@example
+    ;; (%sort-edges 'x)
     (defun %sort-edges (edges)
       (sort %edge<? edges))
 
+    ;;@doc (%unordered-pairs xs)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%unordered-pairs`.
+    ;;@example
+    ;; (%unordered-pairs '())
     (defun %unordered-pairs (xs)
       (if (null? xs)
           '()
@@ -374,6 +672,12 @@
             (map* (lambda (y) (list (car xs) y)) (cdr xs))
             (%unordered-pairs (cdr xs)))))
 
+    ;;@doc (%choose-k xs k)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%choose-k`.
+    ;;@example
+    ;; (%choose-k '() 1)
     (defun %choose-k (xs k)
       (cond
         ((= k 0) (list '()))
@@ -385,6 +689,12 @@
                  (%choose-k (cdr xs) (- k 1)))
            (%choose-k (cdr xs) k)))))
 
+    ;;@doc (%complete-undirected nodes)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%complete-undirected`.
+    ;;@example
+    ;; (%complete-undirected 'x)
     (defun %complete-undirected (nodes)
       (map* (lambda (p)
               (%make-undirected (car p) (cadr p)))
@@ -392,11 +702,23 @@
 
     ;; -- PC skeleton ------------------------------------------------------
 
+    ;;@doc (%ci-independent? result)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%ci-independent?` holds.
+    ;;@example
+    ;; (%ci-independent? 'x)
     (defun %ci-independent? (result)
       (if (pair? result)
           (car result)
           (if result #t #f)))
 
+    ;;@doc (%find-separating-set data alpha ci-test x y neigh k)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%find-separating-set`.
+    ;;@example
+    ;; (%find-separating-set 'x 'x 'x 1 1 'x 1)
     (defun %find-separating-set (data alpha ci-test x y neigh k)
       (let loop ((subs (%choose-k neigh k)))
         (if (null? subs)
@@ -406,6 +728,12 @@
                   s
                   (loop (cdr subs)))))))
 
+    ;;@doc (%has-candidate-depth? g nodes depth)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%has-candidate-depth?` holds.
+    ;;@example
+    ;; (%has-candidate-depth? 'x 'x 'x)
     (defun %has-candidate-depth? (g nodes depth)
       (any? (lambda (p)
               (let* ((x (car p))
@@ -415,6 +743,12 @@
                      (>= (length nbrs) depth))))
             (%unordered-pairs nodes)))
 
+    ;;@doc (%skeleton-pass pairs g seps data alpha ci-test depth)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%skeleton-pass`.
+    ;;@example
+    ;; (%skeleton-pass '() 'x 'x 'x 'x 'x 'x)
     (defun %skeleton-pass (pairs g seps data alpha ci-test depth)
       (if (null? pairs)
           (list g seps)
@@ -438,6 +772,12 @@
                             (%skeleton-pass (cdr pairs)
                                             g seps data alpha ci-test depth)))))))))
 
+    ;;@doc (%pc-skeleton data alpha ci-test nodes)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%pc-skeleton`.
+    ;;@example
+    ;; (%pc-skeleton 'x 'x 'x 'x)
     (defun %pc-skeleton (data alpha ci-test nodes)
       (let loop ((g (%complete-undirected nodes))
                  (seps '())
@@ -452,12 +792,24 @@
 
     ;; -- Orientation ------------------------------------------------------
 
+    ;;@doc (%orient-edge g from to)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%orient-edge`.
+    ;;@example
+    ;; (%orient-edge 'x 'x 'x)
     (defun %orient-edge (g from to)
       (if (%has-undirected-edge? g from to)
           (%edge-adjoin (%make-directed from to)
                         (%remove-undirected-edge g from to))
           g))
 
+    ;;@doc (%orient-colliders-node g seps z)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%orient-colliders-node`.
+    ;;@example
+    ;; (%orient-colliders-node 'x 'x 1)
     (defun %orient-colliders-node (g seps z)
       (let loop ((pairs (%unordered-pairs (%neighbors-any g z)))
                  (acc g))
@@ -473,12 +825,24 @@
                   (loop (cdr pairs)
                         (%orient-edge (%orient-edge acc x z) y z)))))))
 
+    ;;@doc (%pc-orient-colliders g seps nodes)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%pc-orient-colliders`.
+    ;;@example
+    ;; (%pc-orient-colliders 'x 'x 'x)
     (defun %pc-orient-colliders (g seps nodes)
       (foldl (lambda (acc z)
                (%orient-colliders-node acc seps z))
              g
              nodes))
 
+    ;;@doc (%exists-directed-chain? g a b nodes)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%exists-directed-chain?` holds.
+    ;;@example
+    ;; (%exists-directed-chain? 'x 1 1 'x)
     (defun %exists-directed-chain? (g a b nodes)
       (any? (lambda (c)
               (and (not (eq? c a))
@@ -487,6 +851,11 @@
                    (%has-directed-edge? g c b)))
             nodes))
 
+    ;;@doc (%apply-meek-r1 g)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;;@example
+    ;; (%apply-meek-r1 'x)
     ;; Meek rule R1: a->b, b--c, a and c non-adjacent => b->c
     (defun %apply-meek-r1 (g)
       (let loop-dir ((dirs (filter %directed-edge? g))
@@ -511,6 +880,11 @@
                                   #t)
                           (loop-c (cdr cs) acc2 changed2)))))))))
 
+    ;;@doc (%apply-meek-r2 g nodes)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;;@example
+    ;; (%apply-meek-r2 'x 'x)
     ;; Meek rule R2: a--b and a->c->b => a->b (and symmetric).
     (defun %apply-meek-r2 (g nodes)
       (let loop-und ((unds (filter %undirected-edge? g))
@@ -535,6 +909,12 @@
                 (else
                  (loop-und (cdr unds) acc changed?)))))))
 
+    ;;@doc (%meek-rules g nodes)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%meek-rules`.
+    ;;@example
+    ;; (%meek-rules 'x 'x)
     (defun %meek-rules (g nodes)
       (let loop ((curr g))
         (let* ((r1 (%apply-meek-r1 curr))
@@ -549,6 +929,12 @@
 
     ;; -- NOTEARS hook -----------------------------------------------------
 
+    ;;@doc (%directed-path? g src dst)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Return whether `%directed-path?` holds.
+    ;;@example
+    ;; (%directed-path? 'x 'x 'x)
     (defun %directed-path? (g src dst)
       (letrec ((dfs (lambda (node seen)
                       (cond
@@ -560,6 +946,12 @@
                                (%directed-children g node)))))))
         (dfs src '())))
 
+    ;;@doc (%transitive-reduce g)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `%transitive-reduce`.
+    ;;@example
+    ;; (%transitive-reduce 'x)
     (defun %transitive-reduce (g)
       (let loop ((rest (%sort-edges g))
                  (acc g))
@@ -575,6 +967,12 @@
 
     ;; -- Public API -------------------------------------------------------
 
+    ;;@doc (learn:pc data alpha ci-test)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;; Compute `learn:pc`.
+    ;;@example
+    ;; (learn:pc 'x 'x 'x)
     (defun learn:pc (data alpha ci-test)
       (let ((nodes (%all-nodes data)))
         (if (< (length nodes) 2)
@@ -586,11 +984,21 @@
                    (cpdag (%meek-rules colliders nodes)))
               (%sort-edges cpdag)))))
 
+    ;;@doc (learn:fci data alpha ci-test)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;;@example
+    ;; (learn:fci 'x 'x 'x)
     ;; Latent-confounding aware hook. This keeps the same callable shape while
     ;; preserving conservative CPDAG output.
     (defun learn:fci (data alpha ci-test)
       (learn:pc data alpha ci-test))
 
+    ;;@doc (learn:ges data . rest)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;;@example
+    ;; (learn:ges 'x '())
     ;; Score-search hook with compatibility defaults.
     (defun learn:ges (data . rest)
       (let* ((alpha (if (null? rest) 0.05 (car rest)))
@@ -599,6 +1007,11 @@
                           (cadr rest))))
         (learn:pc data alpha ci-test)))
 
+    ;;@doc (learn:notears data lambda1 max-iter)
+    ;;@category Causal
+    ;;@module std.causal.learn
+    ;;@example
+    ;; (learn:notears 'x 'x 'x)
     ;; Continuous hook: threshold pairwise correlations and apply transitive
     ;; reduction for sparsity. `max-iter` is accepted for API compatibility.
     (defun learn:notears (data lambda1 max-iter)

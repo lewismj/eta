@@ -19,6 +19,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (pub-endpoint)
+    ;;@category Concurrency
+    ;;@module pub-sub-demo
+    ;; PUB/SUB publish-subscribe demo Uses `pub-endpoint`.
+    ;;@example
+    ;; (display pub-endpoint)
     (define pub-endpoint "tcp://127.0.0.1:5556")
 
     ;; Spawn the publisher as a child process.

@@ -13,7 +13,12 @@
   (import std.clpr)
   (begin
 
+    ;;@doc (simm-ir-delta-covariance)
+    ;;@category Xva Wwr
+    ;;@module compress
     ;; SIMM-style IR delta covariance literal (10x10).
+    ;;@example
+    ;; (display simm-ir-delta-covariance)
     (define simm-ir-delta-covariance
       '((1.00 0.35 0.30 0.25 0.20 0.18 0.16 0.14 0.12 0.10)
         (0.35 1.00 0.32 0.27 0.22 0.20 0.18 0.16 0.14 0.12)
@@ -26,10 +31,22 @@
         (0.12 0.14 0.16 0.18 0.19 0.20 0.21 0.22 1.00 0.21)
         (0.10 0.12 0.14 0.16 0.17 0.18 0.19 0.20 0.21 1.00)))
 
+    ;;@doc (matrix-prefix m n)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `matrix-prefix`.
+    ;;@example
+    ;; (matrix-prefix 1 1)
     (defun matrix-prefix (m n)
       (let ((rows (take n m)))
         (map* (lambda (row) (take n row)) rows)))
 
+    ;;@doc (make-real-vars n lo hi)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Construct `make-real-vars`.
+    ;;@example
+    ;; (make-real-vars 1 'x 'x)
     (defun make-real-vars (n lo hi)
       (if (= n 0)
           '()
@@ -37,6 +54,12 @@
             (clp:real v lo hi)
             (cons v (make-real-vars (- n 1) lo hi)))))
 
+    ;;@doc (dot-expr coeffs vars)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `dot-expr`.
+    ;;@example
+    ;; (dot-expr 'x 'x)
     (defun dot-expr (coeffs vars)
       (if (or (null? coeffs) (null? vars))
           0.0
@@ -44,11 +67,23 @@
             (clp:r*scalar (car coeffs) (car vars))
             (dot-expr (cdr coeffs) (cdr vars)))))
 
+    ;;@doc (sum-exprs exprs)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `sum-exprs`.
+    ;;@example
+    ;; (sum-exprs 'x)
     (defun sum-exprs (exprs)
       (if (null? exprs)
           0.0
           (clp:r+ (car exprs) (sum-exprs (cdr exprs)))))
 
+    ;;@doc (row-terms row ws wi)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `row-terms`.
+    ;;@example
+    ;; (row-terms 'x 'x 'x)
     (defun row-terms (row ws wi)
       (if (or (null? row) (null? ws))
           '()
@@ -56,6 +91,12 @@
             (clp:r*scalar (car row) (list '* wi (car ws)))
             (row-terms (cdr row) (cdr ws) wi))))
 
+    ;;@doc (quadratic-terms rows ws full-ws)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `quadratic-terms`.
+    ;;@example
+    ;; (quadratic-terms '() 'x 'x)
     (defun quadratic-terms (rows ws full-ws)
       (if (or (null? rows) (null? ws))
           '()
@@ -63,27 +104,62 @@
             (row-terms (car rows) full-ws (car ws))
             (quadratic-terms (cdr rows) (cdr ws) full-ws))))
 
+    ;;@doc (quadratic-risk-expr ws sigma)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `quadratic-risk-expr`.
+    ;;@example
+    ;; (quadratic-risk-expr 'x 'x)
     (defun quadratic-risk-expr (ws sigma)
       (sum-exprs (quadratic-terms sigma ws ws)))
 
+    ;;@doc (mat-vec row v)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `mat-vec`.
+    ;;@example
+    ;; (mat-vec 'x 1)
     (defun mat-vec (row v)
       (if (or (null? row) (null? v))
           0.0
           (+ (* (car row) (car v)) (mat-vec (cdr row) (cdr v)))))
 
+    ;;@doc (quad-value-rows rows ws full-w)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `quad-value-rows`.
+    ;;@example
+    ;; (quad-value-rows '() 'x 'x)
     (defun quad-value-rows (rows ws full-w)
       (if (or (null? rows) (null? ws))
           0.0
           (+ (* (car ws) (mat-vec (car rows) full-w))
              (quad-value-rows (cdr rows) (cdr ws) full-w))))
 
+    ;;@doc (quad-value w sigma)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `quad-value`.
+    ;;@example
+    ;; (quad-value 'x 'x)
     (defun quad-value (w sigma)
       (quad-value-rows sigma w w))
 
+    ;;@doc (objective-value delta sigma funding-lambda)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;; Compute `objective-value`.
+    ;;@example
+    ;; (objective-value 'x 'x 'x)
     (defun objective-value (delta sigma funding-lambda)
       (+ (* 0.5 (quad-value delta sigma))
          (* funding-lambda (foldl (lambda (acc x) (+ acc x)) 0.0 delta))))
 
+    ;;@doc (%apply-qp-witness! witness)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;;@example
+    ;; (%apply-qp-witness! 'x)
     ;; Bind every (var . value) pair in `witness` to its numeric
     ;; optimum, so the deltas can be deref'd to plain floats.
     (defun %apply-qp-witness! (witness)
@@ -93,6 +169,11 @@
             (unify (car (car witness)) (cdr (car witness)))
             (%apply-qp-witness! (cdr witness)))))
 
+    ;;@doc (solve-compression-qp dv01 funding-lambda)
+    ;;@category Xva Wwr
+    ;;@module compress
+    ;;@example
+    ;; (solve-compression-qp 'x 'x)
     ;; Solve:
     ;;   min  0.5 * delta^T * Sigma * delta + lambda * 1^T delta
     ;; s.t.  -1 <= delta_i <= 1

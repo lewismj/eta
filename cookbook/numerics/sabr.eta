@@ -36,13 +36,30 @@
     ;; TapeRef.  No nd+, nd*, ndlog etc. needed — plain arithmetic
     ;; is tape-aware.
 
+    ;;@doc (branch-tape)
+    ;;@category Numerics
+    ;;@module sabr
     ;; Explicit tape context for branch-only primal extraction.
+    ;;@example
+    ;; (display branch-tape)
     (define branch-tape #f)
+    ;;@doc (branch-primal x)
+    ;;@category Numerics
+    ;;@module sabr
+    ;; Compute `branch-primal`.
+    ;;@example
+    ;; (branch-primal 1)
     (defun branch-primal (x)
       (if (and branch-tape (tape-ref? x))
           (tape-ref-value-of branch-tape x)
           x))
 
+    ;;@doc (grad f vals)
+    ;;@category Numerics
+    ;;@module sabr
+    ;; Compute `grad`.
+    ;;@example
+    ;; (grad (lambda (x) x) '())
     (defun grad (f vals)
       (let ((tape (tape-new))
             (n    (length vals)))
@@ -67,10 +84,20 @@
                 (collect vars 0))
               (list (tape-primal tape output) grad-vec))))))
 
+    ;;@doc (nd-val x)
+    ;;@category Numerics
+    ;;@module sabr
+    ;;@example
+    ;; (nd-val 1)
     ;; ── nd-val: extract primal (works for tape-refs and plain numbers) ──
     (defun nd-val (x)
       (branch-primal x))
 
+    ;;@doc (ndpow a b)
+    ;;@category Numerics
+    ;;@module sabr
+    ;;@example
+    ;; (ndpow 1 1)
     ;; ── Helper: pow uses dedicated taped primitive support ────────
     (defun ndpow (a b) (pow a b))
 
@@ -98,6 +125,12 @@
 
     ;; ── Helper: x(z) = ln[(√(1 - 2ρz + z²) + z - ρ) / (1 - ρ)] ──
 
+    ;;@doc (sabr-xz z rho)
+    ;;@category Numerics
+    ;;@module sabr
+    ;; Compute `sabr-xz`.
+    ;;@example
+    ;; (sabr-xz 1 'x)
     (defun sabr-xz (z rho)
       (let ((disc (sqrt (+ (- 1 (* 2 (* rho z)))
                            (* z z)))))
@@ -109,6 +142,12 @@
     ;;                                     + ρβνα/(4 F^(1-β))
     ;;                                     + (2-3ρ²)ν²/24)]
 
+    ;;@doc (sabr-atm-vol F T alpha beta rho nu)
+    ;;@category Numerics
+    ;;@module sabr
+    ;; Compute `sabr-atm-vol`.
+    ;;@example
+    ;; (sabr-atm-vol (lambda (x) x) 'x 'x 'x 'x 'x)
     (defun sabr-atm-vol (F T alpha beta rho nu)
       (let ((one-minus-beta (- 1 beta)))
         (let ((F-pow (ndpow F one-minus-beta)))
@@ -126,6 +165,12 @@
 
     ;; ── General implied vol (F ≠ K) ─────────────────────────────────
 
+    ;;@doc (sabr-general-vol F K T alpha beta rho nu)
+    ;;@category Numerics
+    ;;@module sabr
+    ;; Compute `sabr-general-vol`.
+    ;;@example
+    ;; (sabr-general-vol (lambda (x) x) 1 'x 'x 'x 'x 'x)
     (defun sabr-general-vol (F K T alpha beta rho nu)
       (let ((one-minus-beta (- 1 beta)))
         (let ((FK (* F K)))
@@ -163,6 +208,12 @@
     ;; ── Unified SABR implied vol ────────────────────────────────────
     ;; Switch between ATM and general formula based on |F - K| < tol
 
+    ;;@doc (sabr-implied-vol F K T alpha beta rho nu)
+    ;;@category Numerics
+    ;;@module sabr
+    ;; Compute `sabr-implied-vol`.
+    ;;@example
+    ;; (sabr-implied-vol (lambda (x) x) 1 'x 'x 'x 'x 'x)
     (defun sabr-implied-vol (F K T alpha beta rho nu)
       (if (< (abs (- F K)) 1e-7)
           (sabr-atm-vol F T alpha beta rho nu)

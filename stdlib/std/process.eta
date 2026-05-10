@@ -17,6 +17,12 @@
     process:run-string)
   (begin
 
+    ;;@doc (process:run)
+    ;;@category Process
+    ;;@module std.process
+    ;; Subprocess helpers built on %process-* primitives Uses `process:run`.
+    ;;@example
+    ;; (display process:run)
     (define process:run %process-run)
     (define process:spawn %process-spawn)
     (define process:wait %process-wait)
@@ -30,6 +36,12 @@
     (define process:stdout-port %process-stdout-port)
     (define process:stderr-port %process-stderr-port)
 
+    ;;@doc (process:run-string program args . rest)
+    ;;@category Process
+    ;;@module std.process
+    ;; Run `process:run-string`.
+    ;;@example
+    ;; (process:run-string 'x '() '())
     (defun process:run-string (program args . rest)
       (let ((result (apply %process-run program args rest)))
         (car (cdr result))))

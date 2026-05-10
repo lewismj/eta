@@ -44,11 +44,21 @@
     logic-throw logic-catch)
   (begin
 
+    ;;@doc (== a b)
+    ;;@category Logic
+    ;;@module std.logic
     ;;  == 
     ;; Wrap the (unify a b) special form as an ordinary callable goal.
     ;; Returns #t on success (bindings placed on the trail) or #f on failure.
+    ;;@example
+    ;; (== 1 1)
     (defun == (a b) (unify a b))
 
+    ;;@doc (copy-term* t)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (copy-term* 'x)
     ;;  copy-term 
     ;; Wrap the (copy-term t) special form as an ordinary callable function.
     ;; Returns a deep copy of t where every unbound logic variable has been
@@ -60,6 +70,11 @@
     ;; performs the walk in C++ with an O(1)-amortised hash-map memo table.
     (defun copy-term* (t) (copy-term t))
 
+    ;;@doc (naf goal-thunk)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (naf 'x)
     ;;  naf 
     ;; Negation as failure.
     ;; Probes goal-thunk in isolation; ALWAYS unwinds any bindings it made.
@@ -70,6 +85,11 @@
         (unwind-trail m)
         (not ok)))
 
+    ;;@doc (succeeds? goal-thunk)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (succeeds? 'x)
     ;;  succeeds? 
     ;; Run goal-thunk in isolation; ALWAYS unwinds any bindings it made.
     ;; Returns #t if the goal succeeded; #f if it failed.
@@ -80,6 +100,11 @@
         (unwind-trail m)
         (if ok #t #f)))
 
+    ;;@doc (findall template-thunk branches)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (findall 'x 'x)
     ;;  findall 
     ;; (findall template-thunk branches)
     ;;
@@ -110,6 +135,11 @@
                   (unwind-trail m)
                   (findall template-thunk (cdr branches)))))))
 
+    ;;@doc (run1 template-thunk branches)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (run1 'x 'x)
     ;;  run1 
     ;; Return the first solution from branches where the goal succeeds, or
     ;; #f if no branch succeeds.  Cheaper than findall when only one answer
@@ -118,6 +148,11 @@
       (let ((sols (findall template-thunk branches)))
         (if (null? sols) #f (car sols))))
 
+    ;;@doc (membero x lst)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (membero 1 '())
     ;;  membero 
     ;; (membero x lst)
     ;;
@@ -161,14 +196,35 @@
 
     ;;  Atomic goal constructors 
 
+    ;;@doc (goal thunk)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (goal (lambda (x) x))
     ;; (goal thunk)   lift a 0-arg thunk into a single-branch goalset.
     (defun goal (thunk) (list thunk))
 
+    ;;@doc (==o a b)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (==o 1 1)
     ;; (==o a b)      unification as a goalset.
     (defun ==o (a b) (goal (lambda () (unify a b))))
 
+    ;;@doc (succeedo)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (succeedo)
     ;; Always-succeeding / always-failing goals.
     (defun succeedo () (goal (lambda () #t)))
+    ;;@doc (failo)
+    ;;@category Logic
+    ;;@module std.logic
+    ;; Compute `failo`.
+    ;;@example
+    ;; (failo)
     (defun failo    () '())
 
     ;;  Disjunction & conjunction over goalsets 
@@ -178,6 +234,11 @@
     (defun disj gs
       (foldr append '() gs))
 
+    ;;@doc (conj2-goalsets gs1 gs2)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (conj2-goalsets 'x 'x)
     ;; (conj2-goalsets gs1 gs2)  Cartesian product of branch thunks.
     (defun conj2-goalsets (gs1 gs2)
       (if (null? gs1) '()
@@ -208,6 +269,11 @@
       (foldr append '()
              (map* (lambda (clause) (apply conj clause)) clauses)))
 
+    ;;@doc (onceo goalset)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (onceo 'x)
     ;; (onceo goalset)  cut-like: returns a 1-branch goalset whose single
     ;; branch commits to the first succeeding branch of `goalset`.
     ;; Bindings from that branch stay live; later branches are never tried.
@@ -224,6 +290,11 @@
                           (begin (unwind-trail m)  ; try next branch
                                  (loop (cdr bs)))))))))))
 
+    ;;@doc (conda test then else-gs)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (conda 'x 'x 'x)
     ;; (conda (test then) else-gs)
     ;;   soft cut: if `test` produces any solution, run `then` under
     ;;   test's first solution's bindings and commit; else run `else-gs`.
@@ -258,6 +329,11 @@
                           (begin (unwind-trail m)
                                  (loop (cdr bs)))))))))))
 
+    ;;@doc (condu test then else-gs)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (condu 'x 'x 'x)
     ;; (condu (test then) else-gs)
     ;;   committed choice: like conda but test is run under `onceo`
     ;;   semantics  only one solution of test is ever produced.  Since
@@ -270,6 +346,11 @@
 
     ;;  fresh / fresh-vars 
 
+    ;;@doc (fresh-vars n)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (fresh-vars 1)
     ;; (fresh-vars n)   return a list of n fresh unbound logic variables.
     (defun fresh-vars (n)
       (let loop ((k n) (acc '()))
@@ -277,6 +358,11 @@
             (reverse acc)
             (loop (- k 1) (cons (logic-var) acc)))))
 
+    ;;@doc (fresh n f)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (fresh 1 (lambda (x) x))
     ;; (fresh n f)   call (f v1 v2  vn) with n fresh vars; return the
     ;; goalset produced by f.  Eta has no macros, so fresh is a higher-
     ;; order function: the body must be a lambda of exactly n params.
@@ -284,6 +370,11 @@
 
     ;;  run*  / run-n  
 
+    ;;@doc (run* template-thunk goalset)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (run* 'x 'x)
     ;; (run* template-thunk goalset)
     ;;   Collect ALL solutions.  Alias of `findall` with a more miniKanren-
     ;;   like name.  `template-thunk` is evaluated under each successful
@@ -291,6 +382,11 @@
     ;;   is tried.
     (defun run* (template-thunk goalset) (findall template-thunk goalset))
 
+    ;;@doc (run-n n template-thunk goalset)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (run-n 1 'x 'x)
     ;; (run-n n template-thunk goalset)
     ;;   Return up to n solutions, in order.  Stops enumerating as soon as
     ;;   n solutions have been collected  the remaining branches are not
@@ -313,6 +409,11 @@
 
     ;;  Logic-scoped exceptions 
 
+    ;;@doc (logic-throw tag val)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (logic-throw 'x 1)
     ;; (logic-throw tag val)
     ;;   Escape upward to the nearest (logic-catch tag ), unwinding the
     ;;   trail back to its depth at logic-catch entry on the way.
@@ -326,6 +427,11 @@
     (defun logic-throw (tag val)
       (raise 'logic-escape (cons tag val)))
 
+    ;;@doc (logic-catch tag body-thunk handler)
+    ;;@category Logic
+    ;;@module std.logic
+    ;;@example
+    ;; (logic-catch 'x 'x 'x)
     ;; (logic-catch tag body-thunk handler)
     ;;   Run `body-thunk`.  If it escapes via (logic-throw tag v), unwind
     ;;   the trail to the depth at logic-catch entry and call (handler v).

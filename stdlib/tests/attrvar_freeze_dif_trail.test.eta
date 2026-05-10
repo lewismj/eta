@@ -9,8 +9,20 @@
   (import std.core std.logic std.freeze)
   (begin
 
+    ;;@doc (fail-count)
+    ;;@category Tests
+    ;;@module attrvar-smoke
+    ;; Smoke test for attributed variables + Uses `fail-count`.
+    ;;@example
+    ;; (display fail-count)
     (define fail-count 0)
 
+    ;;@doc (chk label expected actual)
+    ;;@category Tests
+    ;;@module attrvar-smoke
+    ;; Compute `chk`.
+    ;;@example
+    ;; (chk 'x 'x 'x)
     (defun chk (label expected actual)
       (display label)
       (display " => ")

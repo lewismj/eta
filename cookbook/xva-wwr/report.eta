@@ -17,6 +17,12 @@
     ;; String / number formatting helpers
     ;; -----------------------------------------------------------------
 
+    ;;@doc (repeat-char ch n)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Human-readable stage-by-stage output Uses `repeat-char`.
+    ;;@example
+    ;; (repeat-char #\space n)
     (defun repeat-char (ch n)
       (let ((p (open-output-string)))
         (let loop ((i 0))
@@ -24,25 +30,60 @@
               (get-output-string p)
               (begin (display ch p) (loop (+ i 1)))))))
 
+    ;;@doc (spaces n)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `spaces`.
+    ;;@example
+    ;; (spaces 1)
     (defun spaces (n) (repeat-char #\space n))
 
+    ;;@doc (pad-right s width)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `pad-right`.
+    ;;@example
+    ;; (pad-right "sample" 'x)
     (defun pad-right (s width)
       (let ((n (string-length s)))
         (if (>= n width) s
             (string-append s (spaces (- width n))))))
 
+    ;;@doc (pad-left s width)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `pad-left`.
+    ;;@example
+    ;; (pad-left "sample" 'x)
     (defun pad-left (s width)
       (let ((n (string-length s)))
         (if (>= n width) s
             (string-append (spaces (- width n)) s))))
 
+    ;;@doc (zero-pad-left s width)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `zero-pad-left`.
+    ;;@example
+    ;; (zero-pad-left "sample" 'x)
     (defun zero-pad-left (s width)
       (let ((n (string-length s)))
         (if (>= n width) s
             (string-append (repeat-char #\0 (- width n)) s))))
 
+    ;;@doc (abs-num x)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `abs-num`.
+    ;;@example
+    ;; (abs-num 1)
     (defun abs-num (x) (if (< x 0) (- 0 x) x))
 
+    ;;@doc (fmt-fixed x decimals)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;;@example
+    ;; (fmt-fixed 1 'x)
     ;; Fixed-point format with `decimals` digits after the point.
     ;;   (fmt-fixed 2.91045 4) => "2.9105"
     ;;   (fmt-fixed -0.5 2)    => "-0.50"
@@ -58,12 +99,22 @@
             (string-append sign (number->string whole))
             (string-append sign (number->string whole) "." frac-s))))
 
+    ;;@doc (fmt-signed x decimals)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;;@example
+    ;; (fmt-signed 1 'x)
     ;; "+1.23" / "-0.50"
     (defun fmt-signed (x decimals)
       (if (>= x 0)
           (string-append "+" (fmt-fixed x decimals))
           (fmt-fixed x decimals)))
 
+    ;;@doc (insert-commas s)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;;@example
+    ;; (insert-commas "sample")
     ;; Insert thousands separators into a digit string.
     (defun insert-commas (s)
       (let ((n (string-length s)))
@@ -73,6 +124,11 @@
               ","
               (substring s (- n 3) n)))))
 
+    ;;@doc (fmt-money x)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;;@example
+    ;; (fmt-money 1)
     ;; Round to nearest integer, then thousands-separate. "-12,345"
     ;; Falls back to fmt-num (raw textual form) if the rounded value
     ;; comes out in scientific notation.
@@ -85,6 +141,11 @@
             (fmt-num x)
             (string-append sign (insert-commas s)))))
 
+    ;;@doc (fmt-money-dp x decimals)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;;@example
+    ;; (fmt-money-dp 1 'x)
     ;; "118,302.45" - thousands + N decimals
     (defun fmt-money-dp (x decimals)
       (let* ((sign (if (< x 0) "-" ""))
@@ -99,6 +160,11 @@
             (string-append sign whole-s)
             (string-append sign whole-s "." frac-s))))
 
+    ;;@doc (has-char? s ch)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;;@example
+    ;; (has-char? "sample" 'x)
     ;; True when the textual form of `s` includes 'e' or 'E' - i.e.
     ;; number->string produced scientific notation, in which case we
     ;; cannot meaningfully insert thousands separators.
@@ -109,9 +175,20 @@
                 ((eqv? (string-ref s i) ch) #t)
                 (else (loop (+ i 1)))))))
 
+    ;;@doc (is-scientific? s)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Return whether `is-scientific?` holds.
+    ;;@example
+    ;; (is-scientific? "sample")
     (defun is-scientific? (s)
       (or (has-char? s #\e) (has-char? s #\E)))
 
+    ;;@doc (fmt-num x)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;;@example
+    ;; (fmt-num 1)
     ;; Money formatter that gracefully falls back to the raw textual
     ;; form when the number is in scientific notation (e.g. very large
     ;; or very small magnitudes that number->string emits as 1.23e+07).
@@ -135,6 +212,12 @@
                   (digits (substring s skip (string-length s))))
              (string-append sign-prefix (insert-commas digits)))))))
 
+    ;;@doc (any->string x)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `any->string`.
+    ;;@example
+    ;; (any->string 1)
     (defun any->string (x)
       (cond ((string? x) x)
             ((symbol? x) (symbol->string x))
@@ -147,9 +230,21 @@
 
     (define line-width 76)
 
+    ;;@doc (rule ch)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `rule`.
+    ;;@example
+    ;; (rule 'x)
     (defun rule (ch)
       (println (repeat-char ch line-width)))
 
+    ;;@doc (banner title subtitle)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `banner`.
+    ;;@example
+    ;; (banner 'x 'x)
     (defun banner (title subtitle)
       (newline)
       (rule #\=)
@@ -157,6 +252,12 @@
       (println (string-append "  " subtitle))
       (rule #\=))
 
+    ;;@doc (section-header n total title)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `section-header`.
+    ;;@example
+    ;; (section-header 1 'x 'x)
     (defun section-header (n total title)
       (newline)
       (println
@@ -164,15 +265,39 @@
           "[" (number->string n) "/" (number->string total) "]  " title))
       (rule #\-))
 
+    ;;@doc (bullet label body)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `bullet`.
+    ;;@example
+    ;; (bullet 'x 'x)
     (defun bullet (label body)
       (println (string-append "  " (pad-right label 8) body)))
 
+    ;;@doc (kv label body)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `kv`.
+    ;;@example
+    ;; (kv 'x 'x)
     (defun kv (label body)
       (println (string-append "    " (pad-right label 36) body)))
 
+    ;;@doc (box-line s)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `box-line`.
+    ;;@example
+    ;; (box-line "sample")
     (defun box-line (s)
       (println (string-append "  | " (pad-right s (- line-width 5)) "|")))
 
+    ;;@doc (box-rule)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `box-rule`.
+    ;;@example
+    ;; (box-rule)
     (defun box-rule ()
       (println (string-append "  +" (repeat-char #\- (- line-width 4)) "+")))
 
@@ -180,6 +305,12 @@
     ;; Stage renderers - each prints WHAT / WHY / HOW + a small table.
     ;; -----------------------------------------------------------------
 
+    ;;@doc (render-book artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `render-book`.
+    ;;@example
+    ;; (render-book 'x)
     (defun render-book (artifact)
       (section-header 1 8 "Trade book")
       (bullet "WHAT:" "Synthetic IRS / FXF / OPT trades across 30 counterparties.")
@@ -188,6 +319,12 @@
       (newline)
       (kv "Book size:" (string-append (number->string (assoc-ref 'book-size artifact)) " trades")))
 
+    ;;@doc (render-ml artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `render-ml`.
+    ;;@example
+    ;; (render-ml 'x)
     (defun render-ml (artifact)
       (let* ((stages (assoc-ref 'stage-report artifact))
              (ml (assoc-ref 'ml-training stages))
@@ -263,6 +400,12 @@
                            "   (tol 0.050  "
                                  (if (<= max-err 0.05) "PASS)" "FAIL)")))))
 
+    ;;@doc (render-baseline artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `render-baseline`.
+    ;;@example
+    ;; (render-baseline 'x)
     (defun render-baseline (artifact)
       (let* ((stages (assoc-ref 'stage-report artifact))
              (b (assoc-ref 'baseline stages))
@@ -290,6 +433,12 @@
         (newline)
         (kv "Greeks (delta, vega):" (display->string greeks))))
 
+    ;;@doc (render-counterfactual artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `render-counterfactual`.
+    ;;@example
+    ;; (render-counterfactual 'x)
     (defun render-counterfactual (artifact)
       (let* ((sweep (assoc-ref 'counterfactual artifact))
              (audit (assoc-ref 'causal-audit artifact))
@@ -385,6 +534,12 @@
                                     "eps = " (fmt-signed (cdr e) 3))))
           insens)))
 
+    ;;@doc (render-symbolic artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `render-symbolic`.
+    ;;@example
+    ;; (render-symbolic 'x)
     (defun render-symbolic (artifact)
       (let* ((stages (assoc-ref 'stage-report artifact))
              (sym (assoc-ref 'symbolic stages))
@@ -402,6 +557,12 @@
         (kv "AST node count:" (number->string n))
         (kv "Value @ (N=1e6, r=0.03, tau=2.5):" (fmt-num v))))
 
+    ;;@doc (render-compression artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `render-compression`.
+    ;;@example
+    ;; (render-compression 'x)
     (defun render-compression (artifact)
       (let* ((stages (assoc-ref 'stage-report artifact))
              (c (assoc-ref 'compression stages))
@@ -440,6 +601,12 @@
                   (pad-left  (fmt-signed (car ws) 4) 12)))
               (loop (cdr ds) (cdr ws) (+ i 1)))))))
 
+    ;;@doc (render-determinism artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `render-determinism`.
+    ;;@example
+    ;; (render-determinism 'x)
     (defun render-determinism (artifact)
       (let* ((s (assoc-ref 'shard-check artifact))
              (a (assoc-ref 'first s))
@@ -453,6 +620,12 @@
         (kv "Second run:" (fmt-num b))
         (kv "Match:" (if m "yes  (PASS)" "no   (FAIL)"))))
 
+    ;;@doc (render-headline artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Compute `render-headline`.
+    ;;@example
+    ;; (render-headline 'x)
     (defun render-headline (artifact)
       (let* ((stages (assoc-ref 'stage-report artifact))
              (rec (assoc-ref 'ml-recovery stages))
@@ -503,6 +676,12 @@
     ;; Top-level entry
     ;; -----------------------------------------------------------------
 
+    ;;@doc (print-friendly-report artifact)
+    ;;@category Xva Wwr
+    ;;@module report
+    ;; Print output with `print-friendly-report`.
+    ;;@example
+    ;; (print-friendly-report 'x)
     (defun print-friendly-report (artifact)
       (banner "xVA Wrong-Way Risk - Demo run"
               "Causal CVA with ML-calibrated SCM betas")

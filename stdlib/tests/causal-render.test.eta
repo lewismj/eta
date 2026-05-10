@@ -7,6 +7,12 @@
           std.collections)
   (begin
 
+    ;;@doc (contains? text needle)
+    ;;@category Tests
+    ;;@module causal.render.tests
+    ;; `.
+    ;;@example
+    ;; (contains? "sample" 'x)
     (defun contains? (text needle)
       (let ((n (string-length text))
             (m (string-length needle)))
@@ -22,6 +28,12 @@
                                          (loop (+ i 1)))))))
                   (loop 0))))))
 
+    ;;@doc (contains-edge? g edge)
+    ;;@category Tests
+    ;;@module causal.render.tests
+    ;; Return whether `contains-edge?` holds.
+    ;;@example
+    ;; (contains-edge? 'x 'x)
     (defun contains-edge? (g edge)
       (any? (lambda (e) (equal? e edge)) g))
 

@@ -4,7 +4,19 @@
   (import std.test std.logic std.clpr)
   (begin
 
+    ;;@doc (lo bounds)
+    ;;@category Tests
+    ;;@module clpr-post-smoke
+    ;; Smoke tests for std.clpr posting Uses `lo`.
+    ;;@example
+    ;; (lo bx)
     (defun lo (bounds) (car bounds))
+    ;;@doc (hi bounds)
+    ;;@category Tests
+    ;;@module clpr-post-smoke
+    ;; Compute `hi`.
+    ;;@example
+    ;; (hi 'x)
     (defun hi (bounds) (cdr bounds))
 
     (define suite

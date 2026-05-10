@@ -6,6 +6,12 @@
   (import std.io std.args)
   (begin
 
+    ;;@doc (parse-level)
+    ;;@category Basics
+    ;;@module args-example
+    ;; Parse input with `parse-level`.
+    ;;@example
+    ;; (display parse-level)
     (define parse-level
       (lambda (raw)
         (let ((n (string->number raw)))
@@ -31,6 +37,12 @@
                 (cons 'parse parse-level)
                 (cons 'validate level-in-range?)))))
 
+    ;;@doc (run-demo)
+    ;;@category Basics
+    ;;@module args-example
+    ;; Run `run-demo`.
+    ;;@example
+    ;; (run-demo)
     (defun run-demo ()
       (args:parse
         spec
@@ -39,6 +51,12 @@
           "--level=4"
           "--" "-z")))
 
+    ;;@doc (summarize r)
+    ;;@category Basics
+    ;;@module args-example
+    ;; Compute `summarize`.
+    ;;@example
+    ;; (summarize 'x)
     (defun summarize (r)
       (list
         (cons 'verbose (args:get r 'v))

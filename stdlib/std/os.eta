@@ -12,6 +12,12 @@
     os:change-directory!)
   (begin
 
+    ;;@doc (os:getenv)
+    ;;@category Os
+    ;;@module std.os
+    ;; Operating-system primitives Uses `os:getenv`.
+    ;;@example
+    ;; (display os:getenv)
     (define os:getenv getenv)
     (define os:setenv! setenv!)
     (define os:unsetenv! unsetenv!)

@@ -22,18 +22,35 @@
     csv:save-file)
   (begin
 
+    ;;@doc (csv:strip-leading-colon s)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:strip-leading-colon`.
+    ;;@example
+    ;; (csv:strip-leading-colon "sample")
     (defun csv:strip-leading-colon (s)
       (if (and (> (string-length s) 0)
                (eq? (string-ref s 0) #\:))
           (substring s 1 (string-length s))
           s))
 
+    ;;@doc (csv:normalize-opt-key k)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:normalize-opt-key`.
+    ;;@example
+    ;; (csv:normalize-opt-key 1)
     (defun csv:normalize-opt-key (k)
       (cond
         ((symbol? k) (string->symbol (csv:strip-leading-colon (symbol->string k))))
         ((string? k) (string->symbol (csv:strip-leading-colon k)))
         (#t (error "csv: option key must be a symbol or string"))))
 
+    ;;@doc (csv:opts->alist opts)
+    ;;@category Csv
+    ;;@module std.csv
+    ;;@example
+    ;; (csv:opts->alist 'x)
     ;; (csv:opts->alist '(:delimiter #\; :header #f)) -> ((delimiter . #\;) (header . #f))
     (defun csv:opts->alist (opts)
       (letrec ((loop (lambda (xs acc)
@@ -47,47 +64,128 @@
                                            acc)))))))
         (loop opts '())))
 
+    ;;@doc (csv:open-reader path . opts)
+    ;;@category Csv
+    ;;@module std.csv
     ;; --- reader ---------------------------------------------------------
+    ;;@example
+    ;; (csv:open-reader "sample" '())
     (defun csv:open-reader (path . opts)
       (%csv-open-reader path (csv:opts->alist opts)))
 
+    ;;@doc (csv:reader-from-string str . opts)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:reader-from-string`.
+    ;;@example
+    ;; (csv:reader-from-string "sample" '())
     (defun csv:reader-from-string (str . opts)
       (%csv-reader-from-string str (csv:opts->alist opts)))
 
+    ;;@doc (csv:columns r)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:columns`.
+    ;;@example
+    ;; (csv:columns 'x)
     (defun csv:columns (r)
       (%csv-columns r))
 
+    ;;@doc (csv:read-row r)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:read-row`.
+    ;;@example
+    ;; (csv:read-row 'x)
     (defun csv:read-row (r)
       (%csv-read-row r))
 
+    ;;@doc (csv:read-record r)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:read-record`.
+    ;;@example
+    ;; (csv:read-record 'x)
     (defun csv:read-record (r)
       (%csv-read-record r))
 
+    ;;@doc (csv:read-typed-row r)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:read-typed-row`.
+    ;;@example
+    ;; (csv:read-typed-row 'x)
     (defun csv:read-typed-row (r)
       (%csv-read-typed-row r))
 
+    ;;@doc (csv:reader? x)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Return whether `csv:reader?` holds.
+    ;;@example
+    ;; (csv:reader? 1)
     (defun csv:reader? (x)
       (%csv-reader? x))
 
+    ;;@doc (csv:open-writer path . opts)
+    ;;@category Csv
+    ;;@module std.csv
+    ;;@example
+    ;; (csv:open-writer "sample" '())
     ;; --- writer ---------------------------------------------------------
     (defun csv:open-writer (path . opts)
       (%csv-open-writer path (csv:opts->alist opts)))
 
+    ;;@doc (csv:write-row w row)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:write-row`.
+    ;;@example
+    ;; (csv:write-row 'x 'x)
     (defun csv:write-row (w row)
       (%csv-write-row w row))
 
+    ;;@doc (csv:write-record w alist columns)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:write-record`.
+    ;;@example
+    ;; (csv:write-record 'x 'x 'x)
     (defun csv:write-record (w alist columns)
       (%csv-write-record w alist columns))
 
+    ;;@doc (csv:flush w)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:flush`.
+    ;;@example
+    ;; (csv:flush 'x)
     (defun csv:flush (w)
       (%csv-flush w))
 
+    ;;@doc (csv:writer? x)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Return whether `csv:writer?` holds.
+    ;;@example
+    ;; (csv:writer? 1)
     (defun csv:writer? (x)
       (%csv-writer? x))
 
+    ;;@doc (csv:close h)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:close`.
+    ;;@example
+    ;; (csv:close 'x)
     (defun csv:close (h)
       (%csv-close h))
 
+    ;;@doc (csv:fold r f init)
+    ;;@category Csv
+    ;;@module std.csv
+    ;;@example
+    ;; (csv:fold 'x (lambda (x) x) 'x)
     ;; (csv:fold reader f init) - stream rows without materializing all rows.
     (defun csv:fold (r f init)
       (letrec ((loop (lambda (acc)
@@ -97,6 +195,11 @@
                              acc)))))
         (loop init)))
 
+    ;;@doc (csv:for-each r f)
+    ;;@category Csv
+    ;;@module std.csv
+    ;;@example
+    ;; (csv:for-each 'x (lambda (x) x))
     ;; (csv:for-each reader f)
     (defun csv:for-each (r f)
       (letrec ((loop (lambda ()
@@ -108,10 +211,21 @@
                              '())))))
         (loop)))
 
+    ;;@doc (csv:collect r)
+    ;;@category Csv
+    ;;@module std.csv
+    ;;@example
+    ;; (csv:collect 'x)
     ;; (csv:collect reader) - eager list of records.
     (defun csv:collect (r)
       (reverse (csv:fold r (lambda (acc rec) (cons rec acc)) '())))
 
+    ;;@doc (csv:record-columns record)
+    ;;@category Csv
+    ;;@module std.csv
+    ;; Compute `csv:record-columns`.
+    ;;@example
+    ;; (csv:record-columns 'x)
     (defun csv:record-columns (record)
       (letrec ((loop (lambda (xs acc)
                        (if (null? xs)
@@ -119,6 +233,11 @@
                            (loop (cdr xs) (cons (car (car xs)) acc))))))
         (loop record '())))
 
+    ;;@doc (csv:load-file path . opts)
+    ;;@category Csv
+    ;;@module std.csv
+    ;;@example
+    ;; (csv:load-file "sample" '())
     ;; (csv:load-file path . opts) -> list of records
     (defun csv:load-file (path . opts)
       (let* ((r (apply csv:open-reader path opts))
@@ -126,6 +245,11 @@
         (csv:close r)
         rows))
 
+    ;;@doc (csv:save-file path records . opts)
+    ;;@category Csv
+    ;;@module std.csv
+    ;;@example
+    ;; (csv:save-file "sample" 'x '())
     ;; (csv:save-file path records . opts) -> writes record alist rows.
     ;; Caller can override inferred columns via :column-names.
     (defun csv:save-file (path records . opts)

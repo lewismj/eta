@@ -7,7 +7,12 @@
 (module parallel-fib-worker
   (begin
 
+    ;;@doc (fib idx)
+    ;;@category Concurrency
+    ;;@module parallel-fib-worker
     ;; Tail-recursive Fibonacci: fib(0)=0, fib(1)=1, fib(n)=fib(n-1)+fib(n-2)
+    ;;@example
+    ;; (fib 1)
     (defun fib (idx)
       (letrec ((fib-iter (lambda (k a b)
                            (if (= k 0) a

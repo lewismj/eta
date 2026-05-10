@@ -37,9 +37,14 @@
 
     ;; ── Examples ──────────────────────────────────────────────
 
+    ;;@doc (win)
+    ;;@category Numerics
+    ;;@module aad
     ;; 1. f(x,y) = x·y + sin(x)  at (2, 3)
     ;;    ∂f/∂x = y + cos(x) = 3 + cos(2) ≈ 2.5839
     ;;    ∂f/∂y = x = 2
+    ;;@example
+    ;; (display win)
     (define win (eq? (platform) 'Win32))
 
     (display (if win "f(x,y) = x*y + sin(x)\n" "f(x,y) = x·y + sin(x)\n"))

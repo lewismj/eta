@@ -12,6 +12,12 @@
   (import std.test)
   (begin
 
+    ;;@doc (results)
+    ;;@category Tests
+    ;;@module torch-test-arithmetic
+    ;; Tensor arithmetic and unary op primitives Uses `results`.
+    ;;@example
+    ;; (display results)
     (define results
       (run (make-group "Tensor Arithmetic & Unary Ops"
         (list

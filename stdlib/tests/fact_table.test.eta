@@ -4,6 +4,12 @@
   (import std.test std.fact_table std.io)
   (begin
 
+    ;;@doc (fact-table:test-write-file path text)
+    ;;@category Tests
+    ;;@module fact-table.tests
+    ;; Unit tests for std.fact_table Uses `fact-table:test-write-file`.
+    ;;@example
+    ;; (fact-table:test-write-file "sample" "sample")
     (defun fact-table:test-write-file (path text)
       (let ((p (open-output-file path)))
         (if p

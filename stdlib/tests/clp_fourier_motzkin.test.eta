@@ -4,7 +4,19 @@
   (import std.test std.logic std.core)
   (begin
 
+    ;;@doc (lo bounds)
+    ;;@category Tests
+    ;;@module clp-fm-smoke
+    ;; Smoke tests for %clp-fm-* builtins Uses `lo`.
+    ;;@example
+    ;; (lo b)
     (defun lo (bounds) (car bounds))
+    ;;@doc (hi bounds)
+    ;;@category Tests
+    ;;@module clp-fm-smoke
+    ;; Compute `hi`.
+    ;;@example
+    ;; (hi 'x)
     (defun hi (bounds) (cdr bounds))
 
     (define suite

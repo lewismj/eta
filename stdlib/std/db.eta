@@ -36,38 +36,92 @@
     (define *db-table-status* (make-hash-map))
     (define *db-table-answers* (make-hash-map))
 
+    ;;@doc (rel-key name arity)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `rel-key`.
+    ;;@example
+    ;; (rel-key "sample" 'x)
     (define (rel-key name arity) (cons name arity))
 
+    ;;@doc (registry-lookup key entries)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `registry-lookup`.
+    ;;@example
+    ;; (registry-lookup 'x 'x)
     (define (registry-lookup key entries)
       (cond
         ((null? entries) #f)
         ((equal? key (car (car entries))) (cdr (car entries)))
         (else (registry-lookup key (cdr entries)))))
 
+    ;;@doc (registry-put! key ft)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `registry-put!`.
+    ;;@example
+    ;; (registry-put! 'x 'x)
     (define (registry-put! key ft)
       (set! *db-registry* (cons (cons key ft) *db-registry*))
       ft)
 
+    ;;@doc (table-status key)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `table-status`.
+    ;;@example
+    ;; (table-status 'x)
     (define (table-status key)
       (hash-map-ref *db-table-status* key 'new))
 
+    ;;@doc (set-table-status! key status)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `set-table-status!`.
+    ;;@example
+    ;; (set-table-status! 'x 'x)
     (define (set-table-status! key status)
       (set! *db-table-status* (hash-map-assoc *db-table-status* key status))
       status)
 
+    ;;@doc (table-answers key)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `table-answers`.
+    ;;@example
+    ;; (table-answers 'x)
     (define (table-answers key)
       (hash-map-ref *db-table-answers* key '()))
 
+    ;;@doc (set-table-answers! key answers)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `set-table-answers!`.
+    ;;@example
+    ;; (set-table-answers! 'x 'x)
     (define (set-table-answers! key answers)
       (set! *db-table-answers* (hash-map-assoc *db-table-answers* key answers))
       answers)
 
+    ;;@doc (table-answer-member? answer answers)
+    ;;@category Db
+    ;;@module std.db
+    ;; Return whether `table-answer-member?` holds.
+    ;;@example
+    ;; (table-answer-member? 'x 'x)
     (define (table-answer-member? answer answers)
       (cond
         ((null? answers) #f)
         ((equal? answer (car answers)) #t)
         (else (table-answer-member? answer (cdr answers)))))
 
+    ;;@doc (table-add-answer! key answer)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `table-add-answer!`.
+    ;;@example
+    ;; (table-add-answer! 'x 'x)
     (define (table-add-answer! key answer)
       (let ((answers (table-answers key)))
         (if (table-answer-member? answer answers)
@@ -76,12 +130,24 @@
               (set-table-answers! key (cons answer answers))
               #t))))
 
+    ;;@doc (invalidate-table-cache!)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `invalidate-table-cache!`.
+    ;;@example
+    ;; (invalidate-table-cache!)
     (define (invalidate-table-cache!)
       ;; Conservatively flush all tabled answers on any DB mutation.
       (set! *db-table-status* (make-hash-map))
       (set! *db-table-answers* (make-hash-map))
       #t)
 
+    ;;@doc (tabled-rel? name arity)
+    ;;@category Db
+    ;;@module std.db
+    ;; Return whether `tabled-rel?` holds.
+    ;;@example
+    ;; (tabled-rel? "sample" 'x)
     (define (tabled-rel? name arity)
       (let ((k (rel-key name arity)))
         (let loop ((entries *db-tabled*))
@@ -90,10 +156,22 @@
             ((equal? k (car entries)) #t)
             (else (loop (cdr entries)))))))
 
+    ;;@doc (table-key name args)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `table-key`.
+    ;;@example
+    ;; (table-key "sample" '())
     (define (table-key name args)
       ;; Variant key: stable under alpha-renaming of logic vars.
       (term-variant-hash (cons name args) 16))
 
+    ;;@doc (make-col-names arity)
+    ;;@category Db
+    ;;@module std.db
+    ;; Construct `make-col-names`.
+    ;;@example
+    ;; (make-col-names 'x)
     (define (make-col-names arity)
       (let loop ((i 0) (acc '()))
         (if (= i arity)
@@ -103,6 +181,12 @@
                           (string-append "c" (number->string i)))
                         acc)))))
 
+    ;;@doc (ensure-rel-table name arity)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `ensure-rel-table`.
+    ;;@example
+    ;; (ensure-rel-table "sample" 'x)
     (define (ensure-rel-table name arity)
       (let* ((key   (rel-key name arity))
              (found (registry-lookup key *db-registry*)))
@@ -114,6 +198,12 @@
               (when (> arity 0) (fact-table-build-index! ft 0))
               (registry-put! key ft)))))
 
+    ;;@doc (normalize-quoted x)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `normalize-quoted`.
+    ;;@example
+    ;; (normalize-quoted 1)
     (define (normalize-quoted x)
       ;; Macro-quoted head terms may appear as (quote <atom>).
       (if (and (pair? x)
@@ -123,9 +213,21 @@
           (car (cdr x))
           x))
 
+    ;;@doc (normalize-head-args xs)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `normalize-head-args`.
+    ;;@example
+    ;; (normalize-head-args '())
     (define (normalize-head-args xs)
       (map* normalize-quoted xs))
 
+    ;;@doc (var-marker? x)
+    ;;@category Db
+    ;;@module std.db
+    ;; Return whether `var-marker?` holds.
+    ;;@example
+    ;; (var-marker? 1)
     (define (var-marker? x)
       ;; Convention: symbols starting with '?' are relation head variables.
       (if (symbol? x)
@@ -134,12 +236,24 @@
                  (eqv? (string-ref s 0) #\?)))
           #f))
 
+    ;;@doc (contains-var-marker? xs)
+    ;;@category Db
+    ;;@module std.db
+    ;; Return whether `contains-var-marker?` holds.
+    ;;@example
+    ;; (contains-var-marker? '())
     (define (contains-var-marker? xs)
       (cond
         ((null? xs) #f)
         ((var-marker? (car xs)) #t)
         (else (contains-var-marker? (cdr xs)))))
 
+    ;;@doc (head-match? template-args actual-args)
+    ;;@category Db
+    ;;@module std.db
+    ;; Return whether `head-match?` holds.
+    ;;@example
+    ;; (head-match? 'x 'x)
     (define (head-match? template-args actual-args)
       ;; Unifies template with actual args. Repeated ?vars must unify.
       (let loop ((ts template-args) (as actual-args) (env '()))
@@ -159,6 +273,12 @@
                   (and (unify t a)
                        (loop (cdr ts) (cdr as) env))))))))
 
+    ;;@doc (row-args ft row-id arity)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `row-args`.
+    ;;@example
+    ;; (row-args 'x 'x 'x)
     (define (row-args ft row-id arity)
       (let loop ((i 0) (acc '()))
         (if (= i arity)
@@ -166,9 +286,21 @@
             (loop (+ i 1)
                   (cons (%fact-table-ref ft row-id i) acc)))))
 
+    ;;@doc (goalset-like? v)
+    ;;@category Db
+    ;;@module std.db
+    ;; Return whether `goalset-like?` holds.
+    ;;@example
+    ;; (goalset-like? 1)
     (define (goalset-like? v)
       (and (pair? v) (procedure? (car v))))
 
+    ;;@doc (run-goalset-first! goalset)
+    ;;@category Db
+    ;;@module std.db
+    ;; Run `run-goalset-first!`.
+    ;;@example
+    ;; (run-goalset-first! 'x)
     (define (run-goalset-first! goalset)
       ;; Run branches left-to-right; keep bindings from the first success.
       (let loop ((branches goalset))
@@ -181,6 +313,12 @@
                     (unwind-trail m)
                     (loop (cdr branches))))))))
 
+    ;;@doc (%defrel-fact! name raw-args)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `%defrel-fact!`.
+    ;;@example
+    ;; (%defrel-fact! "sample" 'x)
     (define (%defrel-fact! name raw-args)
       (let* ((args  (normalize-head-args raw-args))
              (arity (length args))
@@ -192,6 +330,12 @@
         (invalidate-table-cache!)
         inserted))
 
+    ;;@doc (%defrel-rule! name raw-args rule-proc)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `%defrel-rule!`.
+    ;;@example
+    ;; (%defrel-rule! "sample" 'x (lambda (x) x))
     (define (%defrel-rule! name raw-args rule-proc)
       (let* ((args  (normalize-head-args raw-args))
              (arity (length args))
@@ -202,11 +346,16 @@
               inserted)
             (error "defrel: rule body must compile to a procedure"))))
 
+    ;;@doc (defrel head . rest)
+    ;;@category Db
+    ;;@module std.db
     ;; (defrel '(name a1 ... aN))
     ;; (defrel '(name a1 ... aN) rule-proc)
     ;;
     ;; Runtime (not syntax) form so it can be exported cleanly through the
     ;; module system. Rule rows expect a procedure that receives the call args.
+    ;;@example
+    ;; (defrel 'x '())
     (define (defrel head . rest)
       (let ((name (car head))
             (args (cdr head)))
@@ -215,12 +364,23 @@
             (let ((rule-proc (car rest)))
               (%defrel-rule! name args rule-proc)))))
 
+    ;;@doc (defrel-clause head . rest)
+    ;;@category Db
+    ;;@module std.db
+    ;;@example
+    ;; (defrel-clause 'x '())
     ;; Convenience wrapper for static relation declarations.
     (define (defrel-clause head . rest)
       (if (null? rest)
           (defrel head)
           (defrel head (car rest))))
 
+    ;;@doc (assert-fact! clause)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `assert-fact!`.
+    ;;@example
+    ;; (assert-fact! 'x)
     (define (assert-fact! clause)
       ;; (assert-fact! '(name a1 ... aN))
       (let* ((name (car clause))
@@ -234,6 +394,12 @@
         (invalidate-table-cache!)
         inserted))
 
+    ;;@doc (candidate-row-ids ft args)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `candidate-row-ids`.
+    ;;@example
+    ;; (candidate-row-ids 'x '())
     (define (candidate-row-ids ft args)
       (if (null? args)
           (%fact-table-live-row-ids ft)
@@ -253,6 +419,12 @@
                                       (loop (cdr rows) acc)))))))
                 (%fact-table-live-row-ids ft)))))
 
+    ;;@doc (call-row-goal ft row-id args arity)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `call-row-goal`.
+    ;;@example
+    ;; (call-row-goal 'x 'x '() 'x)
     (define (call-row-goal ft row-id args arity)
       (lambda ()
         (let ((head (row-args ft row-id arity)))
@@ -270,6 +442,12 @@
                         #t)))
               #f))))
 
+    ;;@doc (table-goalset key args)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `table-goalset`.
+    ;;@example
+    ;; (table-goalset 'x '())
     (define (table-goalset key args)
       ;; Replay cached answers as ordinary goal thunks.
       (map* (lambda (answer)
@@ -277,6 +455,12 @@
                 (head-match? (copy-term* answer) args)))
             (reverse (table-answers key))))
 
+    ;;@doc (scan-table-rows ft rows work-args arity key changed)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `scan-table-rows`.
+    ;;@example
+    ;; (scan-table-rows 'x '() 'x 'x 'x 'x)
     (define (scan-table-rows ft rows work-args arity key changed)
       (if (null? rows)
           changed
@@ -293,6 +477,12 @@
                   (unwind-trail m)
                   (scan-table-rows ft (cdr rows) work-args arity key changed))))))
 
+    ;;@doc (populate-table! args arity ft key)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `populate-table!`.
+    ;;@example
+    ;; (populate-table! '() 'x 'x 'x)
     (define (populate-table! args arity ft key)
       ;; SLG-lite: iterate relation clauses to a local fixpoint.
       (let loop ((changed #t))
@@ -303,6 +493,12 @@
                    (changed2 (scan-table-rows ft rows work-args arity key #f)))
               (loop changed2)))))
 
+    ;;@doc (call-rel-tabled name args arity ft)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `call-rel-tabled`.
+    ;;@example
+    ;; (call-rel-tabled "sample" '() 'x 'x)
     (define (call-rel-tabled name args arity ft)
       (let* ((key (table-key name args))
              (status (table-status key)))
@@ -319,6 +515,12 @@
            (set-table-status! key 'done)
            (table-goalset key args)))))
 
+    ;;@doc (call-rel name . args)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `call-rel`.
+    ;;@example
+    ;; (call-rel "sample" '())
     (define (call-rel name . args)
       ;; Returns a goalset: list of branch thunks.
       (let* ((arity (length args))
@@ -332,11 +534,23 @@
                           (call-row-goal ft row-id args arity))
                         rows))))))
 
+    ;;@doc (call-rel? name . args)
+    ;;@category Db
+    ;;@module std.db
+    ;; Return whether `call-rel?` holds.
+    ;;@example
+    ;; (call-rel? "sample" '())
     (define (call-rel? name . args)
       ;; Convenience predicate: true iff at least one branch succeeds.
       (let ((goalset (apply call-rel (cons name args))))
         (if (run1 (lambda () #t) goalset) #t #f)))
 
+    ;;@doc (retract-fact! clause)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `retract-fact!`.
+    ;;@example
+    ;; (retract-fact! 'x)
     (define (retract-fact! clause)
       ;; Removes the first row matching `(name pattern...)`.
       (let* ((name (car clause))
@@ -358,6 +572,12 @@
                           (%fact-table-delete-row! ft row-id))
                         (loop (cdr rows)))))))))
 
+    ;;@doc (retract-all clause)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `retract-all`.
+    ;;@example
+    ;; (retract-all 'x)
     (define (retract-all clause)
       ;; Removes all rows matching `(name pattern...)`.
       (let* ((name (car clause))
@@ -383,6 +603,12 @@
               (if deleted? (invalidate-table-cache!) #f)
               deleted?))))
 
+    ;;@doc (index-rel! name col-spec)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `index-rel!`.
+    ;;@example
+    ;; (index-rel! "sample" 'x)
     (define (index-rel! name col-spec)
       ;; Rebuild index `col-spec` for every arity currently registered for name.
       (let loop ((entries *db-registry*) (changed #f))
@@ -397,6 +623,12 @@
                     (loop (cdr entries) #t))
                   (loop (cdr entries) changed))))))
 
+    ;;@doc (tabled name arity)
+    ;;@category Db
+    ;;@module std.db
+    ;; Compute `tabled`.
+    ;;@example
+    ;; (tabled "sample" 'x)
     (define (tabled name arity)
       (let ((k (rel-key name arity)))
         (if (tabled-rel? name arity)
@@ -406,6 +638,11 @@
               (invalidate-table-cache!)
               #t))))
 
+    ;;@doc (tabled-clause head)
+    ;;@category Db
+    ;;@module std.db
+    ;;@example
+    ;; (tabled-clause 'x)
     ;; Convenience wrapper that infers arity from a clause head list.
     (define (tabled-clause head)
       (tabled (car head) (length (cdr head))))

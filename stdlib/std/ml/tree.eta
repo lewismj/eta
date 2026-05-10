@@ -13,6 +13,12 @@
 
     ;; -- Basic helpers ----------------------------------------------------
 
+    ;;@doc (%opts->alist opts who)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%opts->alist`.
+    ;;@example
+    ;; (%opts->alist 'x 'x)
     (defun %opts->alist (opts who)
       (let loop ((xs opts) (acc '()))
         (cond
@@ -23,10 +29,22 @@
            (loop (cdr (cdr xs))
                  (cons (cons (car xs) (cadr xs)) acc))))))
 
+    ;;@doc (%opt-ref opts key default)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%opt-ref`.
+    ;;@example
+    ;; (%opt-ref 'x 'x 'x)
     (defun %opt-ref (opts key default)
       (let ((entry (assq key opts)))
         (if entry (cdr entry) default)))
 
+    ;;@doc (%assoc-set alist key value)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%assoc-set`.
+    ;;@example
+    ;; (%assoc-set 'x 'x 1)
     (defun %assoc-set (alist key value)
       (let loop ((rest alist) (acc '()) (done? #f))
         (cond
@@ -41,12 +59,24 @@
           (else
            (loop (cdr rest) (cons (car rest) acc) done?)))))
 
+    ;;@doc (%member? x xs)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%assert-rectangular x-matrix who)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%assert-rectangular`.
+    ;;@example
+    ;; (%assert-rectangular 'x 'x)
     (defun %assert-rectangular (x-matrix who)
       (if (null? x-matrix)
           x-matrix
@@ -55,25 +85,55 @@
                 x-matrix
                 (error (string-append who ": expected rectangular design matrix"))))))
 
+    ;;@doc (%assert-length-match x-matrix y-vector who)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%assert-length-match`.
+    ;;@example
+    ;; (%assert-length-match 'x 'x 'x)
     (defun %assert-length-match (x-matrix y-vector who)
       (if (= (length x-matrix) (length y-vector))
           y-vector
           (error (string-append who ": expected matching X/Y lengths"))))
 
+    ;;@doc (%normalize-int v fallback)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%normalize-int`.
+    ;;@example
+    ;; (%normalize-int 1 'x)
     (defun %normalize-int (v fallback)
       (if (and (number? v) (> v 0))
           v
           fallback))
 
+    ;;@doc (%half-floor n)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%half-floor`.
+    ;;@example
+    ;; (%half-floor 1)
     (defun %half-floor (n)
       (/ (- n (modulo n 2)) 2))
 
+    ;;@doc (%clamp-int v lo hi)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%clamp-int`.
+    ;;@example
+    ;; (%clamp-int 1 'x 'x)
     (defun %clamp-int (v lo hi)
       (cond
         ((< v lo) lo)
         ((> v hi) hi)
         (else v)))
 
+    ;;@doc (%remove-at xs idx)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%remove-at`.
+    ;;@example
+    ;; (%remove-at '() 1)
     (defun %remove-at (xs idx)
       (let loop ((rest xs) (i 0) (acc '()))
         (if (null? rest)
@@ -82,17 +142,34 @@
                 (append (reverse acc) (cdr rest))
                 (loop (cdr rest) (+ i 1) (cons (car rest) acc))))))
 
+    ;;@doc (%map3 f xs ys zs)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%map3`.
+    ;;@example
+    ;; (%map3 (lambda (x) x) '() '() '())
     (defun %map3 (f xs ys zs)
       (if (or (null? xs) (null? ys) (null? zs))
           '()
           (cons (f (car xs) (car ys) (car zs))
                 (%map3 f (cdr xs) (cdr ys) (cdr zs)))))
 
+    ;;@doc (%lcg-next seed)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (%lcg-next 'x)
     ;; Park-Miller minimal standard LCG.
     (defun %lcg-next (seed)
       (let ((s (if (<= seed 0) 1 seed)))
         (modulo (* 48271 s) 2147483647)))
 
+    ;;@doc (%shuffle xs seed)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%shuffle`.
+    ;;@example
+    ;; (%shuffle '() 'x)
     (defun %shuffle (xs seed)
       (let loop ((pool xs) (s seed) (acc '()))
         (if (null? pool)
@@ -105,20 +182,73 @@
 
     ;; -- Row wrappers -----------------------------------------------------
 
+    ;;@doc (%make-row x y rid)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (%make-row 1 1 'x)
     ;; Encoded training row: (x-row y-value row-id)
     (defun %make-row (x y rid) (list x y rid))
+    ;;@doc (%row-x row)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%row-x`.
+    ;;@example
+    ;; (%row-x 'x)
     (defun %row-x (row) (car row))
+    ;;@doc (%row-y row)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%row-y`.
+    ;;@example
+    ;; (%row-y 'x)
     (defun %row-y (row) (cadr row))
+    ;;@doc (%row-id row)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%row-id`.
+    ;;@example
+    ;; (%row-id 'x)
     (defun %row-id (row) (caddr row))
+    ;;@doc (%feature-value row j)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%feature-value`.
+    ;;@example
+    ;; (%feature-value 'x 1)
     (defun %feature-value (row j) (list-ref (%row-x row) j))
 
+    ;;@doc (%rows-y rows)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%rows-y`.
+    ;;@example
+    ;; (%rows-y '())
     (defun %rows-y (rows) (map* %row-y rows))
+    ;;@doc (%mean-y rows)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%mean-y`.
+    ;;@example
+    ;; (%mean-y '())
     (defun %mean-y (rows)
       (if (null? rows) 0.0 (stats:mean (%rows-y rows))))
 
+    ;;@doc (%rows-sum rows)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%rows-sum`.
+    ;;@example
+    ;; (%rows-sum '())
     (defun %rows-sum (rows)
       (foldl (lambda (acc r) (+ acc (%row-y r))) 0.0 rows))
 
+    ;;@doc (%rows-sumsq rows)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%rows-sumsq`.
+    ;;@example
+    ;; (%rows-sumsq '())
     (defun %rows-sumsq (rows)
       (foldl (lambda (acc r)
                (let ((y (%row-y r)))
@@ -126,40 +256,123 @@
              0.0
              rows))
 
+    ;;@doc (%sse n sumy sumsq)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%sse`.
+    ;;@example
+    ;; (%sse 1 'x 'x)
     (defun %sse (n sumy sumsq)
       (if (<= n 0)
           0.0
           (- sumsq (/ (* sumy sumy) n))))
 
+    ;;@doc (%rows-sse rows)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%rows-sse`.
+    ;;@example
+    ;; (%rows-sse '())
     (defun %rows-sse (rows)
       (let ((n (length rows)))
         (%sse n (%rows-sum rows) (%rows-sumsq rows))))
 
     ;; -- Tree representation ----------------------------------------------
 
+    ;;@doc (%leaf-node leaf-id prediction members)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (%leaf-node 'x 'x 'x)
     ;; Leaf node:  (leaf id prediction members)
     ;; Split node: (split feature threshold left right)
     (defun %leaf-node (leaf-id prediction members)
       (list 'leaf leaf-id prediction members))
 
+    ;;@doc (%split-node feature threshold left right)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%split-node`.
+    ;;@example
+    ;; (%split-node 'x 'x 'x 'x)
     (defun %split-node (feature threshold left right)
       (list 'split feature threshold left right))
 
+    ;;@doc (%leaf? node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Return whether `%leaf?` holds.
+    ;;@example
+    ;; (%leaf? 'x)
     (defun %leaf? (node)
       (and (pair? node) (eq? (car node) 'leaf)))
 
+    ;;@doc (%split? node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Return whether `%split?` holds.
+    ;;@example
+    ;; (%split? 'x)
     (defun %split? (node)
       (and (pair? node) (eq? (car node) 'split)))
 
+    ;;@doc (%leaf-id node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%leaf-id`.
+    ;;@example
+    ;; (%leaf-id 'x)
     (defun %leaf-id (node) (cadr node))
+    ;;@doc (%leaf-prediction node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%leaf-prediction`.
+    ;;@example
+    ;; (%leaf-prediction 'x)
     (defun %leaf-prediction (node) (caddr node))
+    ;;@doc (%leaf-members-raw node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%leaf-members-raw`.
+    ;;@example
+    ;; (%leaf-members-raw 'x)
     (defun %leaf-members-raw (node) (list-ref node 3))
 
+    ;;@doc (%split-feature node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%split-feature`.
+    ;;@example
+    ;; (%split-feature 'x)
     (defun %split-feature (node) (cadr node))
+    ;;@doc (%split-threshold node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%split-threshold`.
+    ;;@example
+    ;; (%split-threshold 'x)
     (defun %split-threshold (node) (caddr node))
+    ;;@doc (%split-left node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%split-left`.
+    ;;@example
+    ;; (%split-left 'x)
     (defun %split-left (node) (list-ref node 3))
+    ;;@doc (%split-right node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%split-right`.
+    ;;@example
+    ;; (%split-right 'x)
     (defun %split-right (node) (list-ref node 4))
 
+    ;;@doc (%make-leaf-from-rows rows next-id seed)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Construct `%make-leaf-from-rows`.
+    ;;@example
+    ;; (%make-leaf-from-rows '() 'x 'x)
     (defun %make-leaf-from-rows (rows next-id seed)
       (let ((prediction (%mean-y rows))
             (members (map* %row-id rows)))
@@ -169,9 +382,21 @@
 
     ;; -- Split search -----------------------------------------------------
 
+    ;;@doc (%feature-list p)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%feature-list`.
+    ;;@example
+    ;; (%feature-list 'x)
     (defun %feature-list (p)
       (range 0 p))
 
+    ;;@doc (%choose-features p mtry seed)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%choose-features`.
+    ;;@example
+    ;; (%choose-features 'x 'x 'x)
     (defun %choose-features (p mtry seed)
       (let ((all (%feature-list p)))
         (if (or (<= mtry 0) (>= mtry p))
@@ -181,6 +406,11 @@
                    (seed2 (cdr shuffle+seed)))
               (cons (take mtry shuffled) seed2)))))
 
+    ;;@doc (%best-split-feature rows feature min-leaf)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (%best-split-feature '() 'x 'x)
     ;; Returns #f or (gain feature threshold).
     (defun %best-split-feature (rows feature min-leaf)
       (let* ((sorted (sort (lambda (a b)
@@ -233,6 +463,12 @@
                                      best)))
                           (loop (cdr rest) ln ls lss best2)))))))))
 
+    ;;@doc (%best-split rows features min-leaf)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%best-split`.
+    ;;@example
+    ;; (%best-split '() 'x 'x)
     (defun %best-split (rows features min-leaf)
       (let loop ((fs features) (best #f))
         (if (null? fs)
@@ -246,6 +482,11 @@
                          best)))
               (loop (cdr fs) best2)))))
 
+    ;;@doc (%partition-rows rows feature threshold)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (%partition-rows '() 'x 'x)
     ;; Returns (left . right).
     (defun %partition-rows (rows feature threshold)
       (let loop ((rest rows) (left '()) (right '()))
@@ -258,6 +499,11 @@
 
     ;; -- Tree growth ------------------------------------------------------
 
+    ;;@doc (%build-tree rows depth min-leaf max-depth mtry p seed next-id)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (%build-tree '() 'x 'x 'x 'x 'x 'x 'x)
     ;; Returns (node next-seed next-leaf-id).
     (defun %build-tree (rows depth min-leaf max-depth mtry p seed next-id)
       (let ((n (length rows)))
@@ -310,6 +556,12 @@
 
     ;; -- Honest leaf estimation ------------------------------------------
 
+    ;;@doc (%leaf-id-for-row node row)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%leaf-id-for-row`.
+    ;;@example
+    ;; (%leaf-id-for-row 'x 'x)
     (defun %leaf-id-for-row (node row)
       (if (%leaf? node)
           (%leaf-id node)
@@ -318,6 +570,11 @@
               (%leaf-id-for-row (%split-left node) row)
               (%leaf-id-for-row (%split-right node) row))))
 
+    ;;@doc (%accum-add acc leaf-id y rid)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (%accum-add 'x 'x 1 'x)
     ;; Estimation accumulator entry: (sum count members-rev)
     (defun %accum-add (acc leaf-id y rid)
       (let ((entry (assq leaf-id acc)))
@@ -329,6 +586,12 @@
               (%assoc-set acc leaf-id (list sumy count members)))
             (cons (cons leaf-id (list y 1 (list rid))) acc))))
 
+    ;;@doc (%build-estimation-acc tree est-rows)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%build-estimation-acc`.
+    ;;@example
+    ;; (%build-estimation-acc 'x 'x)
     (defun %build-estimation-acc (tree est-rows)
       (foldl (lambda (acc row)
                (let ((leaf-id (%leaf-id-for-row tree (%row-x row))))
@@ -336,6 +599,12 @@
              '()
              est-rows))
 
+    ;;@doc (%apply-honest-estimates node acc)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%apply-honest-estimates`.
+    ;;@example
+    ;; (%apply-honest-estimates 'x 'x)
     (defun %apply-honest-estimates (node acc)
       (if (%leaf? node)
           (let* ((leaf-id (%leaf-id node))
@@ -356,6 +625,12 @@
 
     ;; -- Tree summaries ---------------------------------------------------
 
+    ;;@doc (%leaf-record leaf-id prediction members)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%leaf-record`.
+    ;;@example
+    ;; (%leaf-record 'x 'x 'x)
     (defun %leaf-record (leaf-id prediction members)
       (list
         (cons 'id leaf-id)
@@ -363,6 +638,12 @@
         (cons 'members members)
         (cons 'size (length members))))
 
+    ;;@doc (%collect-leaves node)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%collect-leaves`.
+    ;;@example
+    ;; (%collect-leaves 'x)
     (defun %collect-leaves (node)
       (if (%leaf? node)
           (list (%leaf-record (%leaf-id node)
@@ -371,19 +652,43 @@
           (append (%collect-leaves (%split-left node))
                   (%collect-leaves (%split-right node)))))
 
+    ;;@doc (%zeros n)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%zeros`.
+    ;;@example
+    ;; (%zeros 1)
     (defun %zeros (n)
       (if (<= n 0)
           '()
           (cons 0 (%zeros (- n 1)))))
 
+    ;;@doc (%counts-add-feature counts feature)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%counts-add-feature`.
+    ;;@example
+    ;; (%counts-add-feature 'x 'x)
     (defun %counts-add-feature (counts feature)
       (map-indexed (lambda (j c)
                      (if (= j feature) (+ c 1) c))
                    counts))
 
+    ;;@doc (%counts-merge a b)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%counts-merge`.
+    ;;@example
+    ;; (%counts-merge 1 1)
     (defun %counts-merge (a b)
       (map2 (lambda (x y) (+ x y)) a b))
 
+    ;;@doc (%split-counts node p)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%split-counts`.
+    ;;@example
+    ;; (%split-counts 'x 'x)
     (defun %split-counts (node p)
       (if (%leaf? node)
           (%zeros p)
@@ -394,6 +699,12 @@
 
     ;; -- Model access -----------------------------------------------------
 
+    ;;@doc (%model-ref model key who)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%model-ref`.
+    ;;@example
+    ;; (%model-ref 'x 'x 'x)
     (defun %model-ref (model key who)
       (let ((entry (assq key model)))
         (if entry
@@ -401,6 +712,12 @@
             (error (string-append who ": invalid tree model; missing key")
                    key))))
 
+    ;;@doc (%predict-row node row)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;; Compute `%predict-row`.
+    ;;@example
+    ;; (%predict-row 'x 'x)
     (defun %predict-row (node row)
       (if (%leaf? node)
           (%leaf-prediction node)
@@ -411,9 +728,14 @@
 
     ;; -- Public API -------------------------------------------------------
 
+    ;;@doc (tree:fit x-matrix y-vector . opts)
+    ;;@category Ml
+    ;;@module std.ml.tree
     ;; (tree:fit X y 'min-leaf 5 'max-depth 8 'honest? #t 'mtry 3 'seed 42)
     ;; Optional:
     ;;   'row-ids <list>  ; explicit member ids stored in leaves.
+    ;;@example
+    ;; (tree:fit 'x 'x '())
     (defun tree:fit (x-matrix y-vector . opts)
       (let* ((who "tree:fit")
              (_xok (%assert-rectangular x-matrix who))
@@ -485,15 +807,30 @@
                 (cons 'seed seed2)
                 (cons 'options opt-map))))))
 
+    ;;@doc (tree:predict model x-matrix)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (tree:predict 'x 'x)
     ;; Predict for each row in X.
     (defun tree:predict (model x-matrix)
       (let ((root (%model-ref model 'root "tree:predict")))
         (map* (lambda (row) (%predict-row root row)) x-matrix)))
 
+    ;;@doc (tree:leaf-membership model row)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (tree:leaf-membership 'x 'x)
     ;; Return a stable leaf-id for one row.
     (defun tree:leaf-membership (model row)
       (%leaf-id-for-row (%model-ref model 'root "tree:leaf-membership") row))
 
+    ;;@doc (tree:leaves model)
+    ;;@category Ml
+    ;;@module std.ml.tree
+    ;;@example
+    ;; (tree:leaves 'x)
     ;; Returns list of leaf records:
     ;;   ((id . k) (prediction . mu) (members . (i ...)) (size . n))
     (defun tree:leaves (model)

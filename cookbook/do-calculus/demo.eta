@@ -15,6 +15,12 @@
   (import std.clp)
   (begin
 
+    ;;@doc (win)
+    ;;@category Do Calculus
+    ;;@module demo
+    ;; Interactive do-calculus identification demo Uses `win`.
+    ;;@example
+    ;; (display win)
     (define win (eq? (platform) 'Win32))
 
     (println (if win "==========================================================" "══════════════════════════════════════════════════════════"))

@@ -50,6 +50,11 @@
     clp:sat? clp:taut?)
   (begin
 
+    ;;@doc (%clpb-prop-attach! v thunk)
+    ;;@category Clpb
+    ;;@module std.clpb
+    ;;@example
+    ;; (%clpb-prop-attach! 1 (lambda (x) x))
     ;;  Internal: same semantics as std.clp's %clp-prop-attach! 
     ;; Duplicated (rather than exported from std.clp) to keep the phase
     ;; boundary clean: CLP(B) is a self-contained module that only needs
@@ -64,6 +69,12 @@
 
     ;;  Domain 
 
+    ;;@doc (clp:boolean v)
+    ;;@category Clpb
+    ;;@module std.clpb
+    ;; CLP(B) Boolean constraint solver Uses `clp:boolean`.
+    ;;@example
+    ;; (clp:boolean 1)
     (defun clp:boolean (v) (%clp-domain-z! v 0 1))
 
     ;;  Ternary constraints 
@@ -71,10 +82,21 @@
     ;; The binary posters share one template; syntax-rules keeps generated
     ;; call sites direct and avoids value-level dispatch.
 
+    ;;@doc (%clpb-define-binop)
+    ;;@category Clpb
+    ;;@module std.clpb
+    ;;@example
+    ;; (%clpb-define-binop)
     ;; Generate repeated poster wrappers while keeping direct prim call sites.
     (define-syntax %clpb-define-binop
       (syntax-rules ()
         ((_ name prim)
+         ;;@doc (name z x y)
+         ;;@category Clpb
+         ;;@module std.clpb
+         ;; Compute `name`.
+         ;;@example
+         ;; (name 1 1 1)
          (defun name (z x y)
            (and (prim z x y)
                 (let ((thunk (lambda () (prim z x y))))
@@ -91,6 +113,12 @@
 
     ;;  Unary (well, binary: z = x) 
 
+    ;;@doc (clp:not z x)
+    ;;@category Clpb
+    ;;@module std.clpb
+    ;; Compute `clp:not`.
+    ;;@example
+    ;; (clp:not 1 1)
     (defun clp:not (z x)
       (and (%clp-bool-not! z x)
            (let ((thunk (lambda () (%clp-bool-not! z x))))
@@ -100,6 +128,12 @@
 
     ;;  Cardinality: k-lo   xs  k-hi 
 
+    ;;@doc (clp:card xs k-lo k-hi)
+    ;;@category Clpb
+    ;;@module std.clpb
+    ;; Compute `clp:card`.
+    ;;@example
+    ;; (clp:card '() 'x 'x)
     (defun clp:card (xs k-lo k-hi)
       (and (%clp-bool-card! xs k-lo k-hi)
            (let ((thunk (lambda () (%clp-bool-card! xs k-lo k-hi))))
@@ -117,8 +151,19 @@
     ;; (`clp:domain-values` on Z  (0 1)).  `clp:labeling-b` is a thin
     ;; specialisation that makes the intent explicit.
 
+    ;;@doc (clp:labeling-b vars)
+    ;;@category Clpb
+    ;;@module std.clpb
+    ;; Compute `clp:labeling-b`.
+    ;;@example
+    ;; (clp:labeling-b 'x)
     (defun clp:labeling-b (vars) (clp:labeling vars))
 
+    ;;@doc (clp:sat? vars)
+    ;;@category Clpb
+    ;;@module std.clpb
+    ;;@example
+    ;; (clp:sat? 'x)
     ;; `clp:sat?`  is there any satisfying assignment?  Does NOT leave
     ;; the vars bound: if a solution is found, the trail is unwound so
     ;; the user can continue posting constraints / asking further
@@ -129,6 +174,11 @@
           (unwind-trail m)
           (if r #t #f))))
 
+    ;;@doc (clp:taut? vars)
+    ;;@category Clpb
+    ;;@module std.clpb
+    ;;@example
+    ;; (clp:taut? 'x)
     ;; `clp:taut?`  true iff NO assignment satisfies the posted
     ;; constraints (over `vars`).  Think of it as "is the current
     ;; constraint set a contradiction on `vars`?".  For tautology

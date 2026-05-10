@@ -4,9 +4,27 @@
   (import std.test std.logic std.core)
   (begin
 
+    ;;@doc (payload-tag p)
+    ;;@category Tests
+    ;;@module clp-linearize-smoke
+    ;; Smoke tests for %clp-linearize Uses `payload-tag`.
+    ;;@example
+    ;; (payload-tag p)
     (defun payload-tag (p) (car (cdr p)))
+    ;;@doc (payload-msg p)
+    ;;@category Tests
+    ;;@module clp-linearize-smoke
+    ;; Compute `payload-msg`.
+    ;;@example
+    ;; (payload-msg 'x)
     (defun payload-msg (p) (car (cdr (cdr p))))
 
+    ;;@doc (starts-with? s pfx)
+    ;;@category Tests
+    ;;@module clp-linearize-smoke
+    ;; Return whether `starts-with?` holds.
+    ;;@example
+    ;; (starts-with? "sample" 'x)
     (defun starts-with? (s pfx)
       (let ((ns (string-length s))
             (np (string-length pfx)))
@@ -20,11 +38,22 @@
                                      #f)))))
               (loop 0)))))
 
+    ;;@doc (lvar-id v)
+    ;;@category Tests
+    ;;@module clp-linearize-smoke
+    ;;@example
+    ;; (lvar-id 1)
     ;; Extract a logic variable id through the linearizer result shape:
     ;; (%clp-linearize x) => (((1.0 . id)) . 0.0)
     (defun lvar-id (v)
       (cdr (car (car (%clp-linearize v)))))
 
+    ;;@doc (coef-of pairs vid)
+    ;;@category Tests
+    ;;@module clp-linearize-smoke
+    ;; Compute `coef-of`.
+    ;;@example
+    ;; (coef-of '() 'x)
     (defun coef-of (pairs vid)
       (if (null? pairs)
           0.0
@@ -33,6 +62,12 @@
                 (car p)
                 (coef-of (cdr pairs) vid)))))
 
+    ;;@doc (deep-sum n leaf)
+    ;;@category Tests
+    ;;@module clp-linearize-smoke
+    ;; Compute `deep-sum`.
+    ;;@example
+    ;; (deep-sum 1 'x)
     (defun deep-sum (n leaf)
       (if (= n 0)
           leaf

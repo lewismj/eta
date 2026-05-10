@@ -4,6 +4,12 @@
   (import std.test std.os std.fs)
   (begin
 
+    ;;@doc (env-name)
+    ;;@category Tests
+    ;;@module os-fs.tests
+    ;; Unit tests for std.os and std.fs Uses `env-name`.
+    ;;@example
+    ;; (display env-name)
     (define env-name "ETA_STDLIB_OS_FS_TEST_VAR")
 
     (define suite

@@ -11,12 +11,22 @@
 (module monte-carlo-worker
   (begin
 
+    ;;@doc (lcg-next state)
+    ;;@category Concurrency
+    ;;@module monte-carlo-worker
     ;; ── LCG pseudo-random number generator ───────────────────────────
     ;; Returns (value . next-state) where value ∈ [0.0, 1.0)
+    ;;@example
+    ;; (lcg-next '())
     (defun lcg-next (state)
       (let ((next (modulo (+ (* 1664525 state) 1013904223) 4294967296)))
         (cons (/ (* 1.0 next) 4294967296.0) next)))
 
+    ;;@doc (estimate-pi seed n-samples)
+    ;;@category Concurrency
+    ;;@module monte-carlo-worker
+    ;;@example
+    ;; (estimate-pi 'x 'x)
     ;; ── Monte Carlo π estimator ───────────────────────────────────────
     ;; Count how many random (x,y) points fall inside the unit circle.
     ;; Returns 4 * (inside / total) as the π estimate.

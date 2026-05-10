@@ -4,12 +4,24 @@
   (import std.test std.regex std.collections std.core)
   (begin
 
+    ;;@doc (ascii-upcase-char c)
+    ;;@category Tests
+    ;;@module regex.tests
+    ;; Tests for std.regex wrappers Uses `ascii-upcase-char`.
+    ;;@example
+    ;; (ascii-upcase-char (string-ref s i)
     (defun ascii-upcase-char (c)
       (let ((n (char->integer c)))
         (if (and (>= n 97) (<= n 122))
             (integer->char (- n 32))
             c)))
 
+    ;;@doc (ascii-upcase s)
+    ;;@category Tests
+    ;;@module regex.tests
+    ;; Compute `ascii-upcase`.
+    ;;@example
+    ;; (ascii-upcase "sample")
     (defun ascii-upcase (s)
       (let ((p (open-output-string))
             (n (string-length s)))
@@ -21,6 +33,12 @@
                                (loop (+ i 1)))))))
           (loop 0))))
 
+    ;;@doc (repeat-char ch count)
+    ;;@category Tests
+    ;;@module regex.tests
+    ;; Compute `repeat-char`.
+    ;;@example
+    ;; (repeat-char 'x 1)
     (defun repeat-char (ch count)
       (let ((p (open-output-string)))
         (letrec ((loop (lambda (i)
@@ -31,6 +49,12 @@
                                (loop (+ i 1)))))))
           (loop 0))))
 
+    ;;@doc (repeat-string piece count)
+    ;;@category Tests
+    ;;@module regex.tests
+    ;; Compute `repeat-string`.
+    ;;@example
+    ;; (repeat-string 'x 1)
     (defun repeat-string (piece count)
       (let ((p (open-output-string)))
         (letrec ((loop (lambda (i)

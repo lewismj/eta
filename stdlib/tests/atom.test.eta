@@ -4,6 +4,12 @@
   (import std.test std.atom)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module atom.tests
+    ;; Tests for std.atom wrappers and aliases Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "atom"
         (list

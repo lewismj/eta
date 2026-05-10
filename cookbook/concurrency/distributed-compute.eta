@@ -16,6 +16,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (endpoint)
+    ;;@category Concurrency
+    ;;@module distributed-compute
+    ;; Cross-machine message passing Uses `endpoint`.
+    ;;@example
+    ;; (display endpoint)
     (define endpoint "tcp://127.0.0.1:6000")
 
     ;; ── Spawn server child ────────────────────────────────────────────

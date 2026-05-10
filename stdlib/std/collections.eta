@@ -32,13 +32,23 @@
 
     ;;  List higher-order 
 
+    ;;@doc (map* f xs)
+    ;;@category Collections
+    ;;@module std.collections
     ;; Closure-compatible map (the builtin only works with primitives).
+    ;;@example
+    ;; (map* (lambda (x) x) '())
     (defun map* (f xs)
       (let loop ((rest xs) (acc '()))
         (if (null? rest)
             (reverse acc)
             (loop (cdr rest) (cons (f (car rest)) acc)))))
 
+    ;;@doc (map2 f xs ys)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (map2 (lambda (x) x) '() '())
     ;; Closure-compatible map across two lists.
     ;; Stops at the shorter input length.
     (defun map2 (f xs ys)
@@ -49,10 +59,20 @@
                   (cdr ys)
                   (cons (f (car xs) (car ys)) acc)))))
 
+    ;;@doc (zip-with f xs ys)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (zip-with (lambda (x) x) '() '())
     ;; Alias for map2; mirrors "zipWith"-style APIs.
     (defun zip-with (f xs ys)
       (map2 f xs ys))
 
+    ;;@doc (map-indexed f xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (map-indexed (lambda (x) x) '())
     ;; Map with zero-based index.
     (defun map-indexed (f xs)
       (let loop ((i 0) (rest xs) (acc '()))
@@ -62,6 +82,11 @@
                   (cdr rest)
                   (cons (f i (car rest)) acc)))))
 
+    ;;@doc (filter pred xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (filter (lambda (x) x) '())
     ;; Keep elements where (pred x) is truthy.
     (defun filter (pred xs)
       (let loop ((rest xs) (acc '()))
@@ -72,24 +97,44 @@
           (else
            (loop (cdr rest) acc)))))
 
+    ;;@doc (foldl f acc xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (foldl (lambda (x) x) 'x '())
     ;; Left fold: (foldl f init '(a b c)) = (f (f (f init a) b) c)
     (defun foldl (f acc xs)
       (if (null? xs)
           acc
           (foldl f (f acc (car xs)) (cdr xs))))
 
+    ;;@doc (foldr f init xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (foldr (lambda (x) x) 'x '())
     ;; Right fold: (foldr f init '(a b c)) = (f a (f b (f c init)))
     (defun foldr (f init xs)
       (if (null? xs)
           init
           (f (car xs) (foldr f init (cdr xs)))))
 
+    ;;@doc (reduce f xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (reduce (lambda (x) x) '())
     ;; Fold using the first element as the initial accumulator.
     (defun reduce (f xs)
       (if (null? xs)
           (error "reduce: empty list")
           (foldl f (car xs) (cdr xs))))
 
+    ;;@doc (any? pred xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (any? (lambda (x) x) '())
     ;; True if (pred x) is truthy for at least one element.
     (defun any? (pred xs)
       (cond
@@ -97,6 +142,11 @@
         ((pred (car xs)) #t)
         (else (any? pred (cdr xs)))))
 
+    ;;@doc (every? pred xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (every? (lambda (x) x) '())
     ;; True if (pred x) is truthy for every element.
     (defun every? (pred xs)
       (cond
@@ -104,14 +154,29 @@
         ((not (pred (car xs))) #f)
         (else (every? pred (cdr xs)))))
 
+    ;;@doc (count pred xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (count (lambda (x) x) '())
     ;; Count elements satisfying pred.
     (defun count (pred xs)
       (foldl (lambda (acc x) (if (pred x) (+ acc 1) acc)) 0 xs))
 
+    ;;@doc (sum-by f xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (sum-by (lambda (x) x) '())
     ;; Sum transformed elements.
     (defun sum-by (f xs)
       (foldl (lambda (acc x) (+ acc (f x))) 0 xs))
 
+    ;;@doc (join-with parts sep)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (join-with 'x 'x)
     ;; Join a list of strings with a separator.
     (defun join-with (parts sep)
       (if (null? parts)
@@ -122,6 +187,11 @@
                 (loop (cdr rest)
                       (string-append acc sep (car rest)))))))
 
+    ;;@doc (zip xs ys)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (zip '() '())
     ;; Zip two lists into a list of pairs.
     (defun zip (xs ys)
       (let loop ((xs xs) (ys ys) (acc '()))
@@ -131,6 +201,11 @@
                   (cdr ys)
                   (cons (cons (car xs) (car ys)) acc)))))
 
+    ;;@doc (pairwise xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (pairwise '())
     ;; Adjacent element pairs: '(a b c d) -> ((a . b) (b . c) (c . d))
     (defun pairwise (xs)
       (let loop ((rest xs) (acc '()))
@@ -139,6 +214,11 @@
             (loop (cdr rest)
                   (cons (cons (car rest) (car (cdr rest))) acc)))))
 
+    ;;@doc (take n xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (take 1 '())
     ;; First n elements.
     (defun take (n xs)
       (let loop ((n n) (rest xs) (acc '()))
@@ -146,12 +226,22 @@
             (reverse acc)
             (loop (- n 1) (cdr rest) (cons (car rest) acc)))))
 
+    ;;@doc (drop n xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (drop 1 '())
     ;; Drop first n elements.
     (defun drop (n xs)
       (if (or (= n 0) (null? xs))
           xs
           (drop (- n 1) (cdr xs))))
 
+    ;;@doc (flatten xss)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (flatten 'x)
     ;; Flatten one level of nesting.
     (defun flatten (xss)
       (let outer ((rest xss) (acc '()))
@@ -162,6 +252,11 @@
                   (outer (cdr rest) acc2)
                   (inner (cdr ys) (cons (car ys) acc2)))))))
 
+    ;;@doc (range start end)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (range 'x 'x)
     ;; Generate '(start start+1 ... end-1).
     (defun range (start end)
       (let loop ((i start) (acc '()))
@@ -171,6 +266,11 @@
 
     ;;  Sorting 
 
+    ;;@doc (sort less? xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (sort #t '())
     ;; Merge sort (stable, O(n log n)).
     (defun sort (less? xs)
       (letrec
@@ -202,6 +302,11 @@
 
     ;;  Vector operations 
 
+    ;;@doc (vector-map f v)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (vector-map (lambda (x) x) 1)
     ;; Apply f to each element, returning a new vector.
     (defun vector-map (f v)
       (let ((n (vector-length v)))
@@ -212,6 +317,11 @@
               (loop (+ i 1))))
           out)))
 
+    ;;@doc (vector-for-each f v)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (vector-for-each (lambda (x) x) 1)
     ;; Apply f to each element for side effects.
     (defun vector-for-each (f v)
       (let ((n (vector-length v)))
@@ -220,6 +330,11 @@
             (f (vector-ref v i))
             (loop (+ i 1))))))
 
+    ;;@doc (vector-foldl f acc v)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (vector-foldl (lambda (x) x) 'x 1)
     ;; Left fold over a vector.
     (defun vector-foldl (f acc v)
       (let ((n (vector-length v)))
@@ -228,6 +343,11 @@
               a
               (loop (+ i 1) (f a (vector-ref v i)))))))
 
+    ;;@doc (vector-foldr f init v)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (vector-foldr (lambda (x) x) 'x 1)
     ;; Right fold over a vector.
     (defun vector-foldr (f init v)
       (let ((n (vector-length v)))
@@ -236,10 +356,20 @@
               a
               (loop (- i 1) (f (vector-ref v i) a))))))
 
+    ;;@doc (vector->list v)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (vector->list 1)
     ;; Convert a vector to a list.
     (defun vector->list (v)
       (vector-foldr cons '() v))
 
+    ;;@doc (list->vector xs)
+    ;;@category Collections
+    ;;@module std.collections
+    ;;@example
+    ;; (list->vector '())
     ;; Convert a list to a vector.
     (defun list->vector (xs)
       (let ((n (length xs)))

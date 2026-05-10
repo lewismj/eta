@@ -22,6 +22,12 @@
         (usd-10y -0.01 0.01)
         (eur-usd -0.15 0.15)))
 
+    ;;@doc (ml-trace->fact-table trace)
+    ;;@category Xva Wwr
+    ;;@module main
+    ;; Compute `ml-trace->fact-table`.
+    ;;@example
+    ;; (ml-trace->fact-table 'x)
     (defun ml-trace->fact-table (trace)
       (let ((ft (make-fact-table 'epoch 'loss)))
         (for-each
@@ -32,6 +38,12 @@
           trace)
         ft))
 
+    ;;@doc (print-ml-trace-table trace)
+    ;;@category Xva Wwr
+    ;;@module main
+    ;; Print output with `print-ml-trace-table`.
+    ;;@example
+    ;; (print-ml-trace-table 'x)
     (defun print-ml-trace-table (trace)
       (let ((ft (ml-trace->fact-table trace)))
         (println "ml-training-loop:")
@@ -43,6 +55,12 @@
                 (cons 'epoch (fact-table-ref ft row-idx 0))
                 (cons 'loss (fact-table-ref ft row-idx 1))))))))
 
+    ;;@doc (print-stage-report artifact)
+    ;;@category Xva Wwr
+    ;;@module main
+    ;; Print output with `print-stage-report`.
+    ;;@example
+    ;; (print-stage-report 'x)
     (defun print-stage-report (artifact)
       (let ((stages (assoc-ref 'stage-report artifact)))
         (for-each
@@ -57,8 +75,13 @@
         (println "")
         (print-ml-trace-table (assoc-ref 'training-trace artifact))))
 
+    ;;@doc (run-demo ...)
+    ;;@category Xva Wwr
+    ;;@module main
     ;; Returns a structured summary without side effects so tests can
     ;; load this file safely in both interpreted and compiled modes.
+    ;;@example
+    ;; (run-demo)
     (defun run-demo ()
       (let* ((trades (make-book))
              (panel (generate-shock-panel 500 0.05 20260427))
@@ -142,6 +165,11 @@
           (cons 'hedge hedge)
           (cons 'shard-check shard-check))))
 
+    ;;@doc (main)
+    ;;@category Xva Wwr
+    ;;@module main
+    ;;@example
+    ;; (main)
     ;; Optional CLI hook: etai auto-invokes (defun main ...).
     (defun main ()
       (let ((out (run-demo)))

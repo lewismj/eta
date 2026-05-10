@@ -7,16 +7,31 @@
   (import std.math)
   (begin
 
+    ;;@doc (sq x)
+    ;;@category Basics
+    ;;@module functions
     ;; ── Named functions with defun ──────────────────────────────────
+    ;;@example
+    ;; (sq 1)
     (defun sq (x) (* x x))
     (println (sq 7))         ; => 49
 
+    ;;@doc (factorial n)
+    ;;@category Basics
+    ;;@module functions
+    ;;@example
+    ;; (factorial 1)
     ;; ── Recursive functions ─────────────────────────────────────────
     (defun factorial (n)
       (if (= n 0) 1
           (* n (factorial (- n 1)))))
     (println (factorial 10))     ; => 3628800
 
+    ;;@doc (factorial-tr n)
+    ;;@category Basics
+    ;;@module functions
+    ;;@example
+    ;; (factorial-tr 1)
     ;; ── Tail-recursive with accumulator ─────────────────────────────
     (defun factorial-tr (n)
       (letrec ((go (lambda (n acc)
@@ -29,6 +44,11 @@
     (define double (lambda (x) (* 2 x)))
     (println (double 21))        ; => 42
 
+    ;;@doc (make-adder n)
+    ;;@category Basics
+    ;;@module functions
+    ;;@example
+    ;; (make-adder 1)
     ;; ── Closures capture their environment ──────────────────────────
     (defun make-adder (n)
       (lambda (x) (+ n x)))
@@ -38,6 +58,11 @@
     (println (add5 3))           ; => 8
     (println (add10 3))          ; => 13
 
+    ;;@doc (sum-all first . rest)
+    ;;@category Basics
+    ;;@module functions
+    ;;@example
+    ;; (sum-all 'x '())
     ;; ── Variadic functions (rest args) ──────────────────────────────
     (defun sum-all (first . rest)
       (letrec ((go (lambda (xs acc)

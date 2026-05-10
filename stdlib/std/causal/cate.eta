@@ -28,12 +28,24 @@
 
     ;; -- Core helpers -----------------------------------------------------
 
+    ;;@doc (%obs-get obs var)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%obs-get`.
+    ;;@example
+    ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
       (let ((p (assq var obs)))
         (if p
             (cdr p)
             (error 'unknown-variable var))))
 
+    ;;@doc (%as-binary v x-name)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%as-binary`.
+    ;;@example
+    ;; (%as-binary 1 'x)
     (defun %as-binary (v x-name)
       (cond
         ((equal? v 1) 1.0)
@@ -42,6 +54,12 @@
         ((eq? v #f) 0.0)
         (else (error 'non-binary-treatment x-name v))))
 
+    ;;@doc (%clip-prob p)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%clip-prob`.
+    ;;@example
+    ;; (%clip-prob 'x)
     (defun %clip-prob (p)
       (let ((eps 1e-6))
         (cond
@@ -49,6 +67,12 @@
           ((> p (- 1.0 eps)) (- 1.0 eps))
           (else p))))
 
+    ;;@doc (%opts->alist opts who)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%opts->alist`.
+    ;;@example
+    ;; (%opts->alist 'x 'x)
     (defun %opts->alist (opts who)
       (let loop ((xs opts) (acc '()))
         (cond
@@ -59,10 +83,22 @@
            (loop (cdr (cdr xs))
                  (cons (cons (car xs) (cadr xs)) acc))))))
 
+    ;;@doc (%opt-ref opts key default)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%opt-ref`.
+    ;;@example
+    ;; (%opt-ref 'x 'x 'x)
     (defun %opt-ref (opts key default)
       (let ((entry (assq key opts)))
         (if entry (cdr entry) default)))
 
+    ;;@doc (%learner-ref spec key who)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%learner-ref`.
+    ;;@example
+    ;; (%learner-ref 'x 'x 'x)
     (defun %learner-ref (spec key who)
       (let ((entry (assq key spec)))
         (if entry
@@ -70,46 +106,106 @@
             (error (string-append who ": learner-spec is missing required key")
                    key))))
 
+    ;;@doc (%learner-kind spec)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%learner-kind`.
+    ;;@example
+    ;; (%learner-kind 'x)
     (defun %learner-kind (spec)
       (let ((entry (assq 'kind spec)))
         (if entry (cdr entry) #f)))
 
+    ;;@doc (%fit-regressor spec x-matrix y-vector who)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%fit-regressor`.
+    ;;@example
+    ;; (%fit-regressor 'x 'x 'x 'x)
     (defun %fit-regressor (spec x-matrix y-vector who)
       (let ((kind (%learner-kind spec)))
         (if (and kind (not (eq? kind 'regressor)))
             (error (string-append who ": expected learner-spec kind=regressor"))
             ((%learner-ref spec 'fit who) x-matrix y-vector))))
 
+    ;;@doc (%fit-classifier spec x-matrix y-vector who)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%fit-classifier`.
+    ;;@example
+    ;; (%fit-classifier 'x 'x 'x 'x)
     (defun %fit-classifier (spec x-matrix y-vector who)
       (let ((kind (%learner-kind spec)))
         (if (and kind (not (eq? kind 'classifier)))
             (error (string-append who ": expected learner-spec kind=classifier"))
             ((%learner-ref spec 'fit who) x-matrix y-vector))))
 
+    ;;@doc (%fit-regressor-weighted spec x-matrix y-vector w-vector who)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%fit-regressor-weighted`.
+    ;;@example
+    ;; (%fit-regressor-weighted 'x 'x 'x 'x 'x)
     (defun %fit-regressor-weighted (spec x-matrix y-vector w-vector who)
       (let ((entry (assq 'fit-weighted spec)))
         (if entry
             ((cdr entry) x-matrix y-vector w-vector)
             (%fit-regressor spec x-matrix y-vector who))))
 
+    ;;@doc (%predict spec model x-matrix who)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%predict`.
+    ;;@example
+    ;; (%predict 'x 'x 'x 'x)
     (defun %predict (spec model x-matrix who)
       ((%learner-ref spec 'predict who) model x-matrix))
 
+    ;;@doc (%predict-one spec model row who)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%predict-one`.
+    ;;@example
+    ;; (%predict-one 'x 'x 'x 'x)
     (defun %predict-one (spec model row who)
       (let ((yh (%predict spec model (list row) who)))
         (if (null? yh)
             0.0
             (car yh))))
 
+    ;;@doc (%design data cols)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%design`.
+    ;;@example
+    ;; (%design 'x '())
     (defun %design (data cols)
       (causal:design-matrix data cols))
 
+    ;;@doc (%response data y)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%response`.
+    ;;@example
+    ;; (%response 'x 1)
     (defun %response (data y)
       (causal:response-vector data y))
 
+    ;;@doc (%row obs cols)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%row`.
+    ;;@example
+    ;; (%row 'x '())
     (defun %row (obs cols)
       (map* (lambda (col) (%obs-get obs col)) cols))
 
+    ;;@doc (%row-with-treatment obs cols x xval)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%row-with-treatment`.
+    ;;@example
+    ;; (%row-with-treatment 'x '() 1 'x)
     (defun %row-with-treatment (obs cols x xval)
       (map* (lambda (col)
               (if (eq? col x)
@@ -117,29 +213,59 @@
                   (%obs-get obs col)))
             cols))
 
+    ;;@doc (%map3 f xs ys zs)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%map3`.
+    ;;@example
+    ;; (%map3 (lambda (x) x) '() '() '())
     (defun %map3 (f xs ys zs)
       (if (or (null? xs) (null? ys) (null? zs))
           '()
           (cons (f (car xs) (car ys) (car zs))
                 (%map3 f (cdr xs) (cdr ys) (cdr zs)))))
 
+    ;;@doc (%map4 f ws xs ys zs)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%map4`.
+    ;;@example
+    ;; (%map4 (lambda (x) x) 'x '() '() '())
     (defun %map4 (f ws xs ys zs)
       (if (or (null? ws) (null? xs) (null? ys) (null? zs))
           '()
           (cons (f (car ws) (car xs) (car ys) (car zs))
                 (%map4 f (cdr ws) (cdr xs) (cdr ys) (cdr zs)))))
 
+    ;;@doc (%model-ref model key)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%model-ref`.
+    ;;@example
+    ;; (%model-ref 'x 'x)
     (defun %model-ref (model key)
       (let ((entry (assq key model)))
         (if entry
             (cdr entry)
             (error "cate: invalid model shape; missing key" key))))
 
+    ;;@doc (%make-model kind fields)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Construct `%make-model`.
+    ;;@example
+    ;; (%make-model 'x 'x)
     (defun %make-model (kind fields)
       (cons (cons 'tag 'cate-model)
             (cons (cons 'learner kind)
                   fields)))
 
+    ;;@doc (%assert-both-arms d0 d1 who)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `%assert-both-arms`.
+    ;;@example
+    ;; (%assert-both-arms 'x 'x 'x)
     (defun %assert-both-arms (d0 d1 who)
       (if (or (null? d0) (null? d1))
           (error (string-append who ": expected both treatment arms in data"))
@@ -147,7 +273,12 @@
 
     ;; -- Fitters ----------------------------------------------------------
 
+    ;;@doc (cate:fit-t-learner data y x z reg-spec)
+    ;;@category Causal
+    ;;@module std.causal.cate
     ;; T-learner: separate response models per treatment arm.
+    ;;@example
+    ;; (cate:fit-t-learner 'x 1 1 1 'x)
     (defun cate:fit-t-learner (data y x z reg-spec)
       (let* ((d1 (filter (lambda (o) (= (%as-binary (%obs-get o x) x) 1.0)) data))
              (d0 (filter (lambda (o) (= (%as-binary (%obs-get o x) x) 0.0)) data)))
@@ -164,6 +295,11 @@
                          (cons 'm0 m0)
                          (cons 'm1 m1))))))
 
+    ;;@doc (cate:fit-s-learner data y x z reg-spec)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;;@example
+    ;; (cate:fit-s-learner 'x 1 1 1 'x)
     ;; S-learner: one model over [X Z], effect via treatment toggling.
     (defun cate:fit-s-learner (data y x z reg-spec)
       (let* ((cols (cons x z))
@@ -176,6 +312,11 @@
                        (cons 'reg-spec reg-spec)
                        (cons 'm m)))))
 
+    ;;@doc (cate:fit-x-learner data y x z reg-spec cls-spec)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;;@example
+    ;; (cate:fit-x-learner 'x 1 1 1 'x 'x)
     ;; X-learner (Kunzell et al.):
     ;;   fit mu1,mu0 -> impute D1,D0 -> fit tau1,tau0 -> propensity blend.
     (defun cate:fit-x-learner (data y x z reg-spec cls-spec)
@@ -216,6 +357,11 @@
                          (cons 'tau1 tau1)
                          (cons 'g-model g-model))))))
 
+    ;;@doc (cate:fit-r-learner data y x z reg-spec . opts)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;;@example
+    ;; (cate:fit-r-learner 'x 1 1 1 'x '())
     ;; R-learner (orthogonalized objective).
     ;; This implementation uses plug-in nuisances with optional propensity-spec.
     (defun cate:fit-r-learner (data y x z reg-spec . opts)
@@ -256,6 +402,11 @@
                        (cons 'reg-spec reg-spec)
                        (cons 'tau tau)))))
 
+    ;;@doc (cate:fit-dr-learner data y x z reg-spec cls-spec . opts)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;;@example
+    ;; (cate:fit-dr-learner 'x 1 1 1 'x 'x '())
     ;; DR-learner (doubly robust pseudo-outcome regression).
     (defun cate:fit-dr-learner (data y x z reg-spec cls-spec . opts)
       (let* ((opt-map (%opts->alist opts "cate:fit-dr-learner"))
@@ -298,6 +449,12 @@
 
     ;; -- Prediction + utility API ----------------------------------------
 
+    ;;@doc (cate:predict model row)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `cate:predict`.
+    ;;@example
+    ;; (cate:predict 'x 'x)
     (defun cate:predict (model row)
       (let ((kind (%model-ref model 'learner)))
         (cond
@@ -341,12 +498,23 @@
           (else
            (error 'unknown-cate-model kind)))))
 
+    ;;@doc (cate:ate model data)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;; Compute `cate:ate`.
+    ;;@example
+    ;; (cate:ate 'x 'x)
     (defun cate:ate (model data)
       (if (null? data)
           0.0
           (stats:mean (map* (lambda (o) (cate:predict model o))
                             data))))
 
+    ;;@doc (cate:rank model data)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;;@example
+    ;; (cate:rank 'x 'x)
     ;; Returns (sorted-observations . sorted-tau-hats), descending tau.
     (defun cate:rank (model data)
       (let* ((pairs (map* (lambda (o) (cons o (cate:predict model o))) data))
@@ -354,6 +522,11 @@
         (cons (map* car sorted)
               (map* cdr sorted))))
 
+    ;;@doc (cate:residual-r2 actual predicted)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;;@example
+    ;; (cate:residual-r2 'x 'x)
     ;; R^2 diagnostic between two equal-length numeric vectors.
     (defun cate:residual-r2 (actual predicted)
       (if (not (= (length actual) (length predicted)))
@@ -375,6 +548,11 @@
                     0.0
                     (- 1.0 (/ sse sst)))))))
 
+    ;;@doc (cate:propensity-overlap scores . rest)
+    ;;@category Causal
+    ;;@module std.causal.cate
+    ;;@example
+    ;; (cate:propensity-overlap 'x '())
     ;; Overlap summary for propensity scores.
     ;; Returns:
     ;;   ((n . N) (min . pmin) (max . pmax) (mean . pmean)

@@ -16,6 +16,12 @@
     (println "=== Fact Table Demo ===")
     (println "")
 
+    ;;@doc (trades)
+    ;;@category Numerics
+    ;;@module fact-table-demo
+    ;; Columnar fact tables with hash-indexed queries Uses `trades`.
+    ;;@example
+    ;; (display trades)
     (define trades (make-fact-table 'symbol 'side 'qty 'price))
 
     ;; ── 2. Insert rows ─────────────────────────────────────────────────────

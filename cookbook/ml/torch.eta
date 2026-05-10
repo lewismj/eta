@@ -18,7 +18,19 @@
   (import std.torch)
   (begin
 
+    ;;@doc (win)
+    ;;@category Ml
+    ;;@module torch-example
+    ;; Tensor Computing & Neural Networks with libtorch Uses `win`.
+    ;;@example
+    ;; (display win)
     (define win (eq? (platform) 'Win32))
+    ;;@doc (sep)
+    ;;@category Ml
+    ;;@module torch-example
+    ;; Compute `sep`.
+    ;;@example
+    ;; (sep)
     (defun sep ()
       (display (if win "==================================================\n"
                        "══════════════════════════════════════════════════\n")))

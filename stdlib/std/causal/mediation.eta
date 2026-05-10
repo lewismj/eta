@@ -20,7 +20,12 @@
 
     ;; -- Public API ------------------------------------------------------
 
+    ;;@doc (mediation-formula data y x m treatment-for-y treatment-for-m)
+    ;;@category Causal
+    ;;@module std.causal.mediation
     ;; Cross-world mediation mean for mediator set M.
+    ;;@example
+    ;; (mediation-formula 'x 1 1 1 'x 'x)
     (defun mediation-formula (data y x m treatment-for-y treatment-for-m)
       (let ((m-vars (%as-node-set m)))
         (%assert-data data "mediation-formula")
@@ -36,16 +41,31 @@
                0.0
                (%distinct-tuples data m-vars))))
 
+    ;;@doc (do:nde g y x m data x* x1)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;;@example
+    ;; (do:nde 'x 1 1 1 'x 'x 'x)
     ;; Natural direct effect.
     (defun do:nde (g y x m data x* x1)
       (- (mediation-formula data y x m x1 x*)
          (mediation-formula data y x m x* x*)))
 
+    ;;@doc (do:nie g y x m data x* x1)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;;@example
+    ;; (do:nie 'x 1 1 1 'x 'x 'x)
     ;; Natural indirect effect.
     (defun do:nie (g y x m data x* x1)
       (- (mediation-formula data y x m x1 x1)
          (mediation-formula data y x m x1 x*)))
 
+    ;;@doc (do:cde g y x m data m-val x* x1)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;;@example
+    ;; (do:cde 'x 1 1 1 'x 'x 'x 'x)
     ;; Controlled direct effect at mediator value(s) m-val.
     (defun do:cde (g y x m data m-val x* x1)
       (let* ((m-vars (%as-node-set m))
@@ -57,15 +77,33 @@
 
     ;; -- Helpers ---------------------------------------------------------
 
+    ;;@doc (%member? x xs)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%adjoin x xs)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%adjoin`.
+    ;;@example
+    ;; (%adjoin 1 '())
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    ;;@doc (%normalize-vars vars)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%normalize-vars`.
+    ;;@example
+    ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
       (let loop ((rest vars) (acc '()))
         (if (null? rest)
@@ -75,6 +113,12 @@
                   (loop (cdr rest) acc)
                   (loop (cdr rest) (cons v acc)))))))
 
+    ;;@doc (%as-node-set x)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%as-node-set`.
+    ;;@example
+    ;; (%as-node-set 1)
     (defun %as-node-set (x)
       (cond
         ((null? x) '())
@@ -82,31 +126,67 @@
         ((list? x) (%normalize-vars x))
         (else (error "expected symbol or list of symbols"))))
 
+    ;;@doc (%assert-data data where)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%assert-data`.
+    ;;@example
+    ;; (%assert-data 'x 'x)
     (defun %assert-data (data where)
       (if (null? data)
           (error (string-append where ": expected non-empty data"))
           'ok))
 
+    ;;@doc (%assert-non-empty-mediator m-vars where)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%assert-non-empty-mediator`.
+    ;;@example
+    ;; (%assert-non-empty-mediator 'x 'x)
     (defun %assert-non-empty-mediator (m-vars where)
       (if (null? m-vars)
           (error (string-append where ": expected non-empty mediator set"))
           'ok))
 
+    ;;@doc (%obs-get obs var)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%obs-get`.
+    ;;@example
+    ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
       (let ((p (assq var obs)))
         (if p
             (cdr p)
             (error 'unknown-variable var))))
 
+    ;;@doc (%obs-matches-tuple obs tuple)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%obs-matches-tuple`.
+    ;;@example
+    ;; (%obs-matches-tuple 'x 'x)
     (defun %obs-matches-tuple (obs tuple)
       (every? (lambda (kv)
                 (equal? (%obs-get obs (car kv))
                         (cdr kv)))
               tuple))
 
+    ;;@doc (%project-tuple obs vars)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%project-tuple`.
+    ;;@example
+    ;; (%project-tuple 'x 'x)
     (defun %project-tuple (obs vars)
       (map* (lambda (v) (cons v (%obs-get obs v))) vars))
 
+    ;;@doc (%distinct-tuples data vars)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%distinct-tuples`.
+    ;;@example
+    ;; (%distinct-tuples 'x 'x)
     (defun %distinct-tuples (data vars)
       (reverse
         (foldl (lambda (acc obs)
@@ -114,16 +194,34 @@
                '()
                data)))
 
+    ;;@doc (%rows-with-x data x x-val)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%rows-with-x`.
+    ;;@example
+    ;; (%rows-with-x 'x 1 'x)
     (defun %rows-with-x (data x x-val)
       (filter (lambda (obs)
                 (equal? (%obs-get obs x) x-val))
               data))
 
+    ;;@doc (%assert-x-support data x x-val where)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%assert-x-support`.
+    ;;@example
+    ;; (%assert-x-support 'x 1 'x 'x)
     (defun %assert-x-support (data x x-val where)
       (if (null? (%rows-with-x data x x-val))
           (error (string-append where ": no rows with requested treatment value"))
           'ok))
 
+    ;;@doc (%mediator-prob data x m-vars m-tuple x-val)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%mediator-prob`.
+    ;;@example
+    ;; (%mediator-prob 'x 1 'x 'x 'x)
     (defun %mediator-prob (data x m-vars m-tuple x-val)
       (let* ((rows-x (%rows-with-x data x x-val))
              (n-x (length rows-x)))
@@ -135,12 +233,24 @@
                          rows-x))
                n-x))))
 
+    ;;@doc (%mean xs)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%mean`.
+    ;;@example
+    ;; (%mean '())
     (defun %mean (xs)
       (if (null? xs)
           0.0
           (/ (foldl (lambda (acc v) (+ acc v)) 0.0 xs)
              (length xs))))
 
+    ;;@doc (%mean-for-x-and-m data y x x-val m-tuple where)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%mean-for-x-and-m`.
+    ;;@example
+    ;; (%mean-for-x-and-m 'x 1 1 'x 'x 'x)
     (defun %mean-for-x-and-m (data y x x-val m-tuple where)
       (let ((rows (filter (lambda (obs)
                             (and (equal? (%obs-get obs x) x-val)
@@ -151,9 +261,21 @@
                                   ": positivity violation for treatment/mediator stratum"))
             (%mean (map* (lambda (obs) (%obs-get obs y)) rows)))))
 
+    ;;@doc (%pairs? xs)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Return whether `%pairs?` holds.
+    ;;@example
+    ;; (%pairs? '())
     (defun %pairs? (xs)
       (every? (lambda (x) (and (pair? x) (symbol? (car x)))) xs))
 
+    ;;@doc (%normalize-m-value m-vars m-val)
+    ;;@category Causal
+    ;;@module std.causal.mediation
+    ;; Compute `%normalize-m-value`.
+    ;;@example
+    ;; (%normalize-m-value 'x 'x)
     (defun %normalize-m-value (m-vars m-val)
       (cond
         ((and (= (length m-vars) 1)

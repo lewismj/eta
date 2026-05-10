@@ -4,6 +4,12 @@
   (import std.test std.csv)
   (begin
 
+    ;;@doc (make-repeated-csv n)
+    ;;@category Tests
+    ;;@module csv.tests
+    ;; Construct `make-repeated-csv`.
+    ;;@example
+    ;; (make-repeated-csv 1)
     (defun make-repeated-csv (n)
       (let ((p (open-output-string)))
         (display "i,val\n" p)
@@ -18,6 +24,12 @@
                                (loop (+ i 1)))))))
           (loop 0))))
 
+    ;;@doc (csv:test-assq key alist)
+    ;;@category Tests
+    ;;@module csv.tests
+    ;; Compute `csv:test-assq`.
+    ;;@example
+    ;; (csv:test-assq 'x 'x)
     (defun csv:test-assq (key alist)
       (letrec ((loop (lambda (xs)
                        (if (null? xs)
@@ -30,6 +42,12 @@
                                #f)))))
         (loop alist)))
 
+    ;;@doc (csv:test-ref key alist)
+    ;;@category Tests
+    ;;@module csv.tests
+    ;; Compute `csv:test-ref`.
+    ;;@example
+    ;; (csv:test-ref 'x 'x)
     (defun csv:test-ref (key alist)
       (let ((entry (csv:test-assq key alist)))
         (if entry (cdr entry) #f)))

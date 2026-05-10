@@ -4,6 +4,12 @@
   (import std.test std.logic)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module logic.tests
+    ;; Unit tests for std.logic Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "std.logic"
         (list

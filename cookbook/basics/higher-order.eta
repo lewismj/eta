@@ -6,6 +6,12 @@
   (import std.core std.io std.collections std.math)
   (begin
 
+    ;;@doc (nums)
+    ;;@category Basics
+    ;;@module higher-order
+    ;; Map, filter, fold, and function composition Uses `nums`.
+    ;;@example
+    ;; (display nums)
     (define nums (list 1 2 3 4 5 6 7 8 9 10))
 
     ;; ── map* — transform every element ──────────────────────────────

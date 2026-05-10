@@ -6,19 +6,43 @@
   (import std.io std.process)
   (begin
 
+    ;;@doc (windows? ...)
+    ;;@category Process
+    ;;@module process-pipeline
+    ;; Pipe stdout of one subprocess into stdin of another Uses `windows?`.
+    ;;@example
+    ;; (windows?)
     (defun windows? ()
       (equal? (platform) 'Win32))
 
+    ;;@doc (producer-command)
+    ;;@category Process
+    ;;@module process-pipeline
+    ;; Compute `producer-command`.
+    ;;@example
+    ;; (producer-command)
     (defun producer-command ()
       (if (windows?)
           (list "cmd" '("/c" "echo alpha& echo beta"))
           (list "/bin/sh" '("-c" "printf 'alpha\nbeta\n'"))))
 
+    ;;@doc (filter-command)
+    ;;@category Process
+    ;;@module process-pipeline
+    ;; Compute `filter-command`.
+    ;;@example
+    ;; (filter-command)
     (defun filter-command ()
       (if (windows?)
           (list "cmd" '("/c" "findstr beta"))
           (list "/bin/grep" '("beta"))))
 
+    ;;@doc (copy-bytes input output)
+    ;;@category Process
+    ;;@module process-pipeline
+    ;; Compute `copy-bytes`.
+    ;;@example
+    ;; (copy-bytes 'x 'x)
     (defun copy-bytes (input output)
       (letrec ((loop (lambda ()
                        (let ((b (read-u8 input)))
@@ -29,6 +53,12 @@
                                (loop)))))))
         (loop)))
 
+    ;;@doc (read-text-from-port port)
+    ;;@category Process
+    ;;@module process-pipeline
+    ;; Compute `read-text-from-port`.
+    ;;@example
+    ;; (read-text-from-port 8080)
     (defun read-text-from-port (port)
       (let ((out (open-output-string)))
         (letrec ((loop (lambda ()

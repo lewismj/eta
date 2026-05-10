@@ -4,6 +4,12 @@
   (import std.test std.process)
   (begin
 
+    ;;@doc (process:test-contains? text needle)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Unit tests for std.process Uses `process:test-contains?`.
+    ;;@example
+    ;; (process:test-contains? "sample" 'x)
     (defun process:test-contains? (text needle)
       (let ((n (string-length text))
             (m (string-length needle)))
@@ -19,47 +25,119 @@
                                          (loop (+ i 1)))))))
                   (loop 0))))))
 
+    ;;@doc (process:windows?)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Return whether `process:windows?` holds.
+    ;;@example
+    ;; (process:windows?)
     (defun process:windows? ()
       (equal? (platform) 'Win32))
 
+    ;;@doc (process:cmd program args)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:cmd`.
+    ;;@example
+    ;; (process:cmd 'x '())
     (defun process:cmd (program args)
       (list program args))
 
+    ;;@doc (process:program cmd)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:program`.
+    ;;@example
+    ;; (process:program 'x)
     (defun process:program (cmd)
       (car cmd))
 
+    ;;@doc (process:args cmd)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:args`.
+    ;;@example
+    ;; (process:args 'x)
     (defun process:args (cmd)
       (car (cdr cmd)))
 
+    ;;@doc (process:second xs)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:second`.
+    ;;@example
+    ;; (process:second '())
     (defun process:second (xs)
       (car (cdr xs)))
 
+    ;;@doc (process:third xs)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:third`.
+    ;;@example
+    ;; (process:third '())
     (defun process:third (xs)
       (car (cdr (cdr xs))))
 
+    ;;@doc (process:payload-msg p)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:payload-msg`.
+    ;;@example
+    ;; (process:payload-msg 'x)
     (defun process:payload-msg (p)
       (car (cdr (cdr p))))
 
+    ;;@doc (process:run-out-err-cmd)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Run `process:run-out-err-cmd`.
+    ;;@example
+    ;; (process:run-out-err-cmd)
     (defun process:run-out-err-cmd ()
       (if (process:windows?)
           (process:cmd "cmd" '("/c" "echo out& echo err 1>&2& exit /b 3"))
           (process:cmd "/bin/sh" '("-c" "echo out; echo err 1>&2; exit 3"))))
 
+    ;;@doc (process:echo-cmd)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:echo-cmd`.
+    ;;@example
+    ;; (process:echo-cmd)
     (defun process:echo-cmd ()
       (if (process:windows?)
           (process:cmd "cmd" '("/c" "echo hello-process"))
           (process:cmd "/bin/echo" '("hello-process"))))
 
+    ;;@doc (process:cat-cmd)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:cat-cmd`.
+    ;;@example
+    ;; (process:cat-cmd)
     (defun process:cat-cmd ()
       (if (process:windows?)
           (process:cmd "cmd" '("/c" "more"))
           (process:cmd "/bin/cat" '())))
 
+    ;;@doc (process:sleep-cmd)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:sleep-cmd`.
+    ;;@example
+    ;; (process:sleep-cmd)
     (defun process:sleep-cmd ()
       (if (process:windows?)
           (process:cmd "cmd" '("/c" "ping -n 3 127.0.0.1 >nul"))
           (process:cmd "/bin/sh" '("-c" "sleep 1"))))
 
+    ;;@doc (process:env-cmd)
+    ;;@category Tests
+    ;;@module process.tests
+    ;; Compute `process:env-cmd`.
+    ;;@example
+    ;; (process:env-cmd)
     (defun process:env-cmd ()
       (if (process:windows?)
           (process:cmd "cmd" '("/c" "echo %ETA_PROCESS_STDLIB%"))

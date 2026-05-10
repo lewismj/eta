@@ -16,7 +16,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (tasks)
+    ;;@category Concurrency
+    ;;@module worker-pool-demo
     ;; Tasks: a list of numbers to be doubled by workers
+    ;;@example
+    ;; (display tasks)
     (define tasks '(1 2 3 4 5))
 
     (println "Distributing tasks to worker pool...")

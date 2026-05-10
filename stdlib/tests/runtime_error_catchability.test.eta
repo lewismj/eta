@@ -5,9 +5,33 @@
   (import std.test)
   (begin
 
+    ;;@doc (payload-tag p)
+    ;;@category Tests
+    ;;@module runtime_error_catchability.tests
+    ;; Uses `payload-tag`.
+    ;;@example
+    ;; (payload-tag p)
     (defun payload-tag (p) (car (cdr p)))
+    ;;@doc (payload-msg p)
+    ;;@category Tests
+    ;;@module runtime_error_catchability.tests
+    ;; Compute `payload-msg`.
+    ;;@example
+    ;; (payload-msg 'x)
     (defun payload-msg (p) (car (cdr (cdr p))))
+    ;;@doc (payload-span p)
+    ;;@category Tests
+    ;;@module runtime_error_catchability.tests
+    ;; Compute `payload-span`.
+    ;;@example
+    ;; (payload-span 'x)
     (defun payload-span (p) (car (cdr (cdr (cdr p)))))
+    ;;@doc (payload-trace p)
+    ;;@category Tests
+    ;;@module runtime_error_catchability.tests
+    ;; Compute `payload-trace`.
+    ;;@example
+    ;; (payload-trace 'x)
     (defun payload-trace (p) (car (cdr (cdr (cdr (cdr p))))))
 
     (define suite

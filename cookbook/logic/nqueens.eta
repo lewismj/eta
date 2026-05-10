@@ -16,7 +16,12 @@
   (import std.core std.collections std.logic std.clp)
   (begin
 
+    ;;@doc (make-fd-vars n lo hi)
+    ;;@category Logic
+    ;;@module nqueens
     ;; Build a list of N fresh logic variables with domain [lo..hi].
+    ;;@example
+    ;; (make-fd-vars 1 'x 'x)
     (defun make-fd-vars (n lo hi)
       (let loop ((i 0) (acc '()))
         (if (>= i n) (reverse acc)
@@ -24,6 +29,11 @@
               (clp:domain v lo hi)
               (loop (+ i 1) (cons v acc))))))
 
+    ;;@doc (post-offsets qs offs)
+    ;;@category Logic
+    ;;@module nqueens
+    ;;@example
+    ;; (post-offsets 'x 'x)
     ;; Post qi + off = ai for each i, with ai fresh; returns the ai list.
     (defun post-offsets (qs offs)
       (let loop ((qs qs) (offs offs) (acc '()))
@@ -35,6 +45,11 @@
               (clp:plus-offset a (car qs) (car offs))
               (loop (cdr qs) (cdr offs) (cons a acc)))))))
 
+    ;;@doc (solve-nqueens n)
+    ;;@category Logic
+    ;;@module nqueens
+    ;;@example
+    ;; (solve-nqueens 1)
     ;; Solve N-queens, return the column assignment as a list of integers
     ;; (or #f on UNSAT).
     (defun solve-nqueens (n)
@@ -52,6 +67,11 @@
             (map (lambda (v) (deref-lvar v)) qs)
             #f)))
 
+    ;;@doc (print-board cols)
+    ;;@category Logic
+    ;;@module nqueens
+    ;;@example
+    ;; (print-board '())
     ;; Pretty-print the board.
     (defun print-board (cols)
       (let ((n (length cols)))

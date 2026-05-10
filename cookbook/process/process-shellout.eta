@@ -6,9 +6,21 @@
   (import std.io std.process)
   (begin
 
+    ;;@doc (windows? ...)
+    ;;@category Process
+    ;;@module process-shellout
+    ;; Blocking subprocess invocation Uses `windows?`.
+    ;;@example
+    ;; (windows?)
     (defun windows? ()
       (equal? (platform) 'Win32))
 
+    ;;@doc (git-version-command)
+    ;;@category Process
+    ;;@module process-shellout
+    ;; Compute `git-version-command`.
+    ;;@example
+    ;; (git-version-command)
     (defun git-version-command ()
       (if (windows?)
           (list "cmd" '("/c" "git --version"))

@@ -6,13 +6,37 @@
           std.causal.forest)
   (begin
 
+    ;;@doc (make-row x z1 z2 y)
+    ;;@category Tests
+    ;;@module causal.forest.smoke2
+    ;; Construct `make-row`.
+    ;;@example
+    ;; (make-row 1 'x 'x 1)
     (defun make-row (x z1 z2 y)
       (list (cons 'x x) (cons 'z1 z1) (cons 'z2 z2) (cons 'y y)))
+    ;;@doc (append3 a b c)
+    ;;@category Tests
+    ;;@module causal.forest.smoke2
+    ;; Compute `append3`.
+    ;;@example
+    ;; (append3 1 1 'x)
     (defun append3 (a b c) (append a (append b c)))
+    ;;@doc (%noise i)
+    ;;@category Tests
+    ;;@module causal.forest.smoke2
+    ;; Compute `%noise`.
+    ;;@example
+    ;; (%noise 1)
     (defun %noise (i)
       (cond ((= (modulo i 3) 0) 0.20)
             ((= (modulo i 3) 1) -0.20)
             (else 0.0)))
+    ;;@doc (%arm-rows n x z1 z2 y0 tau)
+    ;;@category Tests
+    ;;@module causal.forest.smoke2
+    ;; Compute `%arm-rows`.
+    ;;@example
+    ;; (%arm-rows 1 1 'x 'x 'x 'x)
     (defun %arm-rows (n x z1 z2 y0 tau)
       (let loop ((i 0) (acc '()))
         (if (= i n) (reverse acc)
@@ -20,6 +44,12 @@
                    (y (+ y0 (if (= x 1) tau 0.0) eps))
                    (row (make-row x z1 z2 y)))
               (loop (+ i 1) (cons row acc))))))
+    ;;@doc (make-step-cate-data)
+    ;;@category Tests
+    ;;@module causal.forest.smoke2
+    ;; Construct `make-step-cate-data`.
+    ;;@example
+    ;; (make-step-cate-data)
     (defun make-step-cate-data ()
       (let ((z1s '(-2 -1 0 1 2))
             (z2s '(-1 0 1)))

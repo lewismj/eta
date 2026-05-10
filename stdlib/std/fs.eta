@@ -16,6 +16,12 @@
     fs:file-size)
   (begin
 
+    ;;@doc (fs:file-exists?)
+    ;;@category Fs
+    ;;@module std.fs
+    ;; Filesystem and path primitives Uses `fs:file-exists?`.
+    ;;@example
+    ;; (display fs:file-exists?)
     (define fs:file-exists? file-exists?)
     (define fs:directory? directory?)
     (define fs:delete-file delete-file)

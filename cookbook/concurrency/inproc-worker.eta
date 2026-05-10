@@ -9,8 +9,13 @@
   (import std.io)
   (begin
 
+    ;;@doc (noop ...)
+    ;;@category Concurrency
+    ;;@module inproc-worker
     ;; Placeholder — spawn-thread-with requires a named function.
     ;; The actual work is done below at module top-level.
+    ;;@example
+    ;; (noop)
     (defun noop () '())
 
     ;; Module init: receive one task from the parent, process it, reply.

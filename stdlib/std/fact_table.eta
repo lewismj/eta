@@ -48,21 +48,43 @@
     fact-table-save-csv)
   (begin
 
+    ;;@doc (fact-table? x)
+    ;;@category Fact Table
+    ;;@module std.fact_table
     ;; Re-export via low-level predicate to avoid local-name shadowing.
+    ;;@example
+    ;; (fact-table? 1)
     (defun fact-table? (x) (%fact-table? x))
 
+    ;;@doc (fact-table:strip-leading-colon s)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;; Compute `fact-table:strip-leading-colon`.
+    ;;@example
+    ;; (fact-table:strip-leading-colon "sample")
     (defun fact-table:strip-leading-colon (s)
       (if (and (> (string-length s) 0)
                (eq? (string-ref s 0) #\:))
           (substring s 1 (string-length s))
           s))
 
+    ;;@doc (fact-table:normalize-opt-key k)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;; Compute `fact-table:normalize-opt-key`.
+    ;;@example
+    ;; (fact-table:normalize-opt-key 1)
     (defun fact-table:normalize-opt-key (k)
       (cond
         ((symbol? k) (string->symbol (fact-table:strip-leading-colon (symbol->string k))))
         ((string? k) (string->symbol (fact-table:strip-leading-colon k)))
         (#t (error "fact-table: option key must be a symbol or string"))))
 
+    ;;@doc (fact-table:opts->alist opts)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table:opts->alist 'x)
     ;; (fact-table:opts->alist '(:header #f)) -> ((header . #f))
     (defun fact-table:opts->alist (opts)
       (letrec ((loop (lambda (xs acc)
@@ -76,30 +98,65 @@
                                            acc)))))))
         (loop opts '())))
 
+    ;;@doc (make-fact-table . col-names)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (make-fact-table '())
     ;; (make-fact-table 'col1 'col2 ...) -> fact-table
     (define (make-fact-table . col-names)
       (%make-fact-table col-names))
 
+    ;;@doc (fact-table-insert! ft . vals)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-insert! 'x '())
     ;; (fact-table-insert! ft val1 val2 ...)
     (define (fact-table-insert! ft . vals)
       (%fact-table-insert! ft vals))
 
+    ;;@doc (fact-table-build-index! ft col-idx)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-build-index! 'x 'x)
     ;; (fact-table-build-index! ft col-idx)
     (define (fact-table-build-index! ft col-idx)
       (%fact-table-build-index! ft col-idx))
 
+    ;;@doc (fact-table-query ft col-idx key)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-query 'x 'x 'x)
     ;; (fact-table-query ft col-idx key) -> list of row indices
     (define (fact-table-query ft col-idx key)
       (%fact-table-query ft col-idx key))
 
+    ;;@doc (fact-table-ref ft row col)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-ref 'x 'x 'x)
     ;; (fact-table-ref ft row-idx col-idx) -> value
     (define (fact-table-ref ft row col)
       (%fact-table-ref ft row col))
 
+    ;;@doc (fact-table-row-count ft)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-row-count 'x)
     ;; (fact-table-row-count ft) -> fixnum (live rows)
     (define (fact-table-row-count ft)
       (%fact-table-row-count ft))
 
+    ;;@doc (__fact-table-row-n ft row-idx ncols)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (__fact-table-row-n 'x 'x 'x)
     ;; Internal: collect one row using an explicit column count.
     (define (__fact-table-row-n ft row-idx ncols)
       (letrec ((loop (lambda (col acc)
@@ -109,10 +166,20 @@
                                  (cons (%fact-table-ref ft row-idx col) acc))))))
         (loop 0 '())))
 
+    ;;@doc (fact-table-row ft row-idx)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-row 'x 'x)
     ;; (fact-table-row ft row-idx) -> list of row values
     (define (fact-table-row ft row-idx)
       (__fact-table-row-n ft row-idx (length (%fact-table-column-names ft))))
 
+    ;;@doc (fact-table-for-each ft f)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-for-each 'x (lambda (x) x))
     ;; (fact-table-for-each ft f)
     ;; Call (f row-idx) for each live row index.
     (define (fact-table-for-each ft f)
@@ -124,11 +191,21 @@
                              (loop (cdr rows)))))))
         (loop (%fact-table-live-row-ids ft))))
 
+    ;;@doc (fact-table-filter ft col-idx key)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-filter 'x 'x 'x)
     ;; (fact-table-filter ft col-idx key) -> list of row indices
     ;; Convenience alias for fact-table-query.
     (define (fact-table-filter ft col-idx key)
       (%fact-table-query ft col-idx key))
 
+    ;;@doc (fact-table-fold ft f init)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-fold 'x (lambda (x) x) 'x)
     ;; (fact-table-fold ft f init)
     ;; Fold over live row indices: (f acc row-idx).
     (define (fact-table-fold ft f init)
@@ -138,14 +215,29 @@
                            (loop (cdr rows) (f acc (car rows)))))))
         (loop (%fact-table-live-row-ids ft) init)))
 
+    ;;@doc (fact-table-group-count ft group-col-idx)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-group-count 'x 'x)
     ;; (fact-table-group-count ft group-col-idx) -> alist of (key . count)
     (define (fact-table-group-count ft group-col-idx)
       (%fact-table-group-count ft group-col-idx))
 
+    ;;@doc (fact-table-group-sum ft group-col-idx value-col-idx)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-group-sum 'x 'x 'x)
     ;; (fact-table-group-sum ft group-col-idx value-col-idx) -> alist of (key . sum)
     (define (fact-table-group-sum ft group-col-idx value-col-idx)
       (%fact-table-group-sum ft group-col-idx value-col-idx))
 
+    ;;@doc (__fact-table-group-alist->table grouped value-col-name)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (__fact-table-group-alist->table 'x 'x)
     ;; Internal: materialize grouped alist ((key . value) ...) into a fact-table.
     (define (__fact-table-group-alist->table grouped value-col-name)
       (let ((out (make-fact-table 'group-key value-col-name)))
@@ -157,6 +249,11 @@
                                (emit (cdr pairs)))))))
           (emit grouped))))
 
+    ;;@doc (fact-table-group-by ft group-col-idx . spec)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-group-by 'x 'x '())
     ;; (fact-table-group-by ft group-col-idx [agg-op [value-col-idx]])
     ;; agg-op: 'count (default) or 'sum.
     (define (fact-table-group-by ft group-col-idx . spec)
@@ -178,6 +275,11 @@
           (#t
            (error "fact-table-group-by: unsupported aggregation (use 'count or 'sum)")))))
 
+    ;;@doc (fact-table-partition ft group-col-idx)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-partition 'x 'x)
     ;; (fact-table-partition ft group-col-idx)
     ;; Returns alist: ((key . fact-table) ...), preserving first-seen key order.
     (define (fact-table-partition ft group-col-idx)
@@ -203,10 +305,20 @@
                                              (cons (cons key tbl) groups-rev))))))))
               (loop rows '())))))
 
+    ;;@doc (fact-table-load-csv path . opts)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-load-csv "sample" '())
     ;; (fact-table-load-csv path . opts) -> fact-table
     (define (fact-table-load-csv path . opts)
       (%fact-table-load-csv path (fact-table:opts->alist opts)))
 
+    ;;@doc (fact-table-save-csv ft path . opts)
+    ;;@category Fact Table
+    ;;@module std.fact_table
+    ;;@example
+    ;; (fact-table-save-csv 'x "sample" '())
     ;; (fact-table-save-csv ft path . opts) -> unspecified
     (define (fact-table-save-csv ft path . opts)
       (%fact-table-save-csv ft path (fact-table:opts->alist opts)))

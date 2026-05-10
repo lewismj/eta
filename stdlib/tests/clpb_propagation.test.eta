@@ -18,8 +18,20 @@
   (import std.core std.collections std.logic std.clp std.clpb)
   (begin
 
+    ;;@doc (fail-count)
+    ;;@category Tests
+    ;;@module clpb-smoke
+    ;; Smoke test for CLP(B) propagation-only Uses `fail-count`.
+    ;;@example
+    ;; (display fail-count)
     (define fail-count 0)
 
+    ;;@doc (chk label expected actual)
+    ;;@category Tests
+    ;;@module clpb-smoke
+    ;; Compute `chk`.
+    ;;@example
+    ;; (chk 'x 'x 'x)
     (defun chk (label expected actual)
       (display label) (display " => ") (display actual)
       (if (equal? actual expected)

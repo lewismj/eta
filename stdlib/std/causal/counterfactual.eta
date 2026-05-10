@@ -24,18 +24,42 @@
 
     ;; -- Set helpers -----------------------------------------------------
 
+    ;;@doc (%member? x xs)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%adjoin x xs)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%adjoin`.
+    ;;@example
+    ;; (%adjoin 1 '())
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    ;;@doc (%set-diff a b)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%set-diff`.
+    ;;@example
+    ;; (%set-diff 1 1)
     (defun %set-diff (a b)
       (filter (lambda (x) (not (%member? x b))) a))
 
+    ;;@doc (%normalize-vars vars)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%normalize-vars`.
+    ;;@example
+    ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
       (let loop ((rest vars) (acc '()))
         (if (null? rest)
@@ -45,6 +69,12 @@
                   (loop (cdr rest) acc)
                   (loop (cdr rest) (cons v acc)))))))
 
+    ;;@doc (%as-node-set x)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%as-node-set`.
+    ;;@example
+    ;; (%as-node-set 1)
     (defun %as-node-set (x)
       (cond
         ((null? x) '())
@@ -52,6 +82,12 @@
         ((list? x) (%normalize-vars x))
         (else (error "expected symbol or list of symbols"))))
 
+    ;;@doc (%assert-vars nodes vars)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%assert-vars`.
+    ;;@example
+    ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes vars)
       (if (null? vars)
           'ok
@@ -63,37 +99,103 @@
 
     ;; -- Graph helpers ---------------------------------------------------
 
+    ;;@doc (%edge-from e)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%edge-from`.
+    ;;@example
+    ;; (%edge-from 'x)
     (defun %edge-from (e) (car e))
+    ;;@doc (%edge-kind e)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%edge-kind`.
+    ;;@example
+    ;; (%edge-kind 'x)
     (defun %edge-kind (e) (cadr e))
+    ;;@doc (%edge-to e)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%edge-to`.
+    ;;@example
+    ;; (%edge-to 'x)
     (defun %edge-to (e) (caddr e))
 
+    ;;@doc (%directed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Return whether `%directed-edge?` holds.
+    ;;@example
+    ;; (%directed-edge? 'x)
     (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    ;;@doc (%bidirected-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Return whether `%bidirected-edge?` holds.
+    ;;@example
+    ;; (%bidirected-edge? 'x)
     (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
 
+    ;;@doc (%mixed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Return whether `%mixed-edge?` holds.
+    ;;@example
+    ;; (%mixed-edge? 'x)
     (defun %mixed-edge? (e)
       (and (list? e)
            (= (length e) 3)
            (or (%directed-edge? e) (%bidirected-edge? e))))
 
+    ;;@doc (%assert-admg g)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%assert-admg`.
+    ;;@example
+    ;; (%assert-admg 'x)
     (defun %assert-admg (g)
       (if (every? %mixed-edge? g)
           g
           (error 'invalid-admg g)))
 
+    ;;@doc (%graph-nodes g)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%graph-nodes`.
+    ;;@example
+    ;; (%graph-nodes 'x)
     (defun %graph-nodes (g)
       (foldl (lambda (acc e)
                (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
              '()
              g))
 
+    ;;@doc (%edge-member? e edges)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Return whether `%edge-member?` holds.
+    ;;@example
+    ;; (%edge-member? 'x 'x)
     (defun %edge-member? (e edges)
       (any? (lambda (x) (equal? x e)) edges))
 
+    ;;@doc (%edge-adjoin e edges)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%edge-adjoin`.
+    ;;@example
+    ;; (%edge-adjoin 'x 'x)
     (defun %edge-adjoin (e edges)
       (if (%edge-member? e edges) edges (cons e edges)))
 
     ;; -- Counterfactual naming ------------------------------------------
 
+    ;;@doc (%fresh-cf-symbol name used idx)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%fresh-cf-symbol`.
+    ;;@example
+    ;; (%fresh-cf-symbol "sample" 'x 1)
     (defun %fresh-cf-symbol (name used idx)
       (let ((candidate
               (if (= idx 0)
@@ -104,6 +206,12 @@
             (%fresh-cf-symbol name used (+ idx 1))
             candidate)))
 
+    ;;@doc (%cf-map nodes)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%cf-map`.
+    ;;@example
+    ;; (%cf-map 'x)
     (defun %cf-map (nodes)
       (let loop ((rest nodes) (used nodes) (acc '()))
         (if (null? rest)
@@ -114,6 +222,12 @@
                     (%adjoin v* used)
                     (cons (cons v v*) acc))))))
 
+    ;;@doc (%cf-node map var)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%cf-node`.
+    ;;@example
+    ;; (%cf-node 'x 'x)
     (defun %cf-node (map var)
       (let ((p (assq var map)))
         (if p
@@ -122,6 +236,12 @@
 
     ;; -- Twin-network construction --------------------------------------
 
+    ;;@doc (%counterfactual-world-edges g cf-map x-set)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%counterfactual-world-edges`.
+    ;;@example
+    ;; (%counterfactual-world-edges 'x 'x 'x)
     (defun %counterfactual-world-edges (g cf-map x-set)
       (let loop ((rest g) (acc '()))
         (if (null? rest)
@@ -150,6 +270,12 @@
                 (else
                  (loop (cdr rest) acc)))))))
 
+    ;;@doc (%cross-world-latent-links nodes cf-map x-set)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%cross-world-latent-links`.
+    ;;@example
+    ;; (%cross-world-latent-links 'x 'x 'x)
     (defun %cross-world-latent-links (nodes cf-map x-set)
       (foldl (lambda (acc v)
                (if (%member? v x-set)
@@ -158,7 +284,12 @@
              '()
              nodes))
 
+    ;;@doc (twin-network g intervened-vars)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
     ;; Build twin network over a mixed graph.
+    ;;@example
+    ;; (twin-network 'x 'x)
     (defun twin-network (g intervened-vars)
       (%assert-admg g)
       (let* ((x-set (%as-node-set intervened-vars))
@@ -174,6 +305,12 @@
 
     ;; -- Counterfactual query normalization ------------------------------
 
+    ;;@doc (%gamma-event? event)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Return whether `%gamma-event?` holds.
+    ;;@example
+    ;; (%gamma-event? 'x)
     (defun %gamma-event? (event)
       (and (list? event)
            (>= (length event) 2)
@@ -183,12 +320,24 @@
                  (symbol? ix)
                  (and (list? ix) (every? symbol? ix))))))
 
+    ;;@doc (%normalize-gamma gamma where)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%normalize-gamma`.
+    ;;@example
+    ;; (%normalize-gamma 'x 'x)
     (defun %normalize-gamma (gamma where)
       (if (and (list? gamma) (every? %gamma-event? gamma))
           gamma
           (error (string-append where
                                 ": expected gamma as list of (Y X) events"))))
 
+    ;;@doc (%event-interventions event where)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%event-interventions`.
+    ;;@example
+    ;; (%event-interventions 'x 'x)
     (defun %event-interventions (event where)
       (let ((ix (cadr event)))
         (cond
@@ -199,9 +348,21 @@
            (error (string-append where
                                  ": expected intervention symbols"))))))
 
+    ;;@doc (%gamma-y-vars gamma)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%gamma-y-vars`.
+    ;;@example
+    ;; (%gamma-y-vars 'x)
     (defun %gamma-y-vars (gamma)
       (%normalize-vars (map* car gamma)))
 
+    ;;@doc (%gamma-x-vars gamma where)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%gamma-x-vars`.
+    ;;@example
+    ;; (%gamma-x-vars 'x 'x)
     (defun %gamma-x-vars (gamma where)
       (%normalize-vars
         (foldl (lambda (acc event)
@@ -209,6 +370,12 @@
                '()
                gamma)))
 
+    ;;@doc (%delta-var d where)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%delta-var`.
+    ;;@example
+    ;; (%delta-var 'x 'x)
     (defun %delta-var (d where)
       (cond
         ((symbol? d) d)
@@ -217,6 +384,12 @@
          (error (string-append where
                                ": expected delta entries as symbols or (V value)")))))
 
+    ;;@doc (%delta-z-vars delta where)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;; Compute `%delta-z-vars`.
+    ;;@example
+    ;; (%delta-z-vars 'x 'x)
     (defun %delta-z-vars (delta where)
       (if (list? delta)
           (%normalize-vars (map* (lambda (d) (%delta-var d where)) delta))
@@ -225,6 +398,11 @@
 
     ;; -- Counterfactual identification API ------------------------------
 
+    ;;@doc (id* g gamma)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;;@example
+    ;; (id* 'x 'x)
     ;; Pragmatic ID*: normalize gamma and reduce to ID.
     (defun id* (g gamma)
       (%assert-admg g)
@@ -240,6 +418,11 @@
                 (list 'P y-set)
                 (do:simplify (id g y-set x-set))))))
 
+    ;;@doc (idc* g gamma delta)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;;@example
+    ;; (idc* 'x 'x 'x)
     ;; Pragmatic IDC*: normalize (gamma, delta) and reduce to IDC.
     (defun idc* (g gamma delta)
       (%assert-admg g)
@@ -261,6 +444,11 @@
                           (list 'P z-set)))
                 (do:simplify (idc g y-set x-set (%set-diff z-set x-set)))))))
 
+    ;;@doc (do:ett g y x x*)
+    ;;@category Causal
+    ;;@module std.causal.counterfactual
+    ;;@example
+    ;; (do:ett 'x 1 1 'x)
     ;; Effect of treatment on the treated.
     (defun do:ett (g y x x*)
       (if (not (symbol? y))

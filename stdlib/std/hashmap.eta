@@ -14,9 +14,21 @@
     alist->hash-map)
   (begin
 
+    ;;@doc (hash-map-empty? m)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;; Hash map helpers over runtime hash-map primitives Uses `hash-map-empty?`.
+    ;;@example
+    ;; (hash-map-empty? 1)
     (defun hash-map-empty? (m)
       (= 0 (hash-map-size m)))
 
+    ;;@doc (hash-map-contains? m k)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;; Return whether `hash-map-contains?` holds.
+    ;;@example
+    ;; (hash-map-contains? 1 1)
     (defun hash-map-contains? (m k)
       (hash-map-fold
         (lambda (found key _value)
@@ -24,12 +36,29 @@
         #f
         m))
 
+    ;;@doc (hash-map-update m k fn)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;; Compute `hash-map-update`.
+    ;;@example
+    ;; (hash-map-update 1 1 (lambda (x) x))
     (defun hash-map-update (m k fn)
       (hash-map-assoc m k (fn (hash-map-ref m k))))
 
+    ;;@doc (hash-map-update-with-default m k fn default)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;; Compute `hash-map-update-with-default`.
+    ;;@example
+    ;; (hash-map-update-with-default 1 1 (lambda (x) x) 'x)
     (defun hash-map-update-with-default (m k fn default)
       (hash-map-assoc m k (fn (hash-map-ref m k default))))
 
+    ;;@doc (hash-map-merge left right)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;;@example
+    ;; (hash-map-merge 'x 'x)
     ;; Right map wins on key conflicts.
     (defun hash-map-merge (left right)
       (hash-map-fold
@@ -38,6 +67,11 @@
         left
         right))
 
+    ;;@doc (hash-map-merge-with f left right)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;;@example
+    ;; (hash-map-merge-with (lambda (x) x) 'x 'x)
     ;; Resolve conflicts with f(old-value, new-value).
     (defun hash-map-merge-with (f left right)
       (hash-map-fold
@@ -48,6 +82,12 @@
         left
         right))
 
+    ;;@doc (hash-map-map fn m)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;; Compute `hash-map-map`.
+    ;;@example
+    ;; (hash-map-map (lambda (x) x) 1)
     (defun hash-map-map (fn m)
       (hash-map-fold
         (lambda (acc key value)
@@ -55,6 +95,12 @@
         (make-hash-map)
         m))
 
+    ;;@doc (hash-map-filter pred m)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;; Compute `hash-map-filter`.
+    ;;@example
+    ;; (hash-map-filter (lambda (x) x) 1)
     (defun hash-map-filter (pred m)
       (hash-map-fold
         (lambda (acc key value)
@@ -64,9 +110,21 @@
         (make-hash-map)
         m))
 
+    ;;@doc (hash-map->alist m)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;; Compute `hash-map->alist`.
+    ;;@example
+    ;; (hash-map->alist 1)
     (defun hash-map->alist (m)
       (hash-map->list m))
 
+    ;;@doc (alist->hash-map al)
+    ;;@category Hashmap
+    ;;@module std.hashmap
+    ;; Compute `alist->hash-map`.
+    ;;@example
+    ;; (alist->hash-map 'x)
     (defun alist->hash-map (al)
       (list->hash-map al))
 

@@ -4,6 +4,12 @@
   (import std.test std.core std.torch std.fact_table)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module torch.tests
+    ;; Unit tests for std.torch Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "std.torch"
         (list

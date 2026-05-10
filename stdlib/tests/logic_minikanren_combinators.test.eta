@@ -19,8 +19,20 @@
   (import std.core std.logic)
   (begin
 
+    ;;@doc (fail-count)
+    ;;@category Tests
+    ;;@module logic-phase2-smoke
+    ;; Smoke test for miniKanren-style Uses `fail-count`.
+    ;;@example
+    ;; (display fail-count)
     (define fail-count 0)
 
+    ;;@doc (chk label expected actual)
+    ;;@category Tests
+    ;;@module logic-phase2-smoke
+    ;; Compute `chk`.
+    ;;@example
+    ;; (chk 'x 'x 'x)
     (defun chk (label expected actual)
       (display label)
       (display " => ")

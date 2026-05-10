@@ -37,46 +37,102 @@
 
     ;; -- Domain constructors -------------------------------------------------
 
+    ;;@doc (clp:real var lo hi)
+    ;;@category Clpr
+    ;;@module std.clpr
     ;; Closed interval [lo, hi].  Installs the interval as both a
     ;; propagator domain and an LP/QP box constraint, so a single call
     ;; constrains x in feasibility checks and in optimisation.
+    ;;@example
+    ;; (clp:real 'x 'x 'x)
     (defun clp:real (var lo hi)
       (%clp-domain-r! var lo hi #f #f))
 
+    ;;@doc (clp:real-open var lo hi)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (clp:real-open 'x 'x 'x)
     ;; Fully-open interval (lo, hi).  Same dual install as clp:real;
     ;; the LP/QP backends treat the bounds as strict (shaved by an
     ;; internal epsilon).
     (defun clp:real-open (var lo hi)
       (%clp-domain-r! var lo hi #t #t))
 
+    ;;@doc (clp:real-half-open var lo hi)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (clp:real-half-open 'x 'x 'x)
     ;; Half-open interval [lo, hi).  Same dual install as clp:real.
     (defun clp:real-half-open (var lo hi)
       (%clp-domain-r! var lo hi #f #t))
 
     ;; -- Domain accessors ----------------------------------------------------
 
+    ;;@doc (clp:domain-r? dom)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Return whether `clp:domain-r?` holds.
+    ;;@example
+    ;; (clp:domain-r? 'x)
     (defun clp:domain-r? (dom)
       (and (pair? dom) (eq? (car dom) 'r)))
 
+    ;;@doc (clp:domain-r-lo dom)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `clp:domain-r-lo`.
+    ;;@example
+    ;; (clp:domain-r-lo 'x)
     (defun clp:domain-r-lo (dom)
       ;; (r lo hi lo-open? hi-open?)
       (car (cdr dom)))
 
+    ;;@doc (clp:domain-r-hi dom)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `clp:domain-r-hi`.
+    ;;@example
+    ;; (clp:domain-r-hi 'x)
     (defun clp:domain-r-hi (dom)
       (car (cdr (cdr dom))))
 
+    ;;@doc (clp:domain-r-lo-open? dom)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Return whether `clp:domain-r-lo-open?` holds.
+    ;;@example
+    ;; (clp:domain-r-lo-open? 'x)
     (defun clp:domain-r-lo-open? (dom)
       (car (cdr (cdr (cdr dom)))))
 
+    ;;@doc (clp:domain-r-hi-open? dom)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Return whether `clp:domain-r-hi-open?` holds.
+    ;;@example
+    ;; (clp:domain-r-hi-open? 'x)
     (defun clp:domain-r-hi-open? (dom)
       (car (cdr (cdr (cdr (cdr dom))))))
 
+    ;;@doc (clp:domain-r var)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `clp:domain-r`.
+    ;;@example
+    ;; (clp:domain-r 'x)
     (defun clp:domain-r (var)
       (let ((d (%clp-get-domain var)))
         (if (clp:domain-r? d) d #f)))
 
     ;; -- Internal helpers ----------------------------------------------------
 
+    ;;@doc (%clpr-prop-attach! v thunk)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (%clpr-prop-attach! 1 (lambda (x) x))
     ;; Attach a re-propagator thunk to v's 'clp.prop attribute.
     (defun %clpr-prop-attach! (v thunk)
       (cond
@@ -89,12 +145,23 @@
     ;; Register 'clp.prop as an async-thunk attribute key (idempotent).
     (register-prop-attr! 'clp.prop)
 
+    ;;@doc (%clpr-member-eq? x xs)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Return whether `%clpr-member-eq?` holds.
+    ;;@example
+    ;; (%clpr-member-eq? 1 '())
     (defun %clpr-member-eq? (x xs)
       (cond
         ((null? xs) #f)
         ((eq? x (car xs)) #t)
         (else (%clpr-member-eq? x (cdr xs)))))
 
+    ;;@doc (%clpr-merge-vars xs ys)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (%clpr-merge-vars '() '())
     ;; Merge ys into xs, preserving set semantics (eq? identity).
     (defun %clpr-merge-vars (xs ys)
       (if (null? ys)
@@ -104,6 +171,12 @@
                 (%clpr-merge-vars xs (cdr ys))
                 (%clpr-merge-vars (cons y xs) (cdr ys))))))
 
+    ;;@doc (%clpr-expr-vars-list xs)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `%clpr-expr-vars-list`.
+    ;;@example
+    ;; (%clpr-expr-vars-list '())
     (defun %clpr-expr-vars-list (xs)
       (cond
         ((null? xs) '())
@@ -112,6 +185,11 @@
                            (%clpr-expr-vars-list (cdr xs))))
         (else (%clpr-expr-vars xs))))
 
+    ;;@doc (%clpr-expr-vars expr)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (%clpr-expr-vars 'x)
     ;; Collect all unbound logic vars that participate in expr.
     (defun %clpr-expr-vars (expr)
       (let ((v (deref-lvar expr)))
@@ -128,6 +206,12 @@
                                            (%clpr-expr-vars (arg i v))))))))
           (else '()))))
 
+    ;;@doc (%clpr-attach-vars! vars thunk)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `%clpr-attach-vars!`.
+    ;;@example
+    ;; (%clpr-attach-vars! 'x (lambda (x) x))
     (defun %clpr-attach-vars! (vars thunk)
       (let loop ((xs vars))
         (cond
@@ -150,12 +234,23 @@
         ((null? (cdr args)) (list '- (car args)))
         (else (cons '- args))))
 
+    ;;@doc (clp:r*scalar k expr)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (clp:r*scalar 1 'x)
     ;; Scalar multiplication only (non-linear var*var is rejected in C++).
     (defun clp:r*scalar (k expr)
       (list '* k expr))
 
     ;; -- Posting API ---------------------------------------------------------
 
+    ;;@doc (clp:r<= lhs rhs)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `clp:r<=`.
+    ;;@example
+    ;; (clp:r<= 'x 'x)
     (defun clp:r<= (lhs rhs)
       (and (%clp-r-post-leq! lhs rhs)
            (let* ((thunk (lambda () (%clp-r-propagate!)))
@@ -164,6 +259,12 @@
              (%clpr-attach-vars! vars thunk)
              #t)))
 
+    ;;@doc (clp:r= lhs rhs)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `clp:r=`.
+    ;;@example
+    ;; (clp:r= 'x 'x)
     (defun clp:r= (lhs rhs)
       (and (%clp-r-post-eq! lhs rhs)
            (let* ((thunk (lambda () (%clp-r-propagate!)))
@@ -175,17 +276,41 @@
     ;; Strict relations are encoded via a small epsilon margin.
     (define *clpr-strict-eps* 1e-9)
 
+    ;;@doc (clp:r< lhs rhs)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `clp:r<`.
+    ;;@example
+    ;; (clp:r< 'x 'x)
     (defun clp:r< (lhs rhs)
       (clp:r<= lhs (clp:r- rhs *clpr-strict-eps*)))
 
+    ;;@doc (clp:r>= lhs rhs)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `clp:r>=`.
+    ;;@example
+    ;; (clp:r>= 'x 'x)
     (defun clp:r>= (lhs rhs)
       (clp:r<= rhs lhs))
 
+    ;;@doc (clp:r> lhs rhs)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `clp:r>`.
+    ;;@example
+    ;; (clp:r> 'x 'x)
     (defun clp:r> (lhs rhs)
       (clp:r< rhs lhs))
 
     ;; -- Optimization --------------------------------------------------------
 
+    ;;@doc (%clpr-opt-unpack res)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Compute `%clpr-opt-unpack`.
+    ;;@example
+    ;; (%clpr-opt-unpack 'x)
     (defun %clpr-opt-unpack (res)
       (cond
         ((eq? res #f) #f)
@@ -193,19 +318,39 @@
         ((pair? res) (values (car res) (cdr res)))
         (else (error "clp.r.optimize.invalid-result"))))
 
+    ;;@doc (clp:r-minimize objective)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (clp:r-minimize 'x)
     ;; Returns (values optimum witness) on success, #f on infeasible.
     (defun clp:r-minimize (objective)
       (%clpr-opt-unpack (%clp-r-minimize objective)))
 
+    ;;@doc (clp:r-maximize objective)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (clp:r-maximize 'x)
     ;; Returns (values optimum witness) on success, #f on infeasible.
     (defun clp:r-maximize (objective)
       (%clpr-opt-unpack (%clp-r-maximize objective)))
 
+    ;;@doc (clp:rq-minimize objective)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (clp:rq-minimize 'x)
     ;; Returns (values optimum witness) on success, #f on infeasible.
     ;; Accepts convex quadratic objectives and linear objectives.
     (defun clp:rq-minimize (objective)
       (%clpr-opt-unpack (%clp-r-qp-minimize objective)))
 
+    ;;@doc (clp:rq-maximize objective)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (clp:rq-maximize 'x)
     ;; Returns (values optimum witness) on success, #f on infeasible.
     ;; Accepts convex quadratic objectives and linear objectives.
     (defun clp:rq-maximize (objective)
@@ -213,9 +358,20 @@
 
     ;; -- Queries -------------------------------------------------------------
 
+    ;;@doc (clp:r-feasible?)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;; Return whether `clp:r-feasible?` holds.
+    ;;@example
+    ;; (clp:r-feasible?)
     (defun clp:r-feasible? ()
       (%clp-r-propagate!))
 
+    ;;@doc (clp:r-bounds var)
+    ;;@category Clpr
+    ;;@module std.clpr
+    ;;@example
+    ;; (clp:r-bounds 'x)
     ;; Returns (lo . hi) for an R-domained var, else #f.
     (defun clp:r-bounds (var)
       (if (%clp-r-propagate!)

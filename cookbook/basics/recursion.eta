@@ -6,7 +6,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (fib n)
+    ;;@category Basics
+    ;;@module recursion
     ;; ── Fibonacci (naive) ───────────────────────────────────────────
+    ;;@example
+    ;; (fib 1)
     (defun fib (n)
       (cond
         ((= n 0) 0)
@@ -15,6 +20,11 @@
 
     (println (fib 10))           ; => 55
 
+    ;;@doc (fib-fast n)
+    ;;@category Basics
+    ;;@module recursion
+    ;;@example
+    ;; (fib-fast 1)
     ;; ── Fibonacci (tail-recursive) ──────────────────────────────────
     (defun fib-fast (n)
       (letrec ((go (lambda (i a b)
@@ -24,6 +34,11 @@
 
     (println (fib-fast 30))      ; => 832040
 
+    ;;@doc (my-reverse xs)
+    ;;@category Basics
+    ;;@module recursion
+    ;;@example
+    ;; (my-reverse '())
     ;; ── List reversal ───────────────────────────────────────────────
     (defun my-reverse (xs)
       (letrec ((go (lambda (xs acc)
@@ -33,6 +48,11 @@
 
     (println (my-reverse '(1 2 3 4 5)))  ; => (5 4 3 2 1)
 
+    ;;@doc (my-length xs)
+    ;;@category Basics
+    ;;@module recursion
+    ;;@example
+    ;; (my-length '())
     ;; ── Length of a list ────────────────────────────────────────────
     (defun my-length (xs)
       (if (null? xs) 0
@@ -40,6 +60,11 @@
 
     (println (my-length '(a b c d)))   ; => 4
 
+    ;;@doc (deep-flatten xs)
+    ;;@category Basics
+    ;;@module recursion
+    ;;@example
+    ;; (deep-flatten '())
     ;; ── Flatten nested lists ────────────────────────────────────────
     (defun deep-flatten (xs)
       (cond
@@ -52,6 +77,11 @@
     (println (deep-flatten '((1 (2 3)) (4) 5)))
     ;; => (1 2 3 4 5)
 
+    ;;@doc (ackermann m n)
+    ;;@category Basics
+    ;;@module recursion
+    ;;@example
+    ;; (ackermann 1 1)
     ;; ── Ackermann function ──────────────────────────────────────────
     (defun ackermann (m n)
       (cond
@@ -61,6 +91,11 @@
 
     (println (ackermann 3 4))    ; => 125
 
+    ;;@doc (hanoi n from to via)
+    ;;@category Basics
+    ;;@module recursion
+    ;;@example
+    ;; (hanoi 1 'x 'x 'x)
     ;; ── Tower of Hanoi ──────────────────────────────────────────────
     (defun hanoi (n from to via)
       (when (> n 0)

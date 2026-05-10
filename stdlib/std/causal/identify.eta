@@ -26,15 +26,33 @@
 
     ;; -- Set helpers -----------------------------------------------------
 
+    ;;@doc (%member? x xs)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%adjoin x xs)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%adjoin`.
+    ;;@example
+    ;; (%adjoin 1 '())
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    ;;@doc (%as-node-set x)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%as-node-set`.
+    ;;@example
+    ;; (%as-node-set 1)
     (defun %as-node-set (x)
       (cond
         ((null? x) '())
@@ -42,24 +60,66 @@
         ((list? x) x)
         (else (error "id: expected symbol or list"))))
 
+    ;;@doc (%subset-in-order order xs)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%subset-in-order`.
+    ;;@example
+    ;; (%subset-in-order 'x '())
     (defun %subset-in-order (order xs)
       (filter (lambda (n) (%member? n xs)) order))
 
+    ;;@doc (%set-union a b)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%set-union`.
+    ;;@example
+    ;; (%set-union 1 1)
     (defun %set-union (a b)
       (foldl (lambda (acc x) (%adjoin x acc)) a b))
 
+    ;;@doc (%set-intersect a b)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%set-intersect`.
+    ;;@example
+    ;; (%set-intersect 1 1)
     (defun %set-intersect (a b)
       (filter (lambda (x) (%member? x b)) a))
 
+    ;;@doc (%set-diff a b)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%set-diff`.
+    ;;@example
+    ;; (%set-diff 1 1)
     (defun %set-diff (a b)
       (filter (lambda (x) (not (%member? x b))) a))
 
+    ;;@doc (%set-subset? a b)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%set-subset?` holds.
+    ;;@example
+    ;; (%set-subset? 1 1)
     (defun %set-subset? (a b)
       (every? (lambda (x) (%member? x b)) a))
 
+    ;;@doc (%set-equal? a b)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%set-equal?` holds.
+    ;;@example
+    ;; (%set-equal? 1 1)
     (defun %set-equal? (a b)
       (and (%set-subset? a b) (%set-subset? b a)))
 
+    ;;@doc (%assert-vars nodes vars)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%assert-vars`.
+    ;;@example
+    ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes vars)
       (if (null? vars)
           'ok
@@ -71,41 +131,107 @@
 
     ;; -- ADMG helpers ----------------------------------------------------
 
+    ;;@doc (%edge-from e)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%edge-from`.
+    ;;@example
+    ;; (%edge-from 'x)
     (defun %edge-from (e) (car e))
+    ;;@doc (%edge-kind e)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%edge-kind`.
+    ;;@example
+    ;; (%edge-kind 'x)
     (defun %edge-kind (e) (cadr e))
+    ;;@doc (%edge-to e)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%edge-to`.
+    ;;@example
+    ;; (%edge-to 'x)
     (defun %edge-to (e)   (caddr e))
 
+    ;;@doc (%directed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%directed-edge?` holds.
+    ;;@example
+    ;; (%directed-edge? 'x)
     (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    ;;@doc (%bidirected-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%bidirected-edge?` holds.
+    ;;@example
+    ;; (%bidirected-edge? 'x)
     (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
 
+    ;;@doc (%admg-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%admg-edge?` holds.
+    ;;@example
+    ;; (%admg-edge? 'x)
     (defun %admg-edge? (e)
       (and (list? e)
            (= (length e) 3)
            (or (%directed-edge? e) (%bidirected-edge? e))))
 
+    ;;@doc (%assert-admg g)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%assert-admg`.
+    ;;@example
+    ;; (%assert-admg 'x)
     (defun %assert-admg (g)
       (if (every? %admg-edge? g)
           g
           (error 'invalid-admg g)))
 
+    ;;@doc (%admg-remove-nodes g nodes)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%admg-remove-nodes`.
+    ;;@example
+    ;; (%admg-remove-nodes 'x 'x)
     (defun %admg-remove-nodes (g nodes)
       (filter (lambda (e)
                 (and (not (%member? (%edge-from e) nodes))
                      (not (%member? (%edge-to e) nodes))))
               g))
 
+    ;;@doc (%admg-induced-subgraph g nodes)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%admg-induced-subgraph`.
+    ;;@example
+    ;; (%admg-induced-subgraph 'x 'x)
     (defun %admg-induced-subgraph (g nodes)
       (filter (lambda (e)
                 (and (%member? (%edge-from e) nodes)
                      (%member? (%edge-to e) nodes)))
               g))
 
+    ;;@doc (%admg-mutilate-do g x-set)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%admg-mutilate-do`.
+    ;;@example
+    ;; (%admg-mutilate-do 'x 'x)
     (defun %admg-mutilate-do (g x-set)
       (filter (lambda (e)
                 (not (and (%directed-edge? e)
                           (%member? (%edge-to e) x-set))))
               g))
 
+    ;;@doc (%admg-mutilate-see g x-set)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%admg-mutilate-see`.
+    ;;@example
+    ;; (%admg-mutilate-see 'x 'x)
     (defun %admg-mutilate-see (g x-set)
       (filter (lambda (e)
                 (not (and (%directed-edge? e)
@@ -116,6 +242,12 @@
     ;; These helpers intentionally tolerate isolated nodes that may not
     ;; appear in any edge list after graph mutilation.
 
+    ;;@doc (%dag-parents-raw dag node)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%dag-parents-raw`.
+    ;;@example
+    ;; (%dag-parents-raw 'x 'x)
     (defun %dag-parents-raw (dag node)
       (foldl (lambda (acc e)
                (if (and (%directed-edge? e)
@@ -125,6 +257,12 @@
              '()
              dag))
 
+    ;;@doc (%dag-children-raw dag node)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%dag-children-raw`.
+    ;;@example
+    ;; (%dag-children-raw 'x 'x)
     (defun %dag-children-raw (dag node)
       (foldl (lambda (acc e)
                (if (and (%directed-edge? e)
@@ -134,6 +272,12 @@
              '()
              dag))
 
+    ;;@doc (%dag-ancestors-lite dag node)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%dag-ancestors-lite`.
+    ;;@example
+    ;; (%dag-ancestors-lite 'x 'x)
     (defun %dag-ancestors-lite (dag node)
       (let loop ((stack (%dag-parents-raw dag node))
                  (seen '()))
@@ -145,6 +289,12 @@
                   (loop (append (%dag-parents-raw dag n) (cdr stack))
                         (%adjoin n seen)))))))
 
+    ;;@doc (%ancestor-closure-lite dag z-set)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%ancestor-closure-lite`.
+    ;;@example
+    ;; (%ancestor-closure-lite 'x 'x)
     (defun %ancestor-closure-lite (dag z-set)
       (foldl (lambda (acc z)
                (foldl (lambda (acc2 a) (%adjoin a acc2))
@@ -153,12 +303,30 @@
              '()
              z-set))
 
+    ;;@doc (%as-up-states nodes)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%as-up-states`.
+    ;;@example
+    ;; (%as-up-states 'x)
     (defun %as-up-states (nodes)
       (map* (lambda (n) (cons n 'up)) nodes))
 
+    ;;@doc (%as-down-states nodes)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%as-down-states`.
+    ;;@example
+    ;; (%as-down-states 'x)
     (defun %as-down-states (nodes)
       (map* (lambda (n) (cons n 'down)) nodes))
 
+    ;;@doc (%bayes-ball-step-lite dag node dir observed? anc-z)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%bayes-ball-step-lite`.
+    ;;@example
+    ;; (%bayes-ball-step-lite 'x 'x 'x #t 'x)
     (defun %bayes-ball-step-lite (dag node dir observed? anc-z)
       (cond
         ((eq? dir 'up)
@@ -176,6 +344,12 @@
                '())))
         (else '())))
 
+    ;;@doc (%bayes-ball-lite dag start z-set)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%bayes-ball-lite`.
+    ;;@example
+    ;; (%bayes-ball-lite 'x 'x 'x)
     (defun %bayes-ball-lite (dag start z-set)
       (let* ((anc-z (%ancestor-closure-lite dag z-set))
              (queue (foldl (lambda (acc s)
@@ -198,18 +372,36 @@
                            (next (%bayes-ball-step-lite dag node dir observed? anc-z)))
                       (loop (append (cdr q) next) visited2 reachable2))))))))
 
+    ;;@doc (%dag-d-connected-lite? dag x-set y-set z-set)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%dag-d-connected-lite?` holds.
+    ;;@example
+    ;; (%dag-d-connected-lite? 'x 'x 'x 'x)
     (defun %dag-d-connected-lite? (dag x-set y-set z-set)
       (if (or (null? x-set) (null? y-set))
           #f
           (let ((reachable (%bayes-ball-lite dag x-set z-set)))
             (any? (lambda (target) (%member? target reachable)) y-set))))
 
+    ;;@doc (%rule2-applies-dag-lite? g y-set x-set z-set w-set)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%rule2-applies-dag-lite?` holds.
+    ;;@example
+    ;; (%rule2-applies-dag-lite? 'x 'x 'x 'x 'x)
     (defun %rule2-applies-dag-lite? (g y-set x-set z-set w-set)
       (let* ((gx (%admg-mutilate-do g x-set))
              (g2 (%admg-mutilate-see gx z-set))
              (cond-set (%set-union x-set w-set)))
         (not (%dag-d-connected-lite? g2 y-set z-set cond-set))))
 
+    ;;@doc (%directed-parents-in g nodes node)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%directed-parents-in`.
+    ;;@example
+    ;; (%directed-parents-in 'x 'x 'x)
     (defun %directed-parents-in (g nodes node)
       (foldl (lambda (acc e)
                (if (and (%directed-edge? e)
@@ -220,6 +412,12 @@
              '()
              g))
 
+    ;;@doc (%ancestors-one-in g nodes node)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%ancestors-one-in`.
+    ;;@example
+    ;; (%ancestors-one-in 'x 'x 'x)
     (defun %ancestors-one-in (g nodes node)
       (let loop ((stack (%directed-parents-in g nodes node))
                  (seen '())
@@ -234,12 +432,24 @@
                         (cons p seen)
                         (%adjoin p acc)))))))
 
+    ;;@doc (%ancestors-in g nodes vars)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%ancestors-in`.
+    ;;@example
+    ;; (%ancestors-in 'x 'x 'x)
     (defun %ancestors-in (g nodes vars)
       (foldl (lambda (acc v)
                (%set-union acc (%ancestors-one-in g nodes v)))
              '()
              vars))
 
+    ;;@doc (%bidirected-neighbors-in g nodes node)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%bidirected-neighbors-in`.
+    ;;@example
+    ;; (%bidirected-neighbors-in 'x 'x 'x)
     (defun %bidirected-neighbors-in (g nodes node)
       (foldl (lambda (acc e)
                (if (not (%bidirected-edge? e))
@@ -255,6 +465,12 @@
              '()
              g))
 
+    ;;@doc (%district-in g nodes seed)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%district-in`.
+    ;;@example
+    ;; (%district-in 'x 'x 'x)
     (defun %district-in (g nodes seed)
       (let loop ((stack (list seed))
                  (seen '())
@@ -269,6 +485,12 @@
                         (cons n seen)
                         (%adjoin n acc)))))))
 
+    ;;@doc (%c-components-over g nodes)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%c-components-over`.
+    ;;@example
+    ;; (%c-components-over 'x 'x)
     (defun %c-components-over (g nodes)
       (let loop ((rest nodes) (remaining nodes) (acc '()))
         (if (null? rest)
@@ -282,6 +504,12 @@
                           remaining2
                           (cons district acc))))))))
 
+    ;;@doc (%has-directed-edge? g a b)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%has-directed-edge?` holds.
+    ;;@example
+    ;; (%has-directed-edge? 'x 1 1)
     (defun %has-directed-edge? (g a b)
       (any? (lambda (e)
               (and (%directed-edge? e)
@@ -289,6 +517,12 @@
                    (eq? (%edge-to e) b)))
             g))
 
+    ;;@doc (%has-bidirected-edge? g a b)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%has-bidirected-edge?` holds.
+    ;;@example
+    ;; (%has-bidirected-edge? 'x 1 1)
     (defun %has-bidirected-edge? (g a b)
       (any? (lambda (e)
               (and (%bidirected-edge? e)
@@ -298,20 +532,44 @@
 
     ;; -- Estimand helpers ------------------------------------------------
 
+    ;;@doc (%mk-sum vars expr)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%mk-sum`.
+    ;;@example
+    ;; (%mk-sum 'x 'x)
     (defun %mk-sum (vars expr)
       (if (null? vars)
           expr
           (list 'sum vars expr)))
 
+    ;;@doc (%mk-prod factors)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%mk-prod`.
+    ;;@example
+    ;; (%mk-prod 'x)
     (defun %mk-prod (factors)
       (cond
         ((null? factors) '(prod))
         ((null? (cdr factors)) (car factors))
         (else (cons 'prod factors))))
 
+    ;;@doc (%fail? expr)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%fail?` holds.
+    ;;@example
+    ;; (%fail? 'x)
     (defun %fail? (expr)
       (and (pair? expr) (eq? (car expr) 'fail)))
 
+    ;;@doc (%prob-vars expr)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%prob-vars`.
+    ;;@example
+    ;; (%prob-vars 'x)
     (defun %prob-vars (expr)
       (if (and (pair? expr)
                (eq? (car expr) 'P)
@@ -320,10 +578,22 @@
           (cadr expr)
           #f))
 
+    ;;@doc (%empty-prob? expr)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%empty-prob?` holds.
+    ;;@example
+    ;; (%empty-prob? 'x)
     (defun %empty-prob? (expr)
       (let ((vars (%prob-vars expr)))
         (and vars (null? vars))))
 
+    ;;@doc (%normalize-vars vars)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%normalize-vars`.
+    ;;@example
+    ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
       (let loop ((rest vars) (acc '()))
         (if (null? rest)
@@ -333,9 +603,21 @@
                   (loop (cdr rest) acc)
                   (loop (cdr rest) (cons v acc)))))))
 
+    ;;@doc (%graph-has-bidirected? g)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Return whether `%graph-has-bidirected?` holds.
+    ;;@example
+    ;; (%graph-has-bidirected? 'x)
     (defun %graph-has-bidirected? (g)
       (any? %bidirected-edge? g))
 
+    ;;@doc (%before x xs)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%before`.
+    ;;@example
+    ;; (%before 1 '())
     (defun %before (x xs)
       (let loop ((rest xs) (acc '()))
         (cond
@@ -343,6 +625,12 @@
           ((equal? x (car rest)) (reverse acc))
           (else (loop (cdr rest) (cons (car rest) acc))))))
 
+    ;;@doc (%topo-order-over g nodes)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%topo-order-over`.
+    ;;@example
+    ;; (%topo-order-over 'x 'x)
     (defun %topo-order-over (g nodes)
       (let* ((directed (admg:directed g))
              (order-dir (dag:topo-sort directed))
@@ -351,6 +639,12 @@
                 (filter (lambda (n) (not (%member? n order-dir)))
                         nodes))))
 
+    ;;@doc (%line6-estimand g v s y)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%line6-estimand`.
+    ;;@example
+    ;; (%line6-estimand 'x 1 "sample" 1)
     (defun %line6-estimand (g v s y)
       (let* ((order (%topo-order-over g v))
              (s-order (%subset-in-order order s))
@@ -359,6 +653,11 @@
                             s-order)))
         (%mk-sum (%set-diff s y) (%mk-prod factors))))
 
+    ;;@doc (%maybe-front-door-estimand g x y)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;;@example
+    ;; (%maybe-front-door-estimand 'x 1 1)
     ;; Canonical front-door fallback in the 3-node ADMG:
     ;;   X -> M -> Y, X <-> Y.
     ;; This produces the standard front-door estimand.
@@ -389,6 +688,12 @@
                                       (list 'P (list x*)))))))
             #f)))
 
+    ;;@doc (%find pred xs)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%find`.
+    ;;@example
+    ;; (%find (lambda (x) x) '())
     (defun %find (pred xs)
       (cond
         ((null? xs) #f)
@@ -397,6 +702,12 @@
 
     ;; -- Estimand simplifier --------------------------------------------
 
+    ;;@doc (do:simplify estimand)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; ID/IDC algorithms for ADMGs Uses `do:simplify`.
+    ;;@example
+    ;; (do:simplify (caddr estimand)
     (defun do:simplify (estimand)
       (cond
         ((not (pair? estimand)) estimand)
@@ -450,6 +761,12 @@
 
     ;; -- IDC algorithm ---------------------------------------------------
 
+    ;;@doc (%idc-moveable g y x z)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%idc-moveable`.
+    ;;@example
+    ;; (%idc-moveable 'x 1 1 1)
     (defun %idc-moveable (g y x z)
       (if (%graph-has-bidirected? g)
           #f
@@ -462,6 +779,12 @@
                                         '()))
             z)))
 
+    ;;@doc (%idc-rec g y x z)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;; Compute `%idc-rec`.
+    ;;@example
+    ;; (%idc-rec 'x 1 1 1)
     (defun %idc-rec (g y x z)
       (let ((moveable (%idc-moveable g y x z)))
         (if moveable
@@ -478,6 +801,11 @@
 
     ;; -- ID algorithm ----------------------------------------------------
 
+    ;;@doc (%id-rec g v y x)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;;@example
+    ;; (%id-rec 'x 1 1 1)
     ;; Internal recursive implementation. Assumes v/y/x are normalized
     ;; node sets in the order of v.
     (defun %id-rec (g v y x)
@@ -543,6 +871,11 @@
                                  (y* (%set-intersect y s*)))
                             (%id-rec g* s* y* x*)))))))))))))
 
+    ;;@doc (id-rec g v y x)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;;@example
+    ;; (id-rec 'x 1 1 1)
     ;; Public recursive entry point (normalizes and validates inputs).
     (defun id-rec (g v y x)
       (%assert-admg g)
@@ -558,6 +891,11 @@
                (x-set (%subset-in-order v-set x-raw)))
           (%id-rec g v-set y-set x-set))))
 
+    ;;@doc (id g y x)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;;@example
+    ;; (id 'x 1 1)
     ;; Public API: (id G Y X) -> estimand for P(Y | do(X)).
     (defun id (g y x)
       (%assert-admg g)
@@ -578,6 +916,11 @@
                         (%id-rec g nodes y-set x-set)))
                   (%id-rec g nodes y-set x-set))))))
 
+    ;;@doc (idc g y x z)
+    ;;@category Causal
+    ;;@module std.causal.identify
+    ;;@example
+    ;; (idc 'x 1 1 1)
     ;; Public API: (idc G Y X Z) -> estimand for P(Y | do(X), Z).
     (defun idc (g y x z)
       (%assert-admg g)

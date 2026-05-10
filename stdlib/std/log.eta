@@ -30,18 +30,36 @@
     log:shutdown!)
   (begin
 
+    ;;@doc (log:strip-leading-colon s)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:strip-leading-colon`.
+    ;;@example
+    ;; (log:strip-leading-colon "sample")
     (defun log:strip-leading-colon (s)
       (if (and (> (string-length s) 0)
                (eq? (string-ref s 0) #\:))
           (substring s 1 (string-length s))
           s))
 
+    ;;@doc (log:normalize-opt-key k)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:normalize-opt-key`.
+    ;;@example
+    ;; (log:normalize-opt-key 1)
     (defun log:normalize-opt-key (k)
       (cond
         ((symbol? k) (string->symbol (log:strip-leading-colon (symbol->string k))))
         ((string? k) (string->symbol (log:strip-leading-colon k)))
         (#t (error "log: option key must be a symbol or string"))))
 
+    ;;@doc (log:opts->alist opts)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:opts->alist`.
+    ;;@example
+    ;; (log:opts->alist 'x)
     (defun log:opts->alist (opts)
       (letrec ((loop (lambda (xs acc)
                        (if (null? xs)
@@ -54,6 +72,12 @@
                                            acc)))))))
         (loop opts '())))
 
+    ;;@doc (log:validate-options opts allowed)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:validate-options`.
+    ;;@example
+    ;; (log:validate-options 'x 'x)
     (defun log:validate-options (opts allowed)
       (letrec ((loop (lambda (xs)
                        (if (null? xs)
@@ -63,19 +87,49 @@
                                (error "log: unknown option key"))))))
         (loop opts)))
 
+    ;;@doc (log:option-ref opts key default)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:option-ref`.
+    ;;@example
+    ;; (log:option-ref 'x 'x 'x)
     (defun log:option-ref (opts key default)
       (let ((entry (assq key opts)))
         (if entry (cdr entry) default)))
 
+    ;;@doc (log:default ...)
+    ;;@category Log
+    ;;@module std.log
+    ;; Logging helpers backed by %log-* runtime primitives Uses `log:default`.
+    ;;@example
+    ;; (log:default)
     (defun log:default ()
       (%log-default-logger))
 
+    ;;@doc (log:set-default! logger)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:set-default!`.
+    ;;@example
+    ;; (log:set-default! 'x)
     (defun log:set-default! (logger)
       (%log-set-default! logger))
 
+    ;;@doc (log:get-logger name)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:get-logger`.
+    ;;@example
+    ;; (log:get-logger "sample")
     (defun log:get-logger (name)
       (%log-get-logger name))
 
+    ;;@doc (log:make-logger name sinks)
+    ;;@category Log
+    ;;@module std.log
+    ;; Construct `log:make-logger`.
+    ;;@example
+    ;; (log:make-logger "sample" 'x)
     (defun log:make-logger (name sinks)
       (%log-make-logger name sinks))
 
@@ -89,47 +143,131 @@
         (log:validate-options alist '(color?))
         (%log-make-stdout-sink (log:option-ref alist 'color? #t) 'stderr)))
 
+    ;;@doc (log:make-file-sink path . opts)
+    ;;@category Log
+    ;;@module std.log
+    ;; Construct `log:make-file-sink`.
+    ;;@example
+    ;; (log:make-file-sink "sample" '())
     (defun log:make-file-sink (path . opts)
       (let ((alist (log:opts->alist opts)))
         (log:validate-options alist '(truncate?))
         (%log-make-file-sink path (log:option-ref alist 'truncate? #f))))
 
+    ;;@doc (log:make-rotating-sink path max-size max-files)
+    ;;@category Log
+    ;;@module std.log
+    ;; Construct `log:make-rotating-sink`.
+    ;;@example
+    ;; (log:make-rotating-sink "sample" 'x 'x)
     (defun log:make-rotating-sink (path max-size max-files)
       (%log-make-rotating-sink path max-size max-files))
 
+    ;;@doc (log:make-daily-sink path hour minute max-files)
+    ;;@category Log
+    ;;@module std.log
+    ;; Construct `log:make-daily-sink`.
+    ;;@example
+    ;; (log:make-daily-sink "sample" 'x 'x 'x)
     (defun log:make-daily-sink (path hour minute max-files)
       (%log-make-daily-sink path hour minute max-files))
 
+    ;;@doc (log:make-port-sink port)
+    ;;@category Log
+    ;;@module std.log
+    ;; Construct `log:make-port-sink`.
+    ;;@example
+    ;; (log:make-port-sink 8080)
     (defun log:make-port-sink (port)
       (%log-make-port-sink port))
 
+    ;;@doc (log:make-error-port-sink)
+    ;;@category Log
+    ;;@module std.log
+    ;; Construct `log:make-error-port-sink`.
+    ;;@example
+    ;; (log:make-error-port-sink)
     (defun log:make-error-port-sink ()
       (%log-make-current-error-sink))
 
+    ;;@doc (log:set-level! logger level)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:set-level!`.
+    ;;@example
+    ;; (log:set-level! 'x 'x)
     (defun log:set-level! (logger level)
       (%log-set-level! logger level))
 
+    ;;@doc (log:level logger)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:level`.
+    ;;@example
+    ;; (log:level 'x)
     (defun log:level (logger)
       (%log-level logger))
 
+    ;;@doc (log:set-global-level! level)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:set-global-level!`.
+    ;;@example
+    ;; (log:set-global-level! 'x)
     (defun log:set-global-level! (level)
       (%log-set-global-level! level))
 
+    ;;@doc (log:set-pattern! logger pattern)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:set-pattern!`.
+    ;;@example
+    ;; (log:set-pattern! 'x "sample")
     (defun log:set-pattern! (logger pattern)
       (%log-set-pattern! logger pattern))
 
+    ;;@doc (log:set-formatter! logger formatter)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:set-formatter!`.
+    ;;@example
+    ;; (log:set-formatter! 'x 'x)
     (defun log:set-formatter! (logger formatter)
       (%log-set-formatter! logger formatter))
 
+    ;;@doc (log:flush! logger)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:flush!`.
+    ;;@example
+    ;; (log:flush! 'x)
     (defun log:flush! (logger)
       (%log-flush! logger))
 
+    ;;@doc (log:flush-on! logger level)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:flush-on!`.
+    ;;@example
+    ;; (log:flush-on! 'x 'x)
     (defun log:flush-on! (logger level)
       (%log-flush-on! logger level))
 
+    ;;@doc (log:shutdown!)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:shutdown!`.
+    ;;@example
+    ;; (log:shutdown!)
     (defun log:shutdown! ()
       (%log-shutdown!))
 
+    ;;@doc (log:emit-level level args)
+    ;;@category Log
+    ;;@module std.log
+    ;; Compute `log:emit-level`.
+    ;;@example
+    ;; (log:emit-level 'x '())
     (defun log:emit-level (level args)
       (cond
         ((null? args)

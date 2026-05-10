@@ -13,41 +13,83 @@
   (import std.logic std.clpr)
   (begin
 
+    ;;@doc (make-vars n)
+    ;;@category Numerics
+    ;;@module portfolio-lp
+    ;; Construct `make-vars`.
+    ;;@example
+    ;; (make-vars 1)
     (defun make-vars (n)
       (if (= n 0)
           '()
           (cons (logic-var) (make-vars (- n 1)))))
 
+    ;;@doc (dot coeffs vars)
+    ;;@category Numerics
+    ;;@module portfolio-lp
+    ;; Compute `dot`.
+    ;;@example
+    ;; (dot 'x 'x)
     (defun dot (coeffs vars)
       (if (null? coeffs)
           0.0
           (clp:r+ (clp:r*scalar (car coeffs) (car vars))
                   (dot (cdr coeffs) (cdr vars)))))
 
+    ;;@doc (dot-values coeffs vars)
+    ;;@category Numerics
+    ;;@module portfolio-lp
+    ;; Compute `dot-values`.
+    ;;@example
+    ;; (dot-values 'x 'x)
     (defun dot-values (coeffs vars)
       (if (null? coeffs)
           0.0
           (+ (* (car coeffs) (deref-lvar (car vars)))
              (dot-values (cdr coeffs) (cdr vars)))))
 
+    ;;@doc (post-lower-bounds! xs lo)
+    ;;@category Numerics
+    ;;@module portfolio-lp
+    ;; Compute `post-lower-bounds!`.
+    ;;@example
+    ;; (post-lower-bounds! '() 'x)
     (defun post-lower-bounds! (xs lo)
       (if (null? xs)
           #t
           (and (clp:r>= (car xs) lo)
                (post-lower-bounds! (cdr xs) lo))))
 
+    ;;@doc (post-upper-bounds! xs hi)
+    ;;@category Numerics
+    ;;@module portfolio-lp
+    ;; Compute `post-upper-bounds!`.
+    ;;@example
+    ;; (post-upper-bounds! '() 'x)
     (defun post-upper-bounds! (xs hi)
       (if (null? xs)
           #t
           (and (clp:r<= (car xs) hi)
                (post-upper-bounds! (cdr xs) hi))))
 
+    ;;@doc (apply-witness! witness)
+    ;;@category Numerics
+    ;;@module portfolio-lp
+    ;; Compute `apply-witness!`.
+    ;;@example
+    ;; (apply-witness! 'x)
     (defun apply-witness! (witness)
       (if (null? witness)
           #t
           (and (unify (car (car witness)) (cdr (car witness)))
                (apply-witness! (cdr witness)))))
 
+    ;;@doc (print-allocation vars i)
+    ;;@category Numerics
+    ;;@module portfolio-lp
+    ;; Print output with `print-allocation`.
+    ;;@example
+    ;; (print-allocation 'x 1)
     (defun print-allocation (vars i)
       (if (null? vars)
           #t

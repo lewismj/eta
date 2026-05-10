@@ -68,11 +68,23 @@
 
     ;;  Local helpers (no imports needed) 
 
+    ;;@doc (%map f xs)
+    ;;@category Helpers
+    ;;@module std.test
+    ;; Apply `f` to each element of `xs` and return the mapped list.
+    ;;@example
+    ;; (%map (lambda (x) (+ x 1)) '(1 2 3))
     (defun %map (f xs)
       (if (null? xs)
           '()
           (cons (f (car xs)) (%map f (cdr xs)))))
 
+    ;;@doc (%foldl f acc xs)
+    ;;@category Helpers
+    ;;@module std.test
+    ;; Left-fold `xs` using reducer `f` and initial accumulator `acc`.
+    ;;@example
+    ;; (%foldl (lambda (acc x) (+ acc x)) 0 '(1 2 3))
     (defun %foldl (f acc xs)
       (if (null? xs)
           acc
@@ -80,14 +92,32 @@
 
     ;;  Assertions 
 
+    ;;@doc (assert-true x . rest)
+    ;;@category Assertions
+    ;;@module std.test
+    ;; Pass when `x` is truthy; otherwise raise an assertion error.
+    ;;@example
+    ;; (assert-true (> 3 1))
     (defun assert-true (x . rest)
       (let ((msg (if (null? rest) "expected true" (car rest))))
         (if x 'ok (error msg))))
 
+    ;;@doc (assert-false x . rest)
+    ;;@category Assertions
+    ;;@module std.test
+    ;; Pass when `x` is falsey; otherwise raise an assertion error.
+    ;;@example
+    ;; (assert-false (= 1 2))
     (defun assert-false (x . rest)
       (let ((msg (if (null? rest) "expected false" (car rest))))
         (if x (error msg) 'ok)))
 
+    ;;@doc (%val->string x)
+    ;;@category Helpers
+    ;;@module std.test
+    ;; Render `x` to a string using `display`.
+    ;;@example
+    ;; (%val->string 1)
     (defun %val->string (x)
       (let ((p (open-output-string)))
         (display x p)
@@ -110,10 +140,22 @@
             'ok
             (error msg))))
 
+    ;;@doc (assert-not-equal a b . rest)
+    ;;@category Assertions
+    ;;@module std.test
+    ;; Assert that `a` and `b` are not equal under `equal?`.
+    ;;@example
+    ;; (assert-not-equal 1 2)
     (defun assert-not-equal (a b . rest)
       (let ((msg (if (null? rest) "expected values to differ" (car rest))))
         (if (equal? a b) (error msg) 'ok)))
 
+    ;;@doc (assert-approx-equal expected actual . rest)
+    ;;@category Assertions
+    ;;@module std.test
+    ;; Assert that two numbers differ by at most `tol` (default `1e-9`).
+    ;;@example
+    ;; (assert-approx-equal 3.14 3.1400000001)
     (defun assert-approx-equal (expected actual . rest)
       (let ((tol (if (null? rest) 1e-9 (car rest))))
         (let ((diff (if (> expected actual)
@@ -131,6 +173,12 @@
 
     ;;  Runner 
 
+    ;;@doc (%run-test t)
+    ;;@category Runner
+    ;;@module std.test
+    ;; Execute one test case and return a `test-result` with status `'pass`.
+    ;;@example
+    ;; (%run-test (make-test "ok" (lambda () (assert-true #t))))
     (defun %run-test (t)
       ;; Execute the thunk; on success return pass, on error return fail.
       ;; NOTE: Until try/catch exists, a failing assertion (error) will
@@ -139,6 +187,12 @@
         ((test-thunk t))
         (%make-result (test-name t) 'pass '())))
 
+    ;;@doc (%all-pass? rs)
+    ;;@category Runner
+    ;;@module std.test
+    ;; Return `#t` when every result in `rs` has status `'pass`.
+    ;;@example
+    ;; (%all-pass? '())
     (defun %all-pass? (rs)
       (if (null? rs)
           #t
@@ -149,11 +203,23 @@
                 (%all-pass? (cdr rs))
                 #f))))
 
+    ;;@doc (%run-group g)
+    ;;@category Runner
+    ;;@module std.test
+    ;; Run all children in group `g` and compute the group pass/fail status.
+    ;;@example
+    ;; (%run-group (make-group "g" (list (make-test "ok" (lambda () (assert-true #t))))))
     (defun %run-group (g)
       (let ((kids (%map run (group-children g))))
         (let ((status (if (%all-pass? kids) 'pass 'fail)))
           (%make-group-result (group-name g) status kids))))
 
+    ;;@doc (run node)
+    ;;@category Runner
+    ;;@module std.test
+    ;; Run a test node (`test-case` or `test-group`) and return a result tree.
+    ;;@example
+    ;; (run (make-test "ok" (lambda () (assert-true #t))))
     (defun run (node)
       (if (test-case? node)
           (%run-test node)
@@ -161,12 +227,24 @@
 
     ;;  Summary 
 
+    ;;@doc (%add-summary a b)
+    ;;@category Summary
+    ;;@module std.test
+    ;; Merge two `test-summary` values by summing totals, passes, and failures.
+    ;;@example
+    ;; (%add-summary (%make-summary 1 1 0) (%make-summary 2 1 1))
     (defun %add-summary (a b)
       (%make-summary
         (+ (summary-total a)  (summary-total b))
         (+ (summary-passed a) (summary-passed b))
         (+ (summary-failed a) (summary-failed b))))
 
+    ;;@doc (%count-results res)
+    ;;@category Summary
+    ;;@module std.test
+    ;; Count total/passed/failed tests represented by one result-tree node.
+    ;;@example
+    ;; (%count-results (run (make-test "ok" (lambda () (assert-true #t)))))
     (defun %count-results (res)
       (if (test-result? res)
           (if (eq? (result-status res) 'pass)
@@ -177,10 +255,21 @@
                    (%make-summary 0 0 0)
                    (%map %count-results (gresult-children res)))))
 
+    ;;@doc (summary res)
+    ;;@category Summary
+    ;;@module std.test
+    ;; Build a `test-summary` for the result tree returned by `(run ...)`.
+    ;;@example
+    ;; (summary (run (make-test "ok" (lambda () (assert-true #t)))))
     (defun summary (res)
       (%count-results res))
 
+    ;;@doc (print-summary s)
+    ;;@category Summary
+    ;;@module std.test
     ;; Print a human-readable summary line.
+    ;;@example
+    ;; (print-summary (summary (run (make-test "ok" (lambda () (assert-true #t))))))
     (defun print-summary (s)
       (display (summary-total s))
       (display " tests, ")
@@ -204,6 +293,12 @@
     ;;     message: error message
     ;;     ...
 
+    ;;@doc (%tap-collect-results res acc)
+    ;;@category Output
+    ;;@module std.test
+    ;; Flatten nested group results into a linear list of test results.
+    ;;@example
+    ;; (%tap-collect-results (run (make-test "ok" (lambda () (assert-true #t)))) '())
     (defun %tap-collect-results (res acc)
       ;; Flatten all test-results from nested group-results into a list.
       (if (test-result? res)
@@ -213,6 +308,12 @@
                    acc
                    (gresult-children res))))
 
+    ;;@doc (%tap-print-result idx r)
+    ;;@category Output
+    ;;@module std.test
+    ;; Emit TAP output for one test result at sequence number `idx`.
+    ;;@example
+    ;; (%tap-print-result 1 (%make-result "ok" 'pass '()))
     (defun %tap-print-result (idx r)
       (if (eq? (result-status r) 'pass)
           (begin
@@ -235,6 +336,12 @@
             (display "  ...")
             (newline))))
 
+    ;;@doc (%tap-print-all results idx)
+    ;;@category Output
+    ;;@module std.test
+    ;; Emit TAP lines for each result in `results`, starting at index `idx`.
+    ;;@example
+    ;; (%tap-print-all (list (%make-result "ok" 'pass '())) 1)
     (defun %tap-print-all (results idx)
       (if (null? results)
           'done
@@ -266,6 +373,12 @@
     ;;
     ;; Emits JUnit XML that can be imported by IntelliJ / CI systems.
 
+    ;;@doc (%xml-escape s)
+    ;;@category Helpers
+    ;;@module std.test
+    ;; Escape XML-sensitive characters in `s` (`&`, `<`, `>`, and `\"`).
+    ;;@example
+    ;; (%xml-escape "<suite&case>")
     (defun %xml-escape (s)
       ;; Minimal XML escaping for attribute/text values.
       ;; Uses string-ref / string-length and eqv? to avoid char=? / string->list.
@@ -284,6 +397,12 @@
                     (else          (display c p))))
                 (loop (+ i 1)))))))
 
+    ;;@doc (%junit-print-result r)
+    ;;@category Output
+    ;;@module std.test
+    ;; Emit a JUnit `<testcase>` element for one test result.
+    ;;@example
+    ;; (%junit-print-result (%make-result "ok" 'pass '()))
     (defun %junit-print-result (r)
       (if (eq? (result-status r) 'pass)
           (begin
@@ -303,6 +422,12 @@
             (display "    </testcase>")
             (newline))))
 
+    ;;@doc (%junit-print-all results)
+    ;;@category Output
+    ;;@module std.test
+    ;; Emit JUnit `<testcase>` elements for every result in `results`.
+    ;;@example
+    ;; (%junit-print-all (list (%make-result "ok" 'pass '())))
     (defun %junit-print-all (results)
       (if (null? results)
           'done
@@ -310,6 +435,12 @@
             (%junit-print-result (car results))
             (%junit-print-all (cdr results)))))
 
+    ;;@doc (print-junit res . suite-name-rest)
+    ;;@category Output
+    ;;@module std.test
+    ;; Emit JUnit XML for a result tree produced by `(run ...)`.
+    ;;@example
+    ;; (print-junit (run (make-test "ok" (lambda () (assert-true #t)))))
     (defun print-junit (res . suite-name-rest)
       (let ((suite-name (if (null? suite-name-rest) "eta-tests" (car suite-name-rest))))
         (let ((flat (reverse (%tap-collect-results res '()))))

@@ -2,6 +2,12 @@
   (import std.test)
   (import mathx)
   (begin
+    ;;@doc (suite)
+    ;;@category Packaging
+    ;;@module mathx.tests.smoke
+    ;; Documented symbol `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "mathx"
         (list

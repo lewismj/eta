@@ -38,13 +38,23 @@
 
     ;; ── Graph mutilation helpers ──────────────────────────────────────────
 
+    ;;@doc (dag:mutilate-do dag x-set)
+    ;;@category Do Calculus
+    ;;@module do-rules
     ;; G_{X̄}: remove all incoming edges to X.
+    ;;@example
+    ;; (dag:mutilate-do 'x 'x)
     (defun dag:mutilate-do (dag x-set)
       (filter (lambda (edge)
                 (not (any? (lambda (x) (eq? (car (cdr (cdr edge))) x))
                            x-set)))
               dag))
 
+    ;;@doc (dag:mutilate-see dag z-set)
+    ;;@category Do Calculus
+    ;;@module do-rules
+    ;;@example
+    ;; (dag:mutilate-see 'x 'x)
     ;; G_{Z_}: remove all outgoing edges from Z.
     (defun dag:mutilate-see (dag z-set)
       (filter (lambda (edge)
@@ -52,6 +62,11 @@
                            z-set)))
               dag))
 
+    ;;@doc (dag:d-separated? dag y-set z-set w-set)
+    ;;@category Do Calculus
+    ;;@module do-rules
+    ;;@example
+    ;; (dag:d-separated? 'x 'x 'x 'x)
     ;; ── D-separation test (simplified Bayes Ball) ─────────────────────────
     ;;
     ;; Y ⊥ Z | W in graph G:
@@ -72,6 +87,11 @@
                         y-set))
               z-set))
 
+    ;;@doc (do-rule1-applies? dag y-set z-set x-set w-set)
+    ;;@category Do Calculus
+    ;;@module do-rules
+    ;;@example
+    ;; (do-rule1-applies? 'x 'x 'x 'x 'x)
     ;; ── Rule 1: Insertion/deletion of observations ────────────────────────
     ;;
     ;; (do-rule1-applies? dag y-set z-set x-set w-set)
@@ -82,6 +102,11 @@
       (let ((g-xbar (dag:mutilate-do dag x-set)))
         (dag:d-separated? g-xbar y-set z-set (append x-set w-set))))
 
+    ;;@doc (do-rule2-applies? dag y-set x-set z-set w-set)
+    ;;@category Do Calculus
+    ;;@module do-rules
+    ;;@example
+    ;; (do-rule2-applies? 'x 'x 'x 'x 'x)
     ;; ── Rule 2: Action/observation exchange ──────────────────────────────
     ;;
     ;; (do-rule2-applies? dag y-set x-set z-set w-set)
@@ -93,6 +118,11 @@
              (g-xbar-z_ (dag:mutilate-see g-xbar z-set)))
         (dag:d-separated? g-xbar-z_ y-set z-set (append x-set w-set))))
 
+    ;;@doc (do-rule3-applies? dag y-set x-set z-set w-set)
+    ;;@category Do Calculus
+    ;;@module do-rules
+    ;;@example
+    ;; (do-rule3-applies? 'x 'x 'x 'x 'x)
     ;; ── Rule 3: Insertion/deletion of actions ─────────────────────────────
     ;;
     ;; (do-rule3-applies? dag y-set x-set z-set w-set)

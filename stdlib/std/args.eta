@@ -33,24 +33,48 @@
     (define args:%opt-keys
       '(required? help metavar choices parse validate action))
 
+    ;;@doc (args:list? x)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:list?` holds.
+    ;;@example
+    ;; (args:list? 1)
     (defun args:list? (x)
       (cond
         ((null? x) #t)
         ((pair? x) (args:list? (cdr x)))
         (else #f)))
 
+    ;;@doc (args:member-equal? x xs)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:member-equal?` holds.
+    ;;@example
+    ;; (args:member-equal? 1 '())
     (defun args:member-equal? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (args:member-equal? x (cdr xs)))))
 
+    ;;@doc (args:every? pred xs)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:every?` holds.
+    ;;@example
+    ;; (args:every? (lambda (x) x) '())
     (defun args:every? (pred xs)
       (cond
         ((null? xs) #t)
         ((pred (car xs)) (args:every? pred (cdr xs)))
         (else #f)))
 
+    ;;@doc (args:pair-value p)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:pair-value`.
+    ;;@example
+    ;; (args:pair-value 'x)
     (defun args:pair-value (p)
       ;; Accept dotted pairs (k . v) and 2-element lists (k v).
       (let ((tail (cdr p)))
@@ -60,6 +84,12 @@
                 tail)
             tail)))
 
+    ;;@doc (args:alist-ref alist key default)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:alist-ref`.
+    ;;@example
+    ;; (args:alist-ref 'x 'x 'x)
     (defun args:alist-ref (alist key default)
       (let loop ((xs alist))
         (cond
@@ -69,6 +99,12 @@
            (args:pair-value (car xs)))
           (else (loop (cdr xs))))))
 
+    ;;@doc (args:opts-alist? x)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:opts-alist?` holds.
+    ;;@example
+    ;; (args:opts-alist? 1)
     (defun args:opts-alist? (x)
       (and (args:list? x)
            (args:every?
@@ -78,6 +114,12 @@
                     (args:member-equal? (car entry) args:%opt-keys)))
              x)))
 
+    ;;@doc (args:starts-with? s pfx)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:starts-with?` holds.
+    ;;@example
+    ;; (args:starts-with? "sample" 'x)
     (defun args:starts-with? (s pfx)
       (let ((ls (string-length s))
             (lp (string-length pfx)))
@@ -85,6 +127,12 @@
             #f
             (string=? (substring s 0 lp) pfx))))
 
+    ;;@doc (args:index-of-eq s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:index-of-eq`.
+    ;;@example
+    ;; (args:index-of-eq "sample")
     (defun args:index-of-eq (s)
       ;; Return index of first #\= in s, or -1.
       (letrec ((n (string-length s))
@@ -95,6 +143,12 @@
                          (else (loop (+ i 1)))))))
         (loop 0)))
 
+    ;;@doc (args:split-eq s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:split-eq`.
+    ;;@example
+    ;; (args:split-eq "sample")
     (defun args:split-eq (s)
       ;; "--foo=bar" -> (cons "--foo" "bar"), "--foo" -> (cons "--foo" #f)
       (let ((i (args:index-of-eq s)))
@@ -103,23 +157,47 @@
             (cons (substring s 0 i)
                   (substring s (+ i 1) (string-length s))))))
 
+    ;;@doc (args:option? tok)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:option?` holds.
+    ;;@example
+    ;; (args:option? 'x)
     (defun args:option? (tok)
       (and (> (string-length tok) 0)
            (eq? (string-ref tok 0) #\-)
            (not (string=? tok "-"))))
 
+    ;;@doc (args:flag->string f)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:flag->string`.
+    ;;@example
+    ;; (args:flag->string (lambda (x) x))
     (defun args:flag->string (f)
       (cond
         ((string? f) f)
         ((symbol? f) (symbol->string f))
         (else (error "args: flag must be a symbol or string"))))
 
+    ;;@doc (args:flags->strings flags)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:flags->strings`.
+    ;;@example
+    ;; (args:flags->strings 'x)
     (defun args:flags->strings (flags)
       (if (null? flags)
           '()
           (cons (args:flag->string (car flags))
                 (args:flags->strings (cdr flags)))))
 
+    ;;@doc (args:scalar-type? t)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:scalar-type?` holds.
+    ;;@example
+    ;; (args:scalar-type? 'x)
     (defun args:scalar-type? (t)
       (or (eq? t 'string)
           (eq? t 'int)
@@ -129,19 +207,97 @@
     ;; [0]=key [1]=flags [2]=kind [3]=item-type [4]=default [5]=required?
     ;; [6]=help [7]=metavar [8]=choices [9]=parser [10]=validator [11]=action
 
+    ;;@doc (args:spec-key s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-key`.
+    ;;@example
+    ;; (args:spec-key "sample")
     (defun args:spec-key       (s) (list-ref s 0))
+    ;;@doc (args:spec-flags s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-flags`.
+    ;;@example
+    ;; (args:spec-flags "sample")
     (defun args:spec-flags     (s) (list-ref s 1))
+    ;;@doc (args:spec-kind s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-kind`.
+    ;;@example
+    ;; (args:spec-kind "sample")
     (defun args:spec-kind      (s) (list-ref s 2))
+    ;;@doc (args:spec-item-type s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-item-type`.
+    ;;@example
+    ;; (args:spec-item-type "sample")
     (defun args:spec-item-type (s) (list-ref s 3))
+    ;;@doc (args:spec-default s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-default`.
+    ;;@example
+    ;; (args:spec-default "sample")
     (defun args:spec-default   (s) (list-ref s 4))
+    ;;@doc (args:spec-required? s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:spec-required?` holds.
+    ;;@example
+    ;; (args:spec-required? "sample")
     (defun args:spec-required? (s) (list-ref s 5))
+    ;;@doc (args:spec-help s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-help`.
+    ;;@example
+    ;; (args:spec-help "sample")
     (defun args:spec-help      (s) (list-ref s 6))
+    ;;@doc (args:spec-metavar s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-metavar`.
+    ;;@example
+    ;; (args:spec-metavar "sample")
     (defun args:spec-metavar   (s) (list-ref s 7))
+    ;;@doc (args:spec-choices s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-choices`.
+    ;;@example
+    ;; (args:spec-choices "sample")
     (defun args:spec-choices   (s) (list-ref s 8))
+    ;;@doc (args:spec-parser s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-parser`.
+    ;;@example
+    ;; (args:spec-parser "sample")
     (defun args:spec-parser    (s) (list-ref s 9))
+    ;;@doc (args:spec-validator s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-validator`.
+    ;;@example
+    ;; (args:spec-validator "sample")
     (defun args:spec-validator (s) (list-ref s 10))
+    ;;@doc (args:spec-action s)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:spec-action`.
+    ;;@example
+    ;; (args:spec-action "sample")
     (defun args:spec-action    (s) (list-ref s 11))
 
+    ;;@doc (args:default-for kind action)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:default-for`.
+    ;;@example
+    ;; (args:default-for 'x 'x)
     (defun args:default-for (kind action)
       (cond
         ((eq? action 'count) 0)
@@ -150,6 +306,12 @@
         ((eq? action 'append) '())
         (else '())))
 
+    ;;@doc (args:normalize-type raw)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:normalize-type`.
+    ;;@example
+    ;; (args:normalize-type 'x)
     (defun args:normalize-type (raw)
       ;; Returns (kind . item-type)
       (cond
@@ -167,6 +329,12 @@
         (else
          (error "args: invalid type in spec"))))
 
+    ;;@doc (args:normalize-action kind action)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:normalize-action`.
+    ;;@example
+    ;; (args:normalize-action 'x 'x)
     (defun args:normalize-action (kind action)
       (let ((a (if (eq? action #f)
                    (cond
@@ -184,6 +352,12 @@
           (else
            (error "args: action must be set, append, or count")))))
 
+    ;;@doc (args:normalize-one raw)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:normalize-one`.
+    ;;@example
+    ;; (args:normalize-one 'x)
     (defun args:normalize-one (raw)
       (if (or (not (pair? raw))
               (null? (cdr raw))
@@ -241,6 +415,12 @@
                     validator
                     action)))))
 
+    ;;@doc (args:normalize-specs specs)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:normalize-specs`.
+    ;;@example
+    ;; (args:normalize-specs 'x)
     (defun args:normalize-specs (specs)
       (let loop ((rest specs) (acc '()) (seen-keys '()) (seen-flags '()))
         (if (null? rest)
@@ -262,12 +442,24 @@
 
     ;; ----- lookup ------------------------------------------------------------
 
+    ;;@doc (args:flag-in? flag flags)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:flag-in?` holds.
+    ;;@example
+    ;; (args:flag-in? #t 'x)
     (defun args:flag-in? (flag flags)
       (cond
         ((null? flags) #f)
         ((string=? flag (car flags)) #t)
         (else (args:flag-in? flag (cdr flags)))))
 
+    ;;@doc (args:find-spec specs flag)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:find-spec`.
+    ;;@example
+    ;; (args:find-spec 'x #t)
     (defun args:find-spec (specs flag)
       ;; Linear scan; specs are usually small.
       (cond
@@ -275,6 +467,12 @@
         ((args:flag-in? flag (args:spec-flags (car specs))) (car specs))
         (else (args:find-spec (cdr specs) flag))))
 
+    ;;@doc (args:seen-add seen key)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:seen-add`.
+    ;;@example
+    ;; (args:seen-add 'x 'x)
     (defun args:seen-add (seen key)
       (if (args:member-equal? key seen)
           seen
@@ -282,6 +480,12 @@
 
     ;; ----- coercion ----------------------------------------------------------
 
+    ;;@doc (args:coerce-basic type raw key)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:coerce-basic`.
+    ;;@example
+    ;; (args:coerce-basic 'x 'x 'x)
     (defun args:coerce-basic (type raw key)
       (cond
         ((eq? type 'string) raw)
@@ -298,6 +502,12 @@
         (else
          (error "args: cannot coerce type"))))
 
+    ;;@doc (args:coerce spec raw)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:coerce`.
+    ;;@example
+    ;; (args:coerce 'x 'x)
     (defun args:coerce (spec raw)
       (let* ((kind      (args:spec-kind spec))
              (item-type (args:spec-item-type spec))
@@ -321,6 +531,12 @@
 
     ;; ----- defaults ----------------------------------------------------------
 
+    ;;@doc (args:install-defaults specs acc)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:install-defaults`.
+    ;;@example
+    ;; (args:install-defaults 'x 'x)
     (defun args:install-defaults (specs acc)
       (if (null? specs)
           acc
@@ -332,14 +548,32 @@
 
     ;; ----- value-taking guards ----------------------------------------------
 
+    ;;@doc (args:number-token? tok)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:number-token?` holds.
+    ;;@example
+    ;; (args:number-token? 'x)
     (defun args:number-token? (tok)
       (let ((n (string->number tok)))
         (number? n)))
 
+    ;;@doc (args:int-token? tok)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:int-token?` holds.
+    ;;@example
+    ;; (args:int-token? 'x)
     (defun args:int-token? (tok)
       (let ((n (string->number tok)))
         (and (number? n) (integer? n))))
 
+    ;;@doc (args:option-value-token-allowed? spec tok)
+    ;;@category Args
+    ;;@module std.args
+    ;; Return whether `args:option-value-token-allowed?` holds.
+    ;;@example
+    ;; (args:option-value-token-allowed? 'x 'x)
     (defun args:option-value-token-allowed? (spec tok)
       ;; If token looks like an option, only allow it as a value for numeric
       ;; targets when it is a valid negative/number literal.
@@ -351,6 +585,12 @@
           ((eq? base-type 'float) (args:number-token? tok))
           (else #f))))
 
+    ;;@doc (args:take-value spec flag inline rest)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:take-value`.
+    ;;@example
+    ;; (args:take-value 'x #t 'x '())
     (defun args:take-value (spec flag inline rest)
       (cond
         (inline (cons inline rest))
@@ -364,11 +604,23 @@
 
     ;; ----- main parser -------------------------------------------------------
 
+    ;;@doc (args:add-positional acc tok)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:add-positional`.
+    ;;@example
+    ;; (args:add-positional 'x 'x)
     (defun args:add-positional (acc tok)
       ;; Keep positional list reversed during parse, reverse in finalize.
       (hash-map-assoc acc 'positional
                       (cons tok (hash-map-ref acc 'positional '()))))
 
+    ;;@doc (args:consume spec specs flag inline rest acc seen)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:consume`.
+    ;;@example
+    ;; (args:consume 'x 'x #t 'x '() 'x 'x)
     (defun args:consume (spec specs flag inline rest acc seen)
       (let ((kind   (args:spec-kind spec))
             (action (args:spec-action spec))
@@ -406,6 +658,11 @@
                    (args:seen-add seen key)
                    #f)))))))
 
+    ;;@doc (args:loop specs tokens acc seen rest?)
+    ;;@category Args
+    ;;@module std.args
+    ;;@example
+    ;; (args:loop 'x 'x 'x 'x #t)
     ;; rest? = #t means we've seen `--`; everything is positional.
     (defun args:loop (specs tokens acc seen rest?)
       (if (null? tokens)
@@ -428,6 +685,12 @@
                      (error "args: unknown option")
                      (args:consume spec specs flag inline more acc seen))))))))
 
+    ;;@doc (args:required-check specs seen)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:required-check`.
+    ;;@example
+    ;; (args:required-check 'x 'x)
     (defun args:required-check (specs seen)
       (if (null? specs)
           #t
@@ -442,11 +705,23 @@
                 (error "args: missing required option")
                 (args:required-check (cdr specs) seen)))))
 
+    ;;@doc (args:finalize specs acc seen)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:finalize`.
+    ;;@example
+    ;; (args:finalize 'x 'x 'x)
     (defun args:finalize (specs acc seen)
       (args:required-check specs seen)
       (hash-map-assoc acc 'positional
                       (reverse (hash-map-ref acc 'positional '()))))
 
+    ;;@doc (args:parse specs argv)
+    ;;@category Args
+    ;;@module std.args
+    ;; Parse input with `args:parse`.
+    ;;@example
+    ;; (args:parse 'x 'x)
     (defun args:parse (specs argv)
       (let* ((nspecs (args:normalize-specs specs))
              (acc0   (args:install-defaults
@@ -456,6 +731,12 @@
 
     ;; ----- public conveniences ----------------------------------------------
 
+    ;;@doc (args:parse-command-line specs)
+    ;;@category Args
+    ;;@module std.args
+    ;; Parse input with `args:parse-command-line`.
+    ;;@example
+    ;; (args:parse-command-line 'x)
     (defun args:parse-command-line (specs)
       (args:parse specs (os:command-line-arguments)))
 
@@ -464,6 +745,12 @@
 
     ;; ----- help text ---------------------------------------------------------
 
+    ;;@doc (args:type->string spec)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:type->string`.
+    ;;@example
+    ;; (args:type->string 'x)
     (defun args:type->string (spec)
       (let ((kind (args:spec-kind spec))
             (item (args:spec-item-type spec)))
@@ -473,6 +760,12 @@
           (else
            (symbol->string kind)))))
 
+    ;;@doc (args:write-flags flags port)
+    ;;@category Args
+    ;;@module std.args
+    ;; Compute `args:write-flags`.
+    ;;@example
+    ;; (args:write-flags 'x 8080)
     (defun args:write-flags (flags port)
       (cond
         ((null? flags) #f)

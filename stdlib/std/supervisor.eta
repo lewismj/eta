@@ -21,6 +21,11 @@
 
     ;;  Internal helpers 
 
+    ;;@doc (supervisor-poll sockets timeout-ms)
+    ;;@category Supervisor
+    ;;@module std.supervisor
+    ;;@example
+    ;; (supervisor-poll 'x 'x)
     ;; (supervisor-poll sockets timeout-ms)
     ;;  (socket . msg) for the first socket that delivers a message, or #f
     ;;
@@ -36,10 +41,18 @@
                     (cons sock msg)
                     #f))))))
 
+    ;;@doc (down-message? msg)
+    ;;@category Supervisor
+    ;;@module std.supervisor
+    ;;@example
+    ;; (down-message? "sample")
     ;; (down-message? msg)  #t if msg is a (down ...) notification
     (defun down-message? (msg)
       (and (pair? msg) (equal? (car msg) 'down)))
 
+    ;;@doc (one-for-one children-specs)
+    ;;@category Supervisor
+    ;;@module std.supervisor
     ;;  one-for-one 
     ;; (one-for-one children-specs)
     ;;
@@ -50,6 +63,8 @@
     ;; children-specs: list of module-path strings
     ;;
     ;; Does not return normally.
+    ;;@example
+    ;; (one-for-one 'x)
     (defun one-for-one (children-specs)
       (let ((specs (list->vector children-specs)))
         (letrec
@@ -99,6 +114,11 @@
 
           (supervise (start-all)))))
 
+    ;;@doc (one-for-all children-specs)
+    ;;@category Supervisor
+    ;;@module std.supervisor
+    ;;@example
+    ;; (one-for-all 'x)
     ;;  one-for-all 
     ;; (one-for-all children-specs)
     ;;

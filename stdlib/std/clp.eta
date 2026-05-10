@@ -70,17 +70,47 @@
 
     ;;  Domain constructors 
 
+    ;;@doc (clp:domain var lo hi)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Constraint Logic Programming over Eta's native unification Uses `clp:domain`.
+    ;;@example
+    ;; (clp:domain-lo dom)
     (defun clp:domain (var lo hi)  (%clp-domain-z!  var lo hi))
+    ;;@doc (clp:in-fd var . vals)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:in-fd`.
+    ;;@example
+    ;; (clp:in-fd 'x '())
     (defun clp:in-fd  (var . vals) (%clp-domain-fd! var vals))
 
     ;;  Domain accessors 
 
+    ;;@doc (clp:domain-z? dom)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Return whether `clp:domain-z?` holds.
+    ;;@example
+    ;; (clp:domain-z? 'x)
     (defun clp:domain-z? (dom)
       (and (pair? dom) (eq? (car dom) 'z)))
 
+    ;;@doc (clp:domain-fd? dom)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Return whether `clp:domain-fd?` holds.
+    ;;@example
+    ;; (clp:domain-fd? 'x)
     (defun clp:domain-fd? (dom)
       (and (pair? dom) (eq? (car dom) 'fd)))
 
+    ;;@doc (clp:domain-lo dom)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:domain-lo`.
+    ;;@example
+    ;; (clp:domain-lo 'x)
     (defun clp:domain-lo (dom)
       (if (not (pair? dom))
           #f
@@ -91,6 +121,12 @@
                (if (null? vs) #f (car vs))))
             (else #f))))
 
+    ;;@doc (clp:domain-hi dom)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:domain-hi`.
+    ;;@example
+    ;; (clp:domain-hi 'x)
     (defun clp:domain-hi (dom)
       (if (not (pair? dom))
           #f
@@ -104,6 +140,12 @@
                          (loop (cdr xs)))))))
             (else #f))))
 
+    ;;@doc (clp:domain-values dom)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:domain-values`.
+    ;;@example
+    ;; (clp:domain-values 'x)
     (defun clp:domain-values (dom)
       (if (not (pair? dom))
           '()
@@ -114,21 +156,45 @@
              (cdr dom))
             (else '()))))
 
+    ;;@doc (clp:domain-empty? dom)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Return whether `clp:domain-empty?` holds.
+    ;;@example
+    ;; (clp:domain-empty? 'x)
     (defun clp:domain-empty? (dom)
       (or (not dom) (null? (clp:domain-values dom))))
 
+    ;;@doc (%clp-domain-size var)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `%clp-domain-size`.
+    ;;@example
+    ;; (%clp-domain-size 'x)
     (defun %clp-domain-size (var)
       (let ((dom (%clp-get-domain var)))
         (if dom (length (clp:domain-values dom)) #f)))
 
     ;;  Internal helpers 
 
+    ;;@doc (%clp-domain-values-for-var var)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `%clp-domain-values-for-var`.
+    ;;@example
+    ;; (%clp-domain-values-for-var 'x)
     (defun %clp-domain-values-for-var (var)
       (let ((dom (%clp-get-domain var)))
         (if dom (clp:domain-values dom) '())))
 
     ;;  Constraint propagators 
 
+    ;;@doc (clp:= x y)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:=`.
+    ;;@example
+    ;; (clp:= 1 1)
     (defun clp:= (x y)
       (let ((dx (%clp-get-domain x))
             (dy (%clp-get-domain y)))
@@ -144,6 +210,12 @@
                     (== x y))))
             (== x y))))
 
+    ;;@doc (clp:+ x y z)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:+`.
+    ;;@example
+    ;; (clp:+ 1 1 1)
     (defun clp:+ (x y z)
       ;; Native bounds-consistency propagator with re-firing on bind.
       ;; Runs once immediately; attaches a re-propagator thunk to each var so
@@ -155,6 +227,11 @@
              (%clp-prop-attach! z thunk)
              #t)))
 
+    ;;@doc (clp:plus-offset y x k)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (clp:plus-offset 1 1 1)
     ;; (clp:plus-offset y x k)   posts y = x + k  (k a ground integer).
     ;; Useful for N-queens diagonal constraints: Ai = Qi + i, Bi = Qi  i.
     (defun clp:plus-offset (y x k)
@@ -164,6 +241,11 @@
              (%clp-prop-attach! x thunk)
              #t)))
 
+    ;;@doc (clp:abs y x)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (clp:abs 1 1)
     ;; (clp:abs y x)   posts y = |x|.
     (defun clp:abs (y x)
       (and (%clp-fd-abs! y x)
@@ -172,6 +254,11 @@
              (%clp-prop-attach! x thunk)
              #t)))
 
+    ;;@doc (clp:* z x y)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (clp:* 1 1 1)
     ;; (clp:* z x y)   posts z = x * y (bounds consistency).
     (defun clp:* (z x y)
       (and (%clp-fd-times! z x y)
@@ -181,6 +268,11 @@
              (%clp-prop-attach! y thunk)
              #t)))
 
+    ;;@doc (clp:sum xs s)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (clp:sum '() "sample")
     ;; (clp:sum xs s)   posts  xs = s.  `xs` is a list of logic vars
     ;; and/or ground integers.
     (defun clp:sum (xs s)
@@ -194,6 +286,11 @@
                    (%clp-prop-attach! (car ys) thunk)
                    (loop (cdr ys))))))))
 
+    ;;@doc (clp:scalar-product cs xs s)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (clp:scalar-product 'x '() "sample")
     ;; (clp:scalar-product cs xs s)   posts  cx = s.
     (defun clp:scalar-product (cs xs s)
       (and (%clp-fd-scalar-product! cs xs s)
@@ -206,6 +303,11 @@
                    (%clp-prop-attach! (car ys) thunk)
                    (loop (cdr ys))))))))
 
+    ;;@doc (clp:element i xs v)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (clp:element 1 '() 1)
     ;; (clp:element i xs v)   posts xs[i] = v, one-based index.
     (defun clp:element (i xs v)
       (and (%clp-fd-element! i xs v)
@@ -219,6 +321,12 @@
                    (%clp-prop-attach! (car ys) thunk)
                    (loop (cdr ys))))))))
 
+    ;;@doc (clp:<= x y)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:<=`.
+    ;;@example
+    ;; (clp:<= 1 1)
     (defun clp:<= (x y)
       (let ((dx (%clp-get-domain x))
             (dy (%clp-get-domain y)))
@@ -234,6 +342,12 @@
                     #t)))
             #t)))
 
+    ;;@doc (clp:>= x y)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:>=`.
+    ;;@example
+    ;; (clp:>= 1 1)
     (defun clp:>= (x y) (clp:<= y x))
 
     ;;  Generic propagator re-firing on variable binding 
@@ -254,6 +368,11 @@
     ;; many sibling re-fires), and bounded-stack (drains iteratively
     ;; rather than via C++ recursion).
 
+    ;;@doc (%clp-prop-attach! v thunk)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (%clp-prop-attach! 1 (lambda (x) x))
     ;; Attach a re-propagator thunk to `v`'s `'clp.prop` attribute.
     ;; No-op if `v` is already ground (ground values never fire hooks).
     (defun %clp-prop-attach! (v thunk)
@@ -278,6 +397,12 @@
     ;; A re-propagator thunk is attached to every var under `'clp.prop`,
     ;; so any subsequent binding re-runs the matching to fixpoint.
 
+    ;;@doc (clp:all-different vars)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:all-different`.
+    ;;@example
+    ;; (clp:all-different 'x)
     (defun clp:all-different (vars)
       (and (%clp-fd-all-different! vars)
            (let ((thunk (lambda () (%clp-fd-all-different! vars))))
@@ -288,6 +413,12 @@
                    (%clp-prop-attach! (car ys) thunk)
                    (loop (cdr ys))))))))
 
+    ;;@doc (clp:<> x y)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:<>`.
+    ;;@example
+    ;; (clp:<> 1 1)
     (defun clp:<> (x y) (clp:all-different (list x y)))
 
     ;;  Deprecated aliases 
@@ -318,9 +449,19 @@
     ;; The positional back-compat form `(clp:labeling vars 'ff)` is detected
     ;; when the rest args is a single symbol  interpreted as a strategy.
 
+    ;;@doc (clp:solve vars)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (clp:solve 'x)
     ;; Back-compat: (clp:solve vars)  first solution, leftmost DFS.
     (defun clp:solve (vars) (clp:labeling vars))
 
+    ;;@doc (%clp-opt opts key default)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (%clp-opt 'x 'x 'x)
     ;; plist lookup with default.
     (defun %clp-opt (opts key default)
       (cond
@@ -329,6 +470,11 @@
         ((eq? (car opts) key) (car (cdr opts)))
         (else (%clp-opt (cdr (cdr opts)) key default))))
 
+    ;;@doc (%clp-normalise-opts rest)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (%clp-normalise-opts '())
     ;; Normalise rest args into a plist.  The legacy single-symbol form
     ;; `(clp:labeling vars 'ff)` is promoted to `(strategy ff)`.
     (defun %clp-normalise-opts (rest)
@@ -382,6 +528,11 @@
                 (unwind-trail outer-mark)
                 (reverse (cdr acc))))))))
 
+    ;;@doc (%clp-search vars strategy value-order found-fn)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (%clp-search 'x 'x 'x (lambda (x) x))
     ;; Core DFS search.  Returns #t to mean "stop (enough solutions)" 
     ;; which, for solutions='first, also means success.  Returns #f to
     ;; mean "dead-end, backtrack".
@@ -400,6 +551,12 @@
                            value-order)))
               (%clp-try-values pick vals rest strategy value-order found-fn))))))
 
+    ;;@doc (%clp-pick vars strategy)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `%clp-pick`.
+    ;;@example
+    ;; (%clp-pick 'x 'x)
     (defun %clp-pick (vars strategy)
       (cond
         ((eq? strategy 'leftmost)             (car vars))
@@ -408,6 +565,11 @@
         ((eq? strategy 'largest)              (%clp-pick-by vars >))
         (else                                 (car vars))))
 
+    ;;@doc (%clp-pick-by vars cmp)
+    ;;@category Clp
+    ;;@module std.clp
+    ;;@example
+    ;; (%clp-pick-by 'x 'x)
     ;; Pick the var whose domain size is extremal under `cmp` (< = smallest).
     (defun %clp-pick-by (vars cmp)
       (let loop ((xs (cdr vars))
@@ -421,12 +583,24 @@
                   (loop (cdr xs) (car xs) sz)
                   (loop (cdr xs) best best-sz)))))))
 
+    ;;@doc (%clp-order-values vals order)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `%clp-order-values`.
+    ;;@example
+    ;; (%clp-order-values '() 'x)
     (defun %clp-order-values (vals order)
       (cond
         ((null? vals) vals)
         ((eq? order 'down) (reverse vals))
         (else vals)))
 
+    ;;@doc (%clp-try-values var vals rest strategy value-order found-fn)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `%clp-try-values`.
+    ;;@example
+    ;; (%clp-try-values 'x '() '() 'x 'x (lambda (x) x))
     (defun %clp-try-values (var vals rest strategy value-order found-fn)
       (cond
         ((null? vals) #f)
@@ -457,6 +631,12 @@
     ;;   `cost` must carry a Z-domain *inside* goal-thunk.  Bound tightening
     ;;   is installed OUTSIDE the per-attempt trail-mark so it persists.
 
+    ;;@doc (%clp-bb cost goal-thunk direction best)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `%clp-bb`.
+    ;;@example
+    ;; (%clp-bb 'x 'x 'x 'x)
     (defun %clp-bb (cost goal-thunk direction best)
       (let* ((m  (trail-mark))
              (ok (goal-thunk)))
@@ -483,7 +663,19 @@
                        (%clp-bb cost goal-thunk direction v))
                       (else v))))))))))
 
+    ;;@doc (clp:minimize cost goal-thunk)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:minimize`.
+    ;;@example
+    ;; (clp:minimize 'x 'x)
     (defun clp:minimize (cost goal-thunk) (%clp-bb cost goal-thunk 'min #f))
+    ;;@doc (clp:maximize cost goal-thunk)
+    ;;@category Clp
+    ;;@module std.clp
+    ;; Compute `clp:maximize`.
+    ;;@example
+    ;; (clp:maximize 'x 'x)
     (defun clp:maximize (cost goal-thunk) (%clp-bb cost goal-thunk 'max #f))
 
   ))

@@ -440,21 +440,21 @@ def _check_duplicate_symbols(docs: list[ExtractedDoc]) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     seen: dict[str, ExtractedDoc] = {}
     for doc in docs:
-        for key in {doc.name, doc.qualified_name}:
-            if key not in seen:
-                seen[key] = doc
-                continue
-            previous = seen[key]
-            diagnostics.append(
-                Diagnostic(
-                    file=doc.file,
-                    line=doc.line,
-                    message=(
-                        f"duplicate stdlib doc symbol '{key}' "
-                        f"(first seen at {previous.file}:{previous.line})"
-                    ),
-                )
+        key = doc.qualified_name
+        if key not in seen:
+            seen[key] = doc
+            continue
+        previous = seen[key]
+        diagnostics.append(
+            Diagnostic(
+                file=doc.file,
+                line=doc.line,
+                message=(
+                    f"duplicate stdlib doc symbol '{key}' "
+                    f"(first seen at {previous.file}:{previous.line})"
+                ),
             )
+        )
     return diagnostics
 
 

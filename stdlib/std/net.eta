@@ -24,6 +24,9 @@
     survey)            ; scatter-gather query via SURVEYOR/RESPONDENT
   (begin
 
+    ;;@doc (with-socket type thunk)
+    ;;@category Net
+    ;;@module std.net
     ;;  with-socket 
     ;; (with-socket type thunk)  result of thunk
     ;;
@@ -42,6 +45,8 @@
     ;; closures, so set! on a let variable is not visible across lambda
     ;; boundaries.  We use a single-element vector as a mutable box to
     ;; share the socket reference between the before- and after-thunks.
+    ;;@example
+    ;; (with-socket 'x (lambda (x) x))
     (defun with-socket (type thunk)
       (let ((box (make-vector 1 #f)))
         (dynamic-wind
@@ -51,6 +56,11 @@
             (let ((s (vector-ref box 0)))
               (when s (nng-close s)))))))
 
+    ;;@doc (request-reply endpoint message)
+    ;;@category Net
+    ;;@module std.net
+    ;;@example
+    ;; (request-reply 'x 'x)
     ;;  request-reply 
     ;; (request-reply endpoint message)  reply value
     ;;
@@ -67,6 +77,11 @@
           (send! sock message)
           (recv! sock 'wait))))
 
+    ;;@doc (worker-pool module-path tasks)
+    ;;@category Net
+    ;;@module std.net
+    ;;@example
+    ;; (worker-pool 'x 'x)
     ;;  worker-pool 
     ;; (worker-pool module-path tasks)  list of results
     ;;
@@ -96,6 +111,11 @@
           (for-each nng-close workers)
           results)))
 
+    ;;@doc (pub-sub listen-endpoint topics handler)
+    ;;@category Net
+    ;;@module std.net
+    ;;@example
+    ;; (pub-sub 'x 'x 'x)
     ;;  pub-sub 
     ;; (pub-sub listen-endpoint topics handler)  does not return normally
     ;;
@@ -123,6 +143,11 @@
                            (loop))))
             (loop)))))
 
+    ;;@doc (survey endpoint question timeout-ms)
+    ;;@category Net
+    ;;@module std.net
+    ;;@example
+    ;; (survey 'x 'x 'x)
     ;;  survey 
     ;; (survey endpoint question timeout-ms)  list of responses
     ;;

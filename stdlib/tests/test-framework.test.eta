@@ -4,6 +4,12 @@
   (import std.test)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module test-framework.tests
+    ;; Self-tests for std.test itself Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "std.test framework"
         (list

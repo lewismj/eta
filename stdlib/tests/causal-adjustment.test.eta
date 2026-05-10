@@ -4,6 +4,12 @@
   (import std.test std.causal.adjustment std.core std.collections)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module causal.adjustment.tests
+    ;; Tests for std.causal.adjustment Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "std.causal.adjustment"
         (list

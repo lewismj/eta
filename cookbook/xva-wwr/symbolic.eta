@@ -6,10 +6,34 @@
   (import std.collections)
   (begin
 
+    ;;@doc (op e)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `op`.
+    ;;@example
+    ;; (op 'x)
     (defun op (e) (car e))
+    ;;@doc (a1 e)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `a1`.
+    ;;@example
+    ;; (a1 'x)
     (defun a1 (e) (cadr e))
+    ;;@doc (a2 e)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `a2`.
+    ;;@example
+    ;; (a2 'x)
     (defun a2 (e) (caddr e))
 
+    ;;@doc (simplify e)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Symbolic algebra helpers and lowering Uses `simplify`.
+    ;;@example
+    ;; (simplify (a1 e)
     (defun simplify (e)
       (cond
         ((non-pair? e) e)
@@ -59,10 +83,22 @@
 
         (else e)))
 
+    ;;@doc (simplify* e)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `simplify*`.
+    ;;@example
+    ;; (simplify* 'x)
     (defun simplify* (e)
       (let ((s (simplify e)))
         (if (equal? s e) s (simplify* s))))
 
+    ;;@doc (diff e v)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `diff`.
+    ;;@example
+    ;; (diff 'x 1)
     (defun diff (e v)
       (cond
         ((number? e) 0)
@@ -115,15 +151,33 @@
 
         (else 0)))
 
+    ;;@doc (D expr var)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `D`.
+    ;;@example
+    ;; (D 'x 'x)
     (defun D (expr var)
       (simplify* (diff expr var)))
 
+    ;;@doc (ensure-alist env)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `ensure-alist`.
+    ;;@example
+    ;; (ensure-alist 'x)
     (defun ensure-alist (env)
       (cond
         ((hash-map? env) (hash-map->list env))
         ((null? env) '())
         (else env)))
 
+    ;;@doc (eval-expression expr env)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `eval-expression`.
+    ;;@example
+    ;; (eval-expression 'x 'x)
     (defun eval-expression (expr env)
       (let* ((env* (ensure-alist env))
              (vars (map* car env*))
@@ -131,11 +185,22 @@
              (fn (lower-expression expr vars)))
         (apply fn vals)))
 
+    ;;@doc (lower-expression expr vars)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;;@example
+    ;; (lower-expression 'x 'x)
     ;; Lower a symbolic expression to a closure. If called with TapeRef inputs,
     ;; this closure records onto the active AAD tape through plain arithmetic.
     (defun lower-expression (expr vars)
       (eval (list 'lambda vars expr)))
 
+    ;;@doc (node-count expr)
+    ;;@category Xva Wwr
+    ;;@module symbolic
+    ;; Compute `node-count`.
+    ;;@example
+    ;; (node-count 'x)
     (defun node-count (expr)
       (if (non-pair? expr)
           1

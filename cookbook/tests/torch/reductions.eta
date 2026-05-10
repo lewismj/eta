@@ -11,6 +11,12 @@
   (import std.test)
   (begin
 
+    ;;@doc (t)
+    ;;@category Tests
+    ;;@module torch-test-reductions
+    ;; Reduction primitives Uses `t`.
+    ;;@example
+    ;; (display t)
     (define t (from-list '(1.0 5.0 3.0 2.0)))
 
     (define results

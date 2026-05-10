@@ -1,5 +1,17 @@
 (module mathx
   (export square cube)
   (begin
+    ;;@doc (square x)
+    ;;@category Packaging
+    ;;@module mathx
+    ;; Documented symbol `square`.
+    ;;@example
+    ;; (square 1)
     (defun square (x) (* x x))
+    ;;@doc (cube x)
+    ;;@category Packaging
+    ;;@module mathx
+    ;; Compute `cube`.
+    ;;@example
+    ;; (cube 1)
     (defun cube (x) (* x x x))))

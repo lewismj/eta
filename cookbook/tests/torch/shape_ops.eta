@@ -11,6 +11,12 @@
   (import std.test)
   (begin
 
+    ;;@doc (results)
+    ;;@category Tests
+    ;;@module torch-test-shape-ops
+    ;; Shape manipulation primitives Uses `results`.
+    ;;@example
+    ;; (display results)
     (define results
       (run (make-group "Shape Ops"
         (list

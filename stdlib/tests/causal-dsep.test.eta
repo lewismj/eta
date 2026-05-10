@@ -4,9 +4,21 @@
   (import std.test std.causal std.core std.collections)
   (begin
 
+    ;;@doc (node-sym i)
+    ;;@category Tests
+    ;;@module causal.dsep.tests
+    ;; Bayes-ball regression tests Uses `node-sym`.
+    ;;@example
+    ;; (node-sym i)
     (defun node-sym (i)
       (string->symbol (string-append "n" (number->string i))))
 
+    ;;@doc (make-chain n)
+    ;;@category Tests
+    ;;@module causal.dsep.tests
+    ;; Construct `make-chain`.
+    ;;@example
+    ;; (make-chain 1)
     (defun make-chain (n)
       (let loop ((i 0) (acc '()))
         (if (>= (+ i 1) n)

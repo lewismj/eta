@@ -36,6 +36,12 @@
 
     ;; ── Gradient driver ─────────────────────────────────────────────
 
+    ;;@doc (grad f vals)
+    ;;@category Numerics
+    ;;@module xva
+    ;; xVA (Valuation Adjustments) with Tape-Based AD Uses `grad`.
+    ;;@example
+    ;; (grad-vec (make-vector n 0)
     (defun grad (f vals)
       (let ((tape (tape-new))
             (n    (length vals)))
@@ -66,23 +72,43 @@
     ;; operands are TapeRefs and the VM records every operation
     ;; transparently — no d+, d*, dexp wrappers needed.
 
+    ;;@doc (discount-factor r t)
+    ;;@category Numerics
+    ;;@module xva
+    ;;@example
+    ;; (discount-factor 'x 'x)
     ;; ── Discount factor ─────────────────────────────────────────────
     ;; DF(r, t) = e^{-r·t}
     ;; `t` is a plain number (time point); `r` is a dual.
     (defun discount-factor (r t)
       (exp (* (* -1 r) t)))
 
+    ;;@doc (survival-prob hazard-rate t)
+    ;;@category Numerics
+    ;;@module xva
+    ;;@example
+    ;; (survival-prob 'x 'x)
     ;; ── Survival probability (hazard-rate model) ────────────────────
     ;; Q(λ, t) = e^{-λ·t}
     ;; Probability that the counterparty has *not* defaulted by time t.
     (defun survival-prob (hazard-rate t)
       (exp (* (* -1 hazard-rate) t)))
 
+    ;;@doc (default-prob hazard-rate t)
+    ;;@category Numerics
+    ;;@module xva
+    ;;@example
+    ;; (default-prob 'x 'x)
     ;; ── Cumulative default probability ──────────────────────────────
     ;; PD(λ, t) = 1 − Q(λ, t) = 1 − e^{-λ·t}
     (defun default-prob (hazard-rate t)
       (- 1 (survival-prob hazard-rate t)))
 
+    ;;@doc (marginal-pd hazard-rate t1 t2)
+    ;;@category Numerics
+    ;;@module xva
+    ;;@example
+    ;; (marginal-pd 'x 'x 'x)
     ;; ── Marginal default probability over a bucket ──────────────────
     ;; ΔPD(t₁, t₂) = PD(t₂) − PD(t₁) = Q(t₁) − Q(t₂)
     ;; The probability of defaulting in the interval (t₁, t₂].
@@ -90,6 +116,11 @@
       (- (default-prob hazard-rate t2)
          (default-prob hazard-rate t1)))
 
+    ;;@doc (expected-exposure notional sigma t)
+    ;;@category Numerics
+    ;;@module xva
+    ;;@example
+    ;; (expected-exposure 'x 'x 'x)
     ;; ── Expected Positive Exposure (simplified) ─────────────────────
     ;; For an at-the-money forward / swap under GBM:
     ;;   EE(t) ≈ N · σ · √t
@@ -110,6 +141,11 @@
     ;; The bank's expected loss due to the counterparty defaulting
     ;; while the derivative has positive mark-to-market.
 
+    ;;@doc (cva-bucket notional sigma r hazard-rate lgd t-prev t-curr)
+    ;;@category Numerics
+    ;;@module xva
+    ;;@example
+    ;; (cva-bucket 'x 'x 'x 'x 'x 'x 'x)
     ;; One time-bucket contribution:
     ;;   CVA_i = LGD × EE(t_mid) × DF(t_mid) × [PD(t_i) − PD(t_{i-1})]
     (defun cva-bucket (notional sigma r hazard-rate lgd t-prev t-curr)
@@ -119,6 +155,11 @@
             (* (discount-factor r t-mid)
                (marginal-pd hazard-rate t-prev t-curr))))))
 
+    ;;@doc (cva-loop notional sigma r hazard-rate lgd times prev-t acc)
+    ;;@category Numerics
+    ;;@module xva
+    ;;@example
+    ;; (cva-loop 'x 'x 'x 'x 'x 'x 'x 'x)
     ;; Sum across all buckets via tail-recursive accumulation.
     (defun cva-loop (notional sigma r hazard-rate lgd times prev-t acc)
       (if (null? times)
@@ -130,6 +171,11 @@
                (cva-bucket notional sigma r hazard-rate lgd
                            prev-t (car times))))))
 
+    ;;@doc (compute-cva notional sigma r hazard-rate lgd)
+    ;;@category Numerics
+    ;;@module xva
+    ;;@example
+    ;; (compute-cva 'x 'x 'x 'x 'x)
     ;; Top-level CVA over semi-annual buckets out to 5 years.
     (defun compute-cva (notional sigma r hazard-rate lgd)
       (cva-loop notional sigma r hazard-rate lgd
@@ -146,6 +192,12 @@
     ;; The cost of funding the uncollateralised expected exposure at
     ;; the bank's funding spread s_f above the risk-free rate.
 
+    ;;@doc (fva-bucket notional sigma r funding-spread t-prev t-curr)
+    ;;@category Numerics
+    ;;@module xva
+    ;; Compute `fva-bucket`.
+    ;;@example
+    ;; (fva-bucket 'x 'x 'x 'x 'x 'x)
     (defun fva-bucket (notional sigma r funding-spread t-prev t-curr)
       (let ((t-mid (* 0.5 (+ t-prev t-curr)))
             (dt    (- t-curr t-prev)))
@@ -153,6 +205,12 @@
           (* (discount-factor r t-mid)
             (* funding-spread dt)))))
 
+    ;;@doc (fva-loop notional sigma r funding-spread times prev-t acc)
+    ;;@category Numerics
+    ;;@module xva
+    ;; Compute `fva-loop`.
+    ;;@example
+    ;; (fva-loop 'x 'x 'x 'x 'x 'x 'x)
     (defun fva-loop (notional sigma r funding-spread times prev-t acc)
       (if (null? times)
           acc
@@ -163,6 +221,12 @@
                (fva-bucket notional sigma r funding-spread
                            prev-t (car times))))))
 
+    ;;@doc (compute-fva notional sigma r funding-spread)
+    ;;@category Numerics
+    ;;@module xva
+    ;; Compute `compute-fva`.
+    ;;@example
+    ;; (compute-fva 'x 'x 'x 'x)
     (defun compute-fva (notional sigma r funding-spread)
       (fva-loop notional sigma r funding-spread
         '(0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0)
@@ -180,6 +244,12 @@
     ;;   1: sigma         4: lgd
     ;;   2: r             5: funding-spread
 
+    ;;@doc (total-xva notional sigma r hazard-rate lgd funding-spread)
+    ;;@category Numerics
+    ;;@module xva
+    ;; Compute `total-xva`.
+    ;;@example
+    ;; (total-xva 'x 'x 'x 'x 'x 'x)
     (defun total-xva (notional sigma r hazard-rate lgd funding-spread)
       (+ (compute-cva notional sigma r hazard-rate lgd)
          (compute-fva notional sigma r funding-spread)))

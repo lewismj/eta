@@ -6,6 +6,12 @@
   (import std.io std.fact_table std.torch)
   (begin
 
+    ;;@doc (ft)
+    ;;@category Numerics
+    ;;@module fact-table-tensor
+    ;; std.fact_table -> std.torch bridge demo Uses `ft`.
+    ;;@example
+    ;; (display ft)
     (define ft (make-fact-table 'x 'y 'z))
     (fact-table-insert! ft 1 10 100)
     (fact-table-insert! ft 2 20 200)

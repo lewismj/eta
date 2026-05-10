@@ -12,7 +12,12 @@
   (import std.test)
   (begin
 
+    ;;@doc (train-n model opt loss-fn x y n)
+    ;;@category Tests
+    ;;@module torch-test-training
     ;; Helper: run N training steps, return final loss
+    ;;@example
+    ;; (train-n 'x 'x (lambda (x) x) 1 1 1)
     (defun train-n (model opt loss-fn x y n)
       (letrec ((loop (lambda (i last-loss)
                   (if (> i n) last-loss

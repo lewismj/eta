@@ -6,6 +6,12 @@
           std.causal.forest)
   (begin
 
+    ;;@doc (make-row x z1 z2 y)
+    ;;@category Tests
+    ;;@module causal.forest.smoke
+    ;; Construct `make-row`.
+    ;;@example
+    ;; (make-row 1 'x 'x 1)
     (defun make-row (x z1 z2 y)
       (list (cons 'x x) (cons 'z1 z1) (cons 'z2 z2) (cons 'y y)))
 

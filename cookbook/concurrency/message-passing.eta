@@ -18,6 +18,12 @@
   (begin
 
     (println "parent: spawning worker...")
+    ;;@doc (worker)
+    ;;@category Concurrency
+    ;;@module message-passing
+    ;; Erlang-style parent/child messaging Uses `worker`.
+    ;;@example
+    ;; (display worker)
     (define worker (spawn "cookbook/concurrency/message-passing-worker.eta"))
 
     ;; Send a greeting

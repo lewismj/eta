@@ -4,6 +4,12 @@
   (import std.test std.core std.math)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module core.tests
+    ;; Unit tests for builtins and std.core Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "core"
         (list

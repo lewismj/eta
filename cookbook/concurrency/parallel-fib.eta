@@ -15,7 +15,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (inputs)
+    ;;@category Concurrency
+    ;;@module parallel-fib
     ;; Fibonacci indices to compute in parallel
+    ;;@example
+    ;; (display inputs)
     (define inputs '(30 31 32 33 34 35))
 
     (println "parallel-fib: computing Fibonacci numbers in parallel...")

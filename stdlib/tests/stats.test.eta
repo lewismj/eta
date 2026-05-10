@@ -4,6 +4,12 @@
   (import std.test std.stats std.core)
   (begin
 
+    ;;@doc (xs)
+    ;;@category Tests
+    ;;@module stats.tests
+    ;; Unit tests for std.stats Uses `xs`.
+    ;;@example
+    ;; (display xs)
     (define xs '(2.0 4.0 4.0 4.0 5.0 5.0 7.0 9.0))  ;; mean=5, var=4, sd=2
 
     (define suite

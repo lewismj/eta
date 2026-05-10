@@ -55,24 +55,59 @@
     ;;
     ;; Each edge is (from -> to); `->` is the symbol at position 1.
 
+    ;;@doc (%dag-edge? edge)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Return whether `%dag-edge?` holds.
+    ;;@example
+    ;; (%dag-edge? 'x)
     (defun %dag-edge? (edge)
       (and (list? edge)
            (= (length edge) 3)
            (eq? (cadr edge) '->)))
 
+    ;;@doc (%assert-dag-edges dag)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%assert-dag-edges`.
+    ;;@example
+    ;; (%assert-dag-edges 'x)
     (defun %assert-dag-edges (dag)
       (if (every? %dag-edge? dag)
           dag
           (error 'invalid-dag dag)))
 
+    ;;@doc (%assert-valid-dag dag)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%assert-valid-dag`.
+    ;;@example
+    ;; (%assert-valid-dag 'x)
     (defun %assert-valid-dag (dag)
       (if (dag:valid? dag)
           dag
           (error 'invalid-dag dag)))
 
+    ;;@doc (%dag-edge-from edge)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%dag-edge-from`.
+    ;;@example
+    ;; (%dag-edge-from 'x)
     (defun %dag-edge-from (edge) (car edge))
+    ;;@doc (%dag-edge-to edge)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%dag-edge-to`.
+    ;;@example
+    ;; (%dag-edge-to 'x)
     (defun %dag-edge-to (edge) (car (cdr (cdr edge))))   ; skip '->'
 
+    ;;@doc (%dag-parents-raw dag node)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-parents-raw 'x 'x)
     ;; Raw accessors (no validation).
     (defun %dag-parents-raw (dag node)
       (filter (lambda (n) (not (eq? n node)))
@@ -80,13 +115,24 @@
                     (filter (lambda (e) (eq? (%dag-edge-to e) node))
                             dag))))
 
+    ;;@doc (%dag-children-raw dag node)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%dag-children-raw`.
+    ;;@example
+    ;; (%dag-children-raw 'x 'x)
     (defun %dag-children-raw (dag node)
       (filter (lambda (n) (not (eq? n node)))
               (map* %dag-edge-to
                     (filter (lambda (e) (eq? (%dag-edge-from e) node))
                             dag))))
 
+    ;;@doc (dag:nodes dag)
+    ;;@category Causal
+    ;;@module std.causal
     ;; All nodes that appear in any edge (union of sources and targets).
+    ;;@example
+    ;; (dag:nodes 'x)
     (defun dag:nodes (dag)
       (let ((all-nodes
               (foldr (lambda (edge acc)
@@ -97,6 +143,11 @@
                      dag)))
         all-nodes))
 
+    ;;@doc (dag:parents dag node)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:parents 'x 'x)
     ;; Direct parents of `node` (nodes with an edge pointing to node).
     (defun dag:parents (dag node)
       (begin
@@ -104,6 +155,11 @@
         (%assert-var dag node)
         (%dag-parents-raw dag node)))
 
+    ;;@doc (dag:children dag node)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:children 'x 'x)
     ;; Direct children of `node` (nodes with an edge from node).
     (defun dag:children (dag node)
       (begin
@@ -111,6 +167,11 @@
         (%assert-var dag node)
         (%dag-children-raw dag node)))
 
+    ;;@doc (dag:ancestors dag node)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:ancestors 'x 'x)
     ;; All ancestors of `node` (transitive closure of parents).
     (defun dag:ancestors (dag node)
       (begin
@@ -118,6 +179,11 @@
         (%assert-var dag node)
         (%dag-transitive dag %dag-parents-raw node '())))
 
+    ;;@doc (dag:descendants dag node)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:descendants 'x 'x)
     ;; All descendants of `node` (transitive closure of children).
     (defun dag:descendants (dag node)
       (begin
@@ -125,6 +191,11 @@
         (%assert-var dag node)
         (%dag-transitive dag %dag-children-raw node '())))
 
+    ;;@doc (dag:non-descendants dag node)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:non-descendants 'x 'x)
     ;; All nodes that are not descendants of `node` (and not `node` itself).
     (defun dag:non-descendants (dag node)
       (begin
@@ -134,6 +205,11 @@
           (filter (lambda (n) (not (%member? n desc)))
                   (dag:nodes dag)))))
 
+    ;;@doc (dag:has-path? dag from to forbidden)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:has-path? 'x 'x 'x 'x)
     ;; Is there a directed path from `from` to `to`, not passing through
     ;; any node in `forbidden`?
     (defun dag:has-path? (dag from to forbidden)
@@ -144,11 +220,21 @@
         (%assert-vars dag forbidden)
         (%dag-reachable? dag from to forbidden '())))
 
+    ;;@doc (dag:valid? dag)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:valid? 'x)
     ;; True iff `dag` is well-formed and acyclic.
     (defun dag:valid? (dag)
       (and (every? %dag-edge? dag)
            (not (dag:cyclic? dag))))
 
+    ;;@doc (dag:cyclic? dag)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:cyclic? 'x)
     ;; True iff `dag` contains a directed cycle.
     (defun dag:cyclic? (dag)
       (begin
@@ -156,6 +242,11 @@
         (any? (lambda (n) (%member? n (dag:descendants dag n)))
               (dag:nodes dag))))
 
+    ;;@doc (dag:topo-sort dag)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:topo-sort 'x)
     ;; Topological order of DAG nodes.
     ;; Raises (error 'cyclic-graph dag) if the graph has a cycle.
     (defun dag:topo-sort (dag)
@@ -180,12 +271,22 @@
                             next-indeg
                             (cons n order)))))))))
 
+    ;;@doc (dag:add-edge dag from to)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:add-edge 'x 'x 'x)
     ;; Return `dag` with edge (from -> to) added if missing.
     (defun dag:add-edge (dag from to)
       (if (%dag-has-edge? dag from to)
           dag
           (cons (list from '-> to) dag)))
 
+    ;;@doc (dag:remove-edge dag from to)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:remove-edge 'x 'x 'x)
     ;; Return `dag` with all edges (from -> to) removed.
     (defun dag:remove-edge (dag from to)
       (filter (lambda (e)
@@ -193,6 +294,11 @@
                           (eq? (%dag-edge-to e) to))))
               dag))
 
+    ;;@doc (dag:flip-edge dag from to)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:flip-edge 'x 'x 'x)
     ;; Return `dag` with (from -> to) flipped to (to -> from).
     ;; If (from -> to) is missing, this inserts only (to -> from).
     (defun dag:flip-edge (dag from to)
@@ -200,6 +306,11 @@
 
     ;; -- Causal identification --------------------------------------------
 
+    ;;@doc (dag:d-connected? dag x y z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:d-connected? 'x 1 1 'x)
     ;; True if there is at least one active path between X and Y given Z.
     ;; Accepts symbols or node-sets for X and Y.
     (defun dag:d-connected? (dag x y z-set)
@@ -217,10 +328,20 @@
                 (any? (lambda (target) (%member? target reachable))
                       y-set))))))
 
+    ;;@doc (dag:d-separated? dag x y z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:d-separated? 'x 1 1 'x)
     ;; True if all paths between X and Y are blocked by Z.
     (defun dag:d-separated? (dag x y z-set)
       (not (dag:d-connected? dag x y z-set)))
 
+    ;;@doc (dag:mutilate-do dag x-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:mutilate-do 'x 'x)
     ;; Return DAG with all incoming edges to X removed.
     (defun dag:mutilate-do (dag x-set)
       (begin
@@ -231,6 +352,11 @@
                     (not (%member? (%dag-edge-to e) x-nodes)))
                   dag))))
 
+    ;;@doc (dag:mutilate-see dag x-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:mutilate-see 'x 'x)
     ;; Return DAG with all outgoing edges from X removed.
     (defun dag:mutilate-see (dag x-set)
       (begin
@@ -241,6 +367,11 @@
                     (not (%member? (%dag-edge-from e) x-nodes)))
                   dag))))
 
+    ;;@doc (do-rule1-applies? dag y-set x-set z-set w-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do-rule1-applies? 'x 'x 'x 'x 'x)
     ;; Rule 1 (insertion/deletion of observations):
     ;;   P(y | do(x), z, w) = P(y | do(x), w)
     ;; iff Y and Z are d-separated given X,UW in G_{X-bar}.
@@ -260,6 +391,11 @@
                             z-nodes
                             (%set-union x-nodes w-nodes)))))
 
+    ;;@doc (do-rule2-applies? dag y-set x-set z-set w-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do-rule2-applies? 'x 'x 'x 'x 'x)
     ;; Rule 2 (action/observation exchange):
     ;;   P(y | do(x), do(z), w) = P(y | do(x), z, w)
     ;; iff Y and Z are d-separated given X,UW in G_{X-bar, Z-underline}.
@@ -280,6 +416,11 @@
                             z-nodes
                             (%set-union x-nodes w-nodes)))))
 
+    ;;@doc (do-rule3-applies? dag y-set x-set z-set w-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do-rule3-applies? 'x 'x 'x 'x 'x)
     ;; Rule 3 (insertion/deletion of actions).
     (defun do-rule3-applies? (dag y-set x-set z-set w-set)
       (begin
@@ -304,6 +445,11 @@
                             z-nodes
                             (%set-union x-nodes w-nodes)))))
 
+    ;;@doc (dag:satisfies-backdoor? dag x y z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:satisfies-backdoor? 'x 1 1 'x)
     ;; (dag:satisfies-backdoor? dag x y z-set)
     ;;
     ;; Back-door criterion:
@@ -326,6 +472,11 @@
                     (not (%path-active? dag path z-set)))
                   (%dag-backdoor-node-paths dag x y)))))
 
+    ;;@doc (dag:adjustment-sets dag x y . rest)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:adjustment-sets 'x 1 1 '())
     ;; (dag:adjustment-sets dag x y [max-size])
     ;;
     ;; Enumerate valid back-door adjustment sets in non-decreasing set size.
@@ -344,6 +495,11 @@
                     (dag:satisfies-backdoor? dag x y z))
                   subsets))))
 
+    ;;@doc (dag:adjustment-sets-observed dag x y observed . rest)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (dag:adjustment-sets-observed 'x 1 1 'x '())
     ;; (dag:adjustment-sets-observed dag x y observed [max-size])
     ;;
     ;; Same as dag:adjustment-sets, but only variables present in `observed`
@@ -365,6 +521,11 @@
                     (dag:satisfies-backdoor? dag x y z))
                   subsets))))
 
+    ;;@doc (do:identify-details dag y x . rest)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:identify-details 'x 1 1 '())
     ;; (do:identify-details dag y x [max-size])
     ;;
     ;; Return an association list:
@@ -416,6 +577,11 @@
                      (cons 'all-z-sets z-sets)
                      (cons 'assumptions (%identify-assumptions))))))))))
 
+    ;;@doc (do:identify-details-observed dag y x observed . rest)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:identify-details-observed 'x 1 1 'x '())
     ;; (do:identify-details-observed dag y x observed [max-size])
     ;;
     ;; Like do:identify-details, but restricts adjustment-set search to
@@ -464,6 +630,11 @@
                      (cons 'all-z-sets z-sets)
                      (cons 'assumptions (%identify-assumptions-observed))))))))))
 
+    ;;@doc (do:identify dag y x . rest)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:identify 'x 1 1 '())
     ;; (do:identify dag y x [max-size])
     ;;
     ;; Backward-compatible convenience API returning only the formula.
@@ -474,6 +645,11 @@
              (result (assoc-ref 'result details)))
         result))
 
+    ;;@doc (do:identify-observed dag y x observed . rest)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:identify-observed 'x 1 1 'x '())
     ;; (do:identify-observed dag y x observed [max-size])
     ;;
     ;; Backward-compatible convenience API for observed-set-restricted
@@ -485,6 +661,11 @@
              (result (assoc-ref 'result details)))
         result))
 
+    ;;@doc (do:adjustment-formula->string formula y x)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:adjustment-formula->string 'x 1 1)
     ;; Format an identification result as a human-readable string.
     (defun do:adjustment-formula->string (formula y x)
       (cond
@@ -515,6 +696,11 @@
 
     ;; -- Numeric estimation (pure Eta, no FFI) ---------------------------
 
+    ;;@doc (do:estimate-effect y-var x-var x-val z-set . rest)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:estimate-effect 'x 'x 'x 'x '())
     ;; (do:estimate-effect y-var x-var x-val z-set data)
     ;; (do:estimate-effect y-var x-var x-val z-set z-val data) ; legacy arity
     ;;
@@ -531,6 +717,11 @@
         (else
          (error "do:estimate-effect: expected (y x x-val z-set data) or (y x x-val z-set z-val data)"))))
 
+    ;;@doc (do:%estimate-effect-single y-var x-var x-val z-set z-val data)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:%estimate-effect-single 'x 'x 'x 'x 'x 'x)
     ;; Legacy one-stratum contribution (kept for compatibility).
     (defun do:%estimate-effect-single (y-var x-var x-val z-set z-val data)
       (let* ((stratum (filter (lambda (obs)
@@ -542,6 +733,11 @@
             0.0
             (* (do:conditional-mean stratum y-var) p-z))))
 
+    ;;@doc (do:%estimate-effect-marginal y-var x-var x-val z-set data)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:%estimate-effect-marginal 'x 'x 'x 'x 'x)
     ;; Full back-door adjustment sum over all observed Z-tuples.
     (defun do:%estimate-effect-marginal (y-var x-var x-val z-set data)
       (let ((z-values (%distinct-tuples data z-set)))
@@ -551,6 +747,11 @@
                0.0
                z-values)))
 
+    ;;@doc (do:conditional-mean data y-var)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:conditional-mean 'x 'x)
     ;; (do:conditional-mean data y-var)
     ;; Compute sample mean of y-var in `data`.
     (defun do:conditional-mean (data y-var)
@@ -563,6 +764,11 @@
                               data)))
             (/ (* 1.0 ysum) n))))
 
+    ;;@doc (do:marginal-prob data z-set z-val)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (do:marginal-prob 'x 'x 'x)
     ;; (do:marginal-prob data z-set z-val)
     ;; Estimate P(Z=z-val) from sample.
     (defun do:marginal-prob (data z-set z-val)
@@ -576,11 +782,21 @@
 
     ;; -- Internal graph helpers ------------------------------------------
 
+    ;;@doc (%assoc-get alist key default)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%assoc-get 'x 'x 'x)
     ;; Association-list lookup with default.
     (defun %assoc-get (alist key default)
       (let ((entry (assq key alist)))
         (if entry (cdr entry) default)))
 
+    ;;@doc (%assoc-set alist key val)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%assoc-set 'x 'x 1)
     ;; Association-list update (insert-or-replace).
     (defun %assoc-set (alist key val)
       (cond
@@ -590,6 +806,11 @@
         (else
          (cons (car alist) (%assoc-set (cdr alist) key val)))))
 
+    ;;@doc (%dag-indegrees dag nodes)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-indegrees 'x 'x)
     ;; Initial indegree map for Kahn's algorithm.
     (defun %dag-indegrees (dag nodes)
       (let ((base (map* (lambda (n) (cons n 0)) nodes)))
@@ -600,6 +821,11 @@
                base
                dag)))
 
+    ;;@doc (%dag-reduce-indegree dag node indeg)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-reduce-indegree 'x 'x 'x)
     ;; Reduce indegrees of children after removing `node`.
     ;; Returns (list next-indegree newly-ready).
     (defun %dag-reduce-indegree (dag node indeg)
@@ -617,6 +843,11 @@
                                    ready)))
               (loop (cdr children) next-map next-ready)))))
 
+    ;;@doc (%ancestor-closure dag z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%ancestor-closure 'x 'x)
     ;; Ancestors(Z) union Z.
     (defun %ancestor-closure (dag z-set)
       (foldl (lambda (acc z)
@@ -626,12 +857,29 @@
              '()
              z-set))
 
+    ;;@doc (%as-up-states nodes)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%as-up-states`.
+    ;;@example
+    ;; (%as-up-states 'x)
     (defun %as-up-states (nodes)
       (map* (lambda (n) (cons n 'up)) nodes))
 
+    ;;@doc (%as-down-states nodes)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%as-down-states`.
+    ;;@example
+    ;; (%as-down-states 'x)
     (defun %as-down-states (nodes)
       (map* (lambda (n) (cons n 'down)) nodes))
 
+    ;;@doc (%bayes-ball-step dag node dir observed? anc-z)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%bayes-ball-step 'x 'x 'x #t 'x)
     ;; Transition rules for Bayes-ball.
     (defun %bayes-ball-step (dag node dir observed? anc-z)
       (cond
@@ -650,6 +898,11 @@
                '())))
         (else '())))
 
+    ;;@doc (%bayes-ball dag start z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%bayes-ball 'x 'x 'x)
     ;; Bayes-ball reachability from start set given observed set Z.
     (defun %bayes-ball (dag start z-set)
       (let* ((anc-z (%ancestor-closure dag z-set))
@@ -675,6 +928,11 @@
                             visited2
                             reachable2))))))))
 
+    ;;@doc (%dag-transitive dag next-fn node visited)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-transitive 'x (lambda (x) x) 'x 'x)
     ;; Transitive closure helper over next-fn.
     (defun %dag-transitive (dag next-fn node visited)
       (let loop ((stack (next-fn dag node)) (seen visited))
@@ -686,6 +944,11 @@
                   (loop (append (next-fn dag n) (cdr stack))
                         (%adjoin n seen)))))))
 
+    ;;@doc (%dag-reachable? dag from to forbidden visited)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-reachable? 'x 'x 'x 'x 'x)
     ;; Directed reachability (DFS): from -> to with forbidden nodes removed.
     (defun %dag-reachable? (dag from to forbidden visited)
       (cond
@@ -698,6 +961,11 @@
                    (%dag-reachable? dag child to forbidden new-visited))
                   (%dag-children-raw dag from))))))
 
+    ;;@doc (%dag-has-edge? dag from to)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-has-edge? 'x 'x 'x)
     ;; True iff there is a directed edge from -> to.
     (defun %dag-has-edge? (dag from to)
       (any? (lambda (e)
@@ -705,6 +973,11 @@
                    (eq? (%dag-edge-to e) to)))
             dag))
 
+    ;;@doc (%dag-neighbors dag node)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-neighbors 'x 'x)
     ;; Undirected neighbors for path enumeration.
     (defun %dag-neighbors (dag node)
       (foldl (lambda (acc n) (%adjoin n acc))
@@ -712,6 +985,11 @@
              (append (%dag-parents-raw dag node)
                      (%dag-children-raw dag node))))
 
+    ;;@doc (%dag-all-simple-paths dag src dst)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-all-simple-paths 'x 'x 'x)
     ;; Enumerate all simple undirected node paths between src and dst.
     (defun %dag-all-simple-paths (dag src dst)
       (letrec ((dfs (lambda (curr visited path-rev)
@@ -729,22 +1007,42 @@
                                          nexts)))))))
         (dfs src (list src) (list src))))
 
+    ;;@doc (%backdoor-path? dag x path)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%backdoor-path? 'x 1 "sample")
     ;; A path is back-door wrt X iff it starts at X and first edge is into X.
     (defun %backdoor-path? (dag x path)
       (and (>= (length path) 2)
            (eq? (car path) x)
            (%dag-has-edge? dag (car (cdr path)) x)))
 
+    ;;@doc (%dag-backdoor-node-paths dag x y)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%dag-backdoor-node-paths 'x 1 1)
     ;; Back-door node paths from X to Y.
     (defun %dag-backdoor-node-paths (dag x y)
       (filter (lambda (path) (%backdoor-path? dag x path))
               (%dag-all-simple-paths dag x y)))
 
+    ;;@doc (%path-collider? dag a b c)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%path-collider? 'x 1 1 'x)
     ;; Node b is a collider on triple (a, b, c) iff a -> b <- c.
     (defun %path-collider? (dag a b c)
       (and (%dag-has-edge? dag a b)
            (%dag-has-edge? dag c b)))
 
+    ;;@doc (%desc-or-self-in-z? dag node z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%desc-or-self-in-z? 'x 'x 'x)
     ;; Collider activation rule: collider is active if itself or any descendant
     ;; is in Z.
     (defun %desc-or-self-in-z? (dag node z-set)
@@ -752,6 +1050,11 @@
           (any? (lambda (d) (%member? d z-set))
                 (dag:descendants dag node))))
 
+    ;;@doc (%path-active? dag path z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%path-active? 'x "sample" 'x)
     ;; Path activity for d-separation.
     ;; Internal non-colliders must not be in Z.
     ;; Internal colliders must be in Z or have a descendant in Z.
@@ -769,6 +1072,11 @@
                                  (and open? (walk b c (cdr rest))))))))
             (walk (car path) (car (cdr path)) (cdr (cdr path))))))
 
+    ;;@doc (%adjustment-candidates dag x y)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%adjustment-candidates 'x 1 1)
     ;; Candidate variables for adjustment sets.
     (defun %adjustment-candidates (dag x y)
       (filter (lambda (n)
@@ -776,6 +1084,11 @@
                      (not (eq? n y))))
               (dag:non-descendants dag x)))
 
+    ;;@doc (%choose-k xs k)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%choose-k '() 1)
     ;; Enumerate all size-k subsets of xs.
     (defun %choose-k (xs k)
       (cond
@@ -788,6 +1101,11 @@
                  (%choose-k (cdr xs) (- k 1)))
            (%choose-k (cdr xs) k)))))
 
+    ;;@doc (%subsets-up-to-size xs max-k)
+    ;;@category Causal
+    ;;@module std.causal
+    ;;@example
+    ;; (%subsets-up-to-size '() 'x)
     ;; Enumerate subsets of xs with size in [0, max-k], in increasing size.
     (defun %subsets-up-to-size (xs max-k)
       (letrec ((loop (lambda (k acc)
@@ -797,6 +1115,12 @@
                                  (append acc (%choose-k xs k)))))))
         (loop 0 '())))
 
+    ;;@doc (%normalize-max-size n max-k)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%normalize-max-size`.
+    ;;@example
+    ;; (%normalize-max-size 1 'x)
     (defun %normalize-max-size (n max-k)
       (cond
         ((not (number? n)) max-k)
@@ -804,12 +1128,24 @@
         ((> n max-k) max-k)
         (else n)))
 
+    ;;@doc (%identify-assumptions)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%identify-assumptions`.
+    ;;@example
+    ;; (%identify-assumptions)
     (defun %identify-assumptions ()
       '(dag-correctness
         no-unobserved-confounding
         positivity
         consistency-sutva))
 
+    ;;@doc (%identify-assumptions-observed)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%identify-assumptions-observed`.
+    ;;@example
+    ;; (%identify-assumptions-observed)
     (defun %identify-assumptions-observed ()
       '(dag-correctness
         observed-adjustment-only
@@ -818,21 +1154,51 @@
 
     ;; -- Set utilities ----------------------------------------------------
 
+    ;;@doc (%member? x xs)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%adjoin x xs)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%adjoin`.
+    ;;@example
+    ;; (%adjoin 1 '())
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    ;;@doc (%set-union a b)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%set-union`.
+    ;;@example
+    ;; (%set-union 1 1)
     (defun %set-union (a b)
       (foldl (lambda (acc x) (%adjoin x acc)) a b))
 
+    ;;@doc (%set-diff a b)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%set-diff`.
+    ;;@example
+    ;; (%set-diff 1 1)
     (defun %set-diff (a b)
       (filter (lambda (x) (not (%member? x b))) a))
 
+    ;;@doc (%as-node-set x)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%as-node-set`.
+    ;;@example
+    ;; (%as-node-set 1)
     (defun %as-node-set (x)
       (cond
         ((null? x) '())
@@ -840,11 +1206,23 @@
         ((list? x) x)
         (else (error "expected symbol or list of symbols"))))
 
+    ;;@doc (%assert-var dag v)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%assert-var`.
+    ;;@example
+    ;; (%assert-var 'x 1)
     (defun %assert-var (dag v)
       (if (%member? v (dag:nodes dag))
           v
           (error 'unknown-variable v)))
 
+    ;;@doc (%assert-vars dag vs)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%assert-vars`.
+    ;;@example
+    ;; (%assert-vars 'x 'x)
     (defun %assert-vars (dag vs)
       (if (null? vs)
           '()
@@ -854,20 +1232,44 @@
 
     ;; -- Observation record helpers --------------------------------------
 
+    ;;@doc (%obs-get obs var)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%obs-get`.
+    ;;@example
+    ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
       (assoc-ref var obs))
 
+    ;;@doc (%obs-matches-z obs z-set z-val)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%obs-matches-z`.
+    ;;@example
+    ;; (%obs-matches-z 'x 'x 'x)
     (defun %obs-matches-z (obs z-set z-val)
       (every? (lambda (z-var)
                 (equal? (%obs-get obs z-var)
                         (%obs-get z-val z-var)))
               z-set))
 
+    ;;@doc (%obs-project-z obs z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%obs-project-z`.
+    ;;@example
+    ;; (%obs-project-z 'x 'x)
     (defun %obs-project-z (obs z-set)
       (map* (lambda (z-var)
               (cons z-var (%obs-get obs z-var)))
             z-set))
 
+    ;;@doc (%distinct-tuples data z-set)
+    ;;@category Causal
+    ;;@module std.causal
+    ;; Compute `%distinct-tuples`.
+    ;;@example
+    ;; (%distinct-tuples 'x 'x)
     (defun %distinct-tuples (data z-set)
       (reverse
         (foldl (lambda (acc obs)

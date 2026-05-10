@@ -4,6 +4,12 @@
   (import std.test std.json)
   (begin
 
+    ;;@doc (test-read-string-default)
+    ;;@category Tests
+    ;;@module json.tests
+    ;; Tests for std.json wrappers Uses `test-read-string-default`.
+    ;;@example
+    ;; (display test-read-string-default)
     (define test-read-string-default
       (make-test "json:read-string defaults numbers to flonums"
         (lambda ()

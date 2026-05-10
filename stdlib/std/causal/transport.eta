@@ -30,18 +30,42 @@
 
     ;; -- Set and list helpers -------------------------------------------
 
+    ;;@doc (%member? x xs)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%adjoin x xs)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%adjoin`.
+    ;;@example
+    ;; (%adjoin 1 '())
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    ;;@doc (%set-diff a b)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%set-diff`.
+    ;;@example
+    ;; (%set-diff 1 1)
     (defun %set-diff (a b)
       (filter (lambda (x) (not (%member? x b))) a))
 
+    ;;@doc (%normalize-vars vars)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%normalize-vars`.
+    ;;@example
+    ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
       (let loop ((rest vars) (acc '()))
         (if (null? rest)
@@ -51,6 +75,12 @@
                   (loop (cdr rest) acc)
                   (loop (cdr rest) (cons v acc)))))))
 
+    ;;@doc (%as-node-set x)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%as-node-set`.
+    ;;@example
+    ;; (%as-node-set 1)
     (defun %as-node-set (x)
       (cond
         ((null? x) '())
@@ -58,12 +88,24 @@
         ((list? x) (%normalize-vars x))
         (else (error "expected symbol or list of symbols"))))
 
+    ;;@doc (%as-single-node x where)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%as-single-node`.
+    ;;@example
+    ;; (%as-single-node 1 'x)
     (defun %as-single-node (x where)
       (let ((xs (%as-node-set x)))
         (if (= (length xs) 1)
             (car xs)
             (error (string-append where ": expected symbol or singleton list")))))
 
+    ;;@doc (%assert-vars nodes vs)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%assert-vars`.
+    ;;@example
+    ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes vs)
       (if (null? vs)
           'ok
@@ -73,41 +115,113 @@
                 (error 'unknown-variable (car vs)))
             (%assert-vars nodes (cdr vs)))))
 
+    ;;@doc (%find pred xs)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%find`.
+    ;;@example
+    ;; (%find (lambda (x) x) '())
     (defun %find (pred xs)
       (cond
         ((null? xs) #f)
         ((pred (car xs)) (car xs))
         (else (%find pred (cdr xs)))))
 
+    ;;@doc (%fail? expr)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%fail?` holds.
+    ;;@example
+    ;; (%fail? 'x)
     (defun %fail? (expr)
       (and (pair? expr) (eq? (car expr) 'fail)))
 
     ;; -- Mixed graph helpers --------------------------------------------
 
+    ;;@doc (%edge-from e)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%edge-from`.
+    ;;@example
+    ;; (%edge-from 'x)
     (defun %edge-from (e) (car e))
+    ;;@doc (%edge-kind e)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%edge-kind`.
+    ;;@example
+    ;; (%edge-kind 'x)
     (defun %edge-kind (e) (cadr e))
+    ;;@doc (%edge-to e)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%edge-to`.
+    ;;@example
+    ;; (%edge-to 'x)
     (defun %edge-to (e) (caddr e))
 
+    ;;@doc (%directed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%directed-edge?` holds.
+    ;;@example
+    ;; (%directed-edge? 'x)
     (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    ;;@doc (%bidirected-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%bidirected-edge?` holds.
+    ;;@example
+    ;; (%bidirected-edge? 'x)
     (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
 
+    ;;@doc (%mixed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%mixed-edge?` holds.
+    ;;@example
+    ;; (%mixed-edge? 'x)
     (defun %mixed-edge? (e)
       (and (list? e)
            (= (length e) 3)
            (or (%directed-edge? e) (%bidirected-edge? e))))
 
+    ;;@doc (%graph-nodes g)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%graph-nodes`.
+    ;;@example
+    ;; (%graph-nodes 'x)
     (defun %graph-nodes (g)
       (foldl (lambda (acc e)
                (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
              '()
              g))
 
+    ;;@doc (%directed-only g)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%directed-only`.
+    ;;@example
+    ;; (%directed-only 'x)
     (defun %directed-only (g)
       (filter %directed-edge? g))
 
+    ;;@doc (%bidirected-only g)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%bidirected-only`.
+    ;;@example
+    ;; (%bidirected-only 'x)
     (defun %bidirected-only (g)
       (filter %bidirected-edge? g))
 
+    ;;@doc (%assert-mixed-graph g)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%assert-mixed-graph`.
+    ;;@example
+    ;; (%assert-mixed-graph 'x)
     (defun %assert-mixed-graph (g)
       (if (every? %mixed-edge? g)
           (let ((d (%directed-only g)))
@@ -116,12 +230,23 @@
                 (error 'invalid-admg g)))
           (error 'invalid-admg g)))
 
+    ;;@doc (%remove-nodes g nodes)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%remove-nodes`.
+    ;;@example
+    ;; (%remove-nodes 'x 'x)
     (defun %remove-nodes (g nodes)
       (filter (lambda (e)
                 (and (not (%member? (%edge-from e) nodes))
                      (not (%member? (%edge-to e) nodes))))
               g))
 
+    ;;@doc (%fresh-latent used idx)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;;@example
+    ;; (%fresh-latent 'x 1)
     ;; Expand bidirected edges into explicit latent parents so we can reuse
     ;; DAG-based d-separation and back-door checks.
     (defun %fresh-latent (used idx)
@@ -131,12 +256,30 @@
             (%fresh-latent used (+ idx 1))
             n)))
 
+    ;;@doc (%edge-member? e edges)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%edge-member?` holds.
+    ;;@example
+    ;; (%edge-member? 'x 'x)
     (defun %edge-member? (e edges)
       (any? (lambda (x) (equal? e x)) edges))
 
+    ;;@doc (%edge-adjoin e edges)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%edge-adjoin`.
+    ;;@example
+    ;; (%edge-adjoin 'x 'x)
     (defun %edge-adjoin (e edges)
       (if (%edge-member? e edges) edges (cons e edges)))
 
+    ;;@doc (%admg->latent-dag g)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%admg->latent-dag`.
+    ;;@example
+    ;; (%admg->latent-dag 'x)
     (defun %admg->latent-dag (g)
       (let* ((directed (%directed-only g))
              (bidirected (%bidirected-only g))
@@ -158,6 +301,11 @@
                       (+ idx 1)
                       acc2))))))
 
+    ;;@doc (%dag-parents-raw dag node)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;;@example
+    ;; (%dag-parents-raw 'x 'x)
     ;; Path-based d-separation check used for selection-node invariance
     ;; predicates. This keeps behavior aligned with path blocking semantics
     ;; for the small diagrams used in transport checks.
@@ -170,6 +318,12 @@
              '()
              dag))
 
+    ;;@doc (%dag-children-raw dag node)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%dag-children-raw`.
+    ;;@example
+    ;; (%dag-children-raw 'x 'x)
     (defun %dag-children-raw (dag node)
       (foldl (lambda (acc e)
                (if (and (%directed-edge? e)
@@ -179,12 +333,24 @@
              '()
              dag))
 
+    ;;@doc (%dag-neighbors dag node)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%dag-neighbors`.
+    ;;@example
+    ;; (%dag-neighbors 'x 'x)
     (defun %dag-neighbors (dag node)
       (foldl (lambda (acc n) (%adjoin n acc))
              '()
              (append (%dag-parents-raw dag node)
                      (%dag-children-raw dag node))))
 
+    ;;@doc (%dag-has-directed-edge? dag from to)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%dag-has-directed-edge?` holds.
+    ;;@example
+    ;; (%dag-has-directed-edge? 'x 'x 'x)
     (defun %dag-has-directed-edge? (dag from to)
       (any? (lambda (e)
               (and (%directed-edge? e)
@@ -192,6 +358,12 @@
                    (eq? (%edge-to e) to)))
             dag))
 
+    ;;@doc (%all-simple-undirected-paths dag src dst)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%all-simple-undirected-paths`.
+    ;;@example
+    ;; (%all-simple-undirected-paths 'x 'x 'x)
     (defun %all-simple-undirected-paths (dag src dst)
       (letrec ((dfs (lambda (curr visited path-rev)
                       (if (eq? curr dst)
@@ -208,15 +380,33 @@
                                          nexts)))))))
         (dfs src (list src) (list src))))
 
+    ;;@doc (%path-collider? dag a b c)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%path-collider?` holds.
+    ;;@example
+    ;; (%path-collider? 'x 1 1 'x)
     (defun %path-collider? (dag a b c)
       (and (%dag-has-directed-edge? dag a b)
            (%dag-has-directed-edge? dag c b)))
 
+    ;;@doc (%desc-or-self-in-z? dag node z-set)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%desc-or-self-in-z?` holds.
+    ;;@example
+    ;; (%desc-or-self-in-z? 'x 'x 'x)
     (defun %desc-or-self-in-z? (dag node z-set)
       (or (%member? node z-set)
           (any? (lambda (d) (%member? d z-set))
                 (dag:descendants dag node))))
 
+    ;;@doc (%path-active? dag path z-set)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%path-active?` holds.
+    ;;@example
+    ;; (%path-active? 'x "sample" 'x)
     (defun %path-active? (dag path z-set)
       (if (< (length path) 3)
           #t
@@ -231,6 +421,12 @@
                                  (and open? (walk b c (cdr rest))))))))
             (walk (car path) (cadr path) (cdr (cdr path))))))
 
+    ;;@doc (%d-connected-path? dag x-set y-set z-set)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%d-connected-path?` holds.
+    ;;@example
+    ;; (%d-connected-path? 'x 'x 'x 'x)
     (defun %d-connected-path? (dag x-set y-set z-set)
       (any? (lambda (x)
               (any? (lambda (y)
@@ -240,20 +436,44 @@
                     y-set))
             x-set))
 
+    ;;@doc (%d-separated-path? dag x-set y-set z-set)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%d-separated-path?` holds.
+    ;;@example
+    ;; (%d-separated-path? 'x 'x 'x 'x)
     (defun %d-separated-path? (dag x-set y-set z-set)
       (not (%d-connected-path? dag x-set y-set z-set)))
 
     ;; -- Transport helpers ----------------------------------------------
 
+    ;;@doc (s-node? n)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; `.
+    ;;@example
+    ;; (s-node? 1)
     (defun s-node? (n)
       (and (symbol? n)
            (> (string-length (symbol->string n)) 0)
            (let ((c (string-ref (symbol->string n) 0)))
              (or (eqv? c #\S) (eqv? c #\s)))))
 
+    ;;@doc (%graph-s-nodes g)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%graph-s-nodes`.
+    ;;@example
+    ;; (%graph-s-nodes 'x)
     (defun %graph-s-nodes (g)
       (filter s-node? (%graph-nodes g)))
 
+    ;;@doc (%selection-invariant? g y-node x-node z-set s-set)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Return whether `%selection-invariant?` holds.
+    ;;@example
+    ;; (%selection-invariant? 'x 'x 'x 'x 'x)
     (defun %selection-invariant? (g y-node x-node z-set s-set)
       (let* ((dag* (%admg->latent-dag g))
              (cond-set (append (list x-node) z-set)))
@@ -264,6 +484,12 @@
                                       cond-set))
                 s-set)))
 
+    ;;@doc (%transport-adjustment-estimand y-node x-node z-set)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;; Compute `%transport-adjustment-estimand`.
+    ;;@example
+    ;; (%transport-adjustment-estimand 'x 'x 'x)
     (defun %transport-adjustment-estimand (y-node x-node z-set)
       (let ((z (%normalize-vars z-set)))
         (if (null? z)
@@ -274,6 +500,11 @@
                         (list 'P* (append (list y-node x-node) z))
                         (list 'P z))))))
 
+    ;;@doc (do:sBD? g x y z s-nodes)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;;@example
+    ;; (do:sBD? 'x 1 1 1 'x)
     ;; Selection back-door criterion.
     (defun do:sBD? (g x y z s-nodes)
       (%assert-mixed-graph g)
@@ -291,6 +522,11 @@
             (and (dag:satisfies-backdoor? dag* x-node y-node z-set)
                  (%selection-invariant? g y-node x-node z-set s-set)))))
 
+    ;;@doc (do:transport g* g y x)
+    ;;@category Causal
+    ;;@module std.causal.transport
+    ;;@example
+    ;; (do:transport 'x 'x 1 1)
     ;; Pragmatic transport query. This is conservative by design:
     ;;   1) If no S-nodes exist, return target-domain ID.
     ;;   2) If Y is selection-invariant given X, return target-domain ID.

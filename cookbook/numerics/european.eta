@@ -35,8 +35,13 @@
 
     ;; ── Gradient driver ─────────────────────────────────────────────
 
+    ;;@doc (branch-primal x)
+    ;;@category Numerics
+    ;;@module european
     ;; Primal extraction helper for branch decisions in piecewise formulas.
     ;; tape-ref-value is a pass-through for plain numbers.
+    ;;@example
+    ;; (branch-primal 1)
     (defun branch-primal (x)
       (if (tape-ref? x) (tape-ref-value x) x))
 
@@ -47,9 +52,20 @@
     ;; ── Normal PDF: φ(x) = (1/√2π) · e^{-x²/2} ─────────────────
     (define inv-sqrt-2pi 0.3989422804014327)
 
+    ;;@doc (norm-pdf x)
+    ;;@category Numerics
+    ;;@module european
+    ;; Compute `norm-pdf`.
+    ;;@example
+    ;; (norm-pdf 1)
     (defun norm-pdf (x)
       (* inv-sqrt-2pi (exp (* -0.5 (* x x)))))
 
+    ;;@doc (norm-cdf x)
+    ;;@category Numerics
+    ;;@module european
+    ;;@example
+    ;; (norm-cdf 1)
     ;; ── Normal CDF: Abramowitz & Stegun 26.2.17 ──────────────────
     ;; Maximum absolute error < 7.5 × 10⁻⁸
     ;; All arithmetic is plain +, *, / — the tape records every step.
@@ -72,12 +88,22 @@
     ;; All functions use plain arithmetic.  When called inside `grad`,
     ;; operands are TapeRefs and the VM records every operation.
 
+    ;;@doc (bs-d1 S K r sigma T)
+    ;;@category Numerics
+    ;;@module european
+    ;;@example
+    ;; (bs-d1 "sample" 1 'x 'x 'x)
     ;; d₁ = [ln(S/K) + (r + σ²/2)·T] / (σ·√T)
     (defun bs-d1 (S K r sigma T)
       (/ (+ (log (/ S K))
           (* (+ r (/ (* sigma sigma) 2)) T))
         (* sigma (sqrt T))))
 
+    ;;@doc (bs-call-price S K r sigma T)
+    ;;@category Numerics
+    ;;@module european
+    ;;@example
+    ;; (bs-call-price "sample" 1 'x 'x 'x)
     ;; C = S·Φ(d₁) − K·e^{-rT}·Φ(d₂)
     (defun bs-call-price (S K r sigma T)
       (let ((d1  (bs-d1 S K r sigma T))
@@ -91,10 +117,20 @@
     ;; §4  Second-Order Greeks (Grad-on-Greek)
     ;; ════════════════════════════════════════════════════════════════
 
+    ;;@doc (bs-delta-fn S K r sigma T)
+    ;;@category Numerics
+    ;;@module european
+    ;;@example
+    ;; (bs-delta-fn "sample" 1 'x 'x 'x)
     ;; Delta = Φ(d₁) — differentiable for Gamma, Vanna
     (defun bs-delta-fn (S K r sigma T)
       (norm-cdf (bs-d1 S K r sigma T)))
 
+    ;;@doc (bs-vega-fn S K r sigma T)
+    ;;@category Numerics
+    ;;@module european
+    ;;@example
+    ;; (bs-vega-fn "sample" 1 'x 'x 'x)
     ;; Vega = S · φ(d₁) · √T — differentiable for Vanna, Volga
     (defun bs-vega-fn (S K r sigma T)
       (* S (* (norm-pdf (bs-d1 S K r sigma T)) (sqrt T))))

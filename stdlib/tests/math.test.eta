@@ -4,6 +4,12 @@
   (import std.test std.math)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module math.tests
+    ;; Unit tests for std.math Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "std.math"
         (list

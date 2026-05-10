@@ -45,12 +45,24 @@
 
     ;;  Descriptive statistics 
 
+    ;;@doc (stats:mean)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Statistical functions for the Eta language Uses `stats:mean`.
+    ;;@example
+    ;; (stats:mean y-vector)
     (define stats:mean %stats-mean)
     (define stats:variance %stats-variance)
     (define stats:stddev %stats-stddev)
     (define stats:sem %stats-sem)
 
     (define stats:percentile %stats-percentile)
+    ;;@doc (stats:median xs)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:median`.
+    ;;@example
+    ;; (stats:median '())
     (defun stats:median     (xs)   (%stats-percentile xs 0.5))
 
     (define stats:covariance %stats-covariance)
@@ -58,7 +70,19 @@
 
     ;; Returns (lower . upper) for the mean at the given confidence level.
     (define stats:ci %stats-ci)
+    ;;@doc (stats:ci-lower ci)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ci-lower`.
+    ;;@example
+    ;; (stats:ci-lower 'x)
     (defun stats:ci-lower (ci)       (car ci))
+    ;;@doc (stats:ci-upper ci)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ci-upper`.
+    ;;@example
+    ;; (stats:ci-upper 'x)
     (defun stats:ci-upper (ci)       (cdr ci))
 
     (define stats:t-cdf %stats-t-cdf)
@@ -67,8 +91,26 @@
 
     ;; Returns (t-stat p-value df mean-diff) as a list.
     (define stats:t-test %stats-t-test-2)
+    ;;@doc (stats:t-test-stat result)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:t-test-stat`.
+    ;;@example
+    ;; (stats:t-test-stat 'x)
     (defun stats:t-test-stat     (result)  (car result))
+    ;;@doc (stats:t-test-pvalue result)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:t-test-pvalue`.
+    ;;@example
+    ;; (stats:t-test-pvalue 'x)
     (defun stats:t-test-pvalue   (result)  (cadr result))
+    ;;@doc (stats:t-test-df result)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:t-test-df`.
+    ;;@example
+    ;; (stats:t-test-df 'x)
     (defun stats:t-test-df       (result)  (caddr result))
     (defun stats:t-test-mean-diff(result)  (car (cdr (cdr (cdr result)))))
 
@@ -91,6 +133,12 @@
       (p-slope      %ols-result-p-slope)
       (p-intercept  %ols-result-p-intercept))
 
+    ;;@doc (%ols-result-from-list r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%ols-result-from-list`.
+    ;;@example
+    ;; (%ols-result-from-list 'x)
     (defun %ols-result-from-list (r)
       (if (and (list? r) (= (length r) 9))
           (%make-ols-result
@@ -100,29 +148,95 @@
             (list-ref r 7) (list-ref r 8))
           (error "stats:ols: expected 9-element result list" r)))
 
+    ;;@doc (%as-ols-result r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%as-ols-result`.
+    ;;@example
+    ;; (%as-ols-result 'x)
     (defun %as-ols-result (r)
       (if (%ols-result? r)
           r
           (%ols-result-from-list r)))
 
+    ;;@doc (stats:ols xs ys)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols`.
+    ;;@example
+    ;; (stats:ols '() '())
     (defun stats:ols (xs ys)
       (%ols-result-from-list (%stats-ols xs ys)))
+    ;;@doc (stats:ols-slope r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-slope`.
+    ;;@example
+    ;; (stats:ols-slope 'x)
     (defun stats:ols-slope (r)
       (%ols-result-slope (%as-ols-result r)))
+    ;;@doc (stats:ols-intercept r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-intercept`.
+    ;;@example
+    ;; (stats:ols-intercept 'x)
     (defun stats:ols-intercept (r)
       (%ols-result-intercept (%as-ols-result r)))
+    ;;@doc (stats:ols-r2 r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-r2`.
+    ;;@example
+    ;; (stats:ols-r2 'x)
     (defun stats:ols-r2 (r)
       (%ols-result-r2 (%as-ols-result r)))
+    ;;@doc (stats:ols-se-slope r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-se-slope`.
+    ;;@example
+    ;; (stats:ols-se-slope 'x)
     (defun stats:ols-se-slope (r)
       (%ols-result-se-slope (%as-ols-result r)))
+    ;;@doc (stats:ols-se-intercept r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-se-intercept`.
+    ;;@example
+    ;; (stats:ols-se-intercept 'x)
     (defun stats:ols-se-intercept (r)
       (%ols-result-se-intercept (%as-ols-result r)))
+    ;;@doc (stats:ols-t-slope r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-t-slope`.
+    ;;@example
+    ;; (stats:ols-t-slope 'x)
     (defun stats:ols-t-slope (r)
       (%ols-result-t-slope (%as-ols-result r)))
+    ;;@doc (stats:ols-t-intercept r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-t-intercept`.
+    ;;@example
+    ;; (stats:ols-t-intercept 'x)
     (defun stats:ols-t-intercept (r)
       (%ols-result-t-intercept (%as-ols-result r)))
+    ;;@doc (stats:ols-p-slope r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-p-slope`.
+    ;;@example
+    ;; (stats:ols-p-slope 'x)
     (defun stats:ols-p-slope (r)
       (%ols-result-p-slope (%as-ols-result r)))
+    ;;@doc (stats:ols-p-intercept r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-p-intercept`.
+    ;;@example
+    ;; (stats:ols-p-intercept 'x)
     (defun stats:ols-p-intercept (r)
       (%ols-result-p-intercept (%as-ols-result r)))
 
@@ -131,26 +245,55 @@
     ;;   (fn (list seq1 seq2 ...))           list of numeric sequences
     ;;   (fn fact-table '(col1 col2 ...))    fact-table + column indices
 
+    ;;@doc (stats:mean-vec data . rest)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:mean-vec`.
+    ;;@example
+    ;; (stats:mean-vec 'x '())
     (defun stats:mean-vec (data . rest)
       (if (null? rest)
           (%stats-mean-vec data)
           (%stats-mean-vec data (car rest))))
 
+    ;;@doc (stats:var-vec data . rest)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:var-vec`.
+    ;;@example
+    ;; (stats:var-vec 'x '())
     (defun stats:var-vec (data . rest)
       (if (null? rest)
           (%stats-var-vec data)
           (%stats-var-vec data (car rest))))
 
+    ;;@doc (stats:cov-matrix data . rest)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:cov-matrix`.
+    ;;@example
+    ;; (stats:cov-matrix 'x '())
     (defun stats:cov-matrix (data . rest)
       (if (null? rest)
           (%stats-cov-matrix data)
           (%stats-cov-matrix data (car rest))))
 
+    ;;@doc (stats:cor-matrix data . rest)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:cor-matrix`.
+    ;;@example
+    ;; (stats:cor-matrix 'x '())
     (defun stats:cor-matrix (data . rest)
       (if (null? rest)
           (%stats-cor-matrix data)
           (%stats-cor-matrix data (car rest))))
 
+    ;;@doc (stats:quantile-vec a b . rest)
+    ;;@category Stats
+    ;;@module std.stats
+    ;;@example
+    ;; (stats:quantile-vec 1 1 '())
     ;; Column-wise quantiles:
     ;;   (stats:quantile-vec (list seq1 seq2) p)
     ;;   (stats:quantile-vec fact-table '(col1 col2) p)
@@ -159,6 +302,11 @@
           (%stats-quantile-vec a b)
           (%stats-quantile-vec a b (car rest))))
 
+    ;;@doc (stats:ols-multi a b . rest)
+    ;;@category Stats
+    ;;@module std.stats
+    ;;@example
+    ;; (stats:ols-multi 1 1 '())
     ;; Multivariate OLS:
     ;;   (stats:ols-multi y-seq (list x1 x2))
     ;;   (stats:ols-multi fact-table y-col '(x1-col x2-col))
@@ -167,6 +315,12 @@
           (%stats-ols-multi a b)
           (%stats-ols-multi a b (car rest))))
 
+    ;;@doc (%stats:assoc-value alist sym-key str-key)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%stats:assoc-value`.
+    ;;@example
+    ;; (%stats:assoc-value 'x 'x 'x)
     (defun %stats:assoc-value (alist sym-key str-key)
       (let ((sp (assoc sym-key alist)))
         (if sp
@@ -174,43 +328,102 @@
             (let ((tp (assoc str-key alist)))
               (if tp (cdr tp) #f)))))
 
+    ;;@doc (%stats:pair-cdr-at alist idx)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%stats:pair-cdr-at`.
+    ;;@example
+    ;; (%stats:pair-cdr-at 'x 1)
     (defun %stats:pair-cdr-at (alist idx)
       (if (or (< idx 0) (>= idx (length alist)))
           #f
           (let ((entry (list-ref alist idx)))
             (if (pair? entry) (cdr entry) #f))))
 
+    ;;@doc (stats:ols-multi-coefficients r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;;@example
+    ;; (stats:ols-multi-coefficients 'x)
     ;;  OLS-multi accessors (result is an alist) 
     (defun stats:ols-multi-coefficients (r)
       (or (%stats:assoc-value r 'coefficients "coefficients")
           (%stats:pair-cdr-at r 0)))
+    ;;@doc (stats:ols-multi-std-errors r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-multi-std-errors`.
+    ;;@example
+    ;; (stats:ols-multi-std-errors 'x)
     (defun stats:ols-multi-std-errors (r)
       (or (%stats:assoc-value r 'std-errors "std-errors")
           (%stats:pair-cdr-at r 1)))
+    ;;@doc (stats:ols-multi-t-stats r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-multi-t-stats`.
+    ;;@example
+    ;; (stats:ols-multi-t-stats 'x)
     (defun stats:ols-multi-t-stats (r)
       (or (%stats:assoc-value r 't-stats "t-stats")
           (%stats:pair-cdr-at r 2)))
+    ;;@doc (stats:ols-multi-p-values r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-multi-p-values`.
+    ;;@example
+    ;; (stats:ols-multi-p-values 'x)
     (defun stats:ols-multi-p-values (r)
       (or (%stats:assoc-value r 'p-values "p-values")
           (%stats:pair-cdr-at r 3)))
+    ;;@doc (stats:ols-multi-r-squared r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-multi-r-squared`.
+    ;;@example
+    ;; (stats:ols-multi-r-squared 'x)
     (defun stats:ols-multi-r-squared (r)
       (or (%stats:assoc-value r 'r-squared "r-squared")
           (%stats:pair-cdr-at r 4)))
+    ;;@doc (stats:ols-multi-adj-r-squared r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-multi-adj-r-squared`.
+    ;;@example
+    ;; (stats:ols-multi-adj-r-squared 'x)
     (defun stats:ols-multi-adj-r-squared (r)
       (or (%stats:assoc-value r 'adj-r-squared "adj-r-squared")
           (%stats:pair-cdr-at r 5)))
+    ;;@doc (stats:ols-multi-residual-se r)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `stats:ols-multi-residual-se`.
+    ;;@example
+    ;; (stats:ols-multi-residual-se 'x)
     (defun stats:ols-multi-residual-se (r)
       (or (%stats:assoc-value r 'residual-se "residual-se")
           (%stats:pair-cdr-at r 6)))
 
     ;; -- Learner-spec helpers --------------------------------------------
 
+    ;;@doc (%dot a b)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%dot`.
+    ;;@example
+    ;; (%dot 1 1)
     (defun %dot (a b)
       (if (or (null? a) (null? b))
           0.0
           (+ (* (car a) (car b))
              (%dot (cdr a) (cdr b)))))
 
+    ;;@doc (%matrix-cols x-matrix)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%matrix-cols`.
+    ;;@example
+    ;; (%matrix-cols 'x)
     (defun %matrix-cols (x-matrix)
       (if (null? x-matrix)
           '()
@@ -223,6 +436,12 @@
                                     x-matrix)
                               acc)))))))
 
+    ;;@doc (%assert-matrix-rows x-matrix)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%assert-matrix-rows`.
+    ;;@example
+    ;; (%assert-matrix-rows 'x)
     (defun %assert-matrix-rows (x-matrix)
       (if (null? x-matrix)
           x-matrix
@@ -231,15 +450,33 @@
                 x-matrix
                 (error "stats: learner expected rectangular design matrix")))))
 
+    ;;@doc (%clip01 p)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%clip01`.
+    ;;@example
+    ;; (%clip01 'x)
     (defun %clip01 (p)
       (cond
         ((< p 1e-9) 1e-9)
         ((> p (- 1.0 1e-9)) (- 1.0 1e-9))
         (else p)))
 
+    ;;@doc (%sigmoid x)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%sigmoid`.
+    ;;@example
+    ;; (%sigmoid 1)
     (defun %sigmoid (x)
       (%clip01 (/ 1.0 (+ 1.0 (exp (- x))))))
 
+    ;;@doc (%normalize-binary-target v)
+    ;;@category Stats
+    ;;@module std.stats
+    ;; Compute `%normalize-binary-target`.
+    ;;@example
+    ;; (%normalize-binary-target 1)
     (defun %normalize-binary-target (v)
       (cond
         ((equal? v 1) 1.0)
@@ -248,6 +485,11 @@
         ((eq? v #f) 0.0)
         (else (error "stats: logistic learner expects binary targets in {0,1,#t,#f}" v))))
 
+    ;;@doc (stats:make-ols-regressor)
+    ;;@category Stats
+    ;;@module std.stats
+    ;;@example
+    ;; (stats:make-ols-regressor)
     ;; OLS learner-spec:
     ;;   ((fit . (lambda (X y) -> model))
     ;;    (predict . (lambda (model X) -> yhat))
@@ -293,6 +535,11 @@
           (cons 'fit-weighted fit-weighted)
           (cons 'kind 'regressor))))
 
+    ;;@doc (stats:make-logistic)
+    ;;@category Stats
+    ;;@module std.stats
+    ;;@example
+    ;; (stats:make-logistic)
     ;; Logistic learner-spec for binary outcomes.
     (defun stats:make-logistic ()
       (let ((epochs 250)
@@ -359,6 +606,11 @@
             (cons 'predict predict)
             (cons 'kind 'classifier)))))
 
+    ;;@doc (stats:summary xs)
+    ;;@category Stats
+    ;;@module std.stats
+    ;;@example
+    ;; (stats:summary '())
     ;; Returns an alist with key statistics for a numeric list.
     (defun stats:summary (xs)
       (list

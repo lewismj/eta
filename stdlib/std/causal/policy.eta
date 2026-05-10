@@ -27,12 +27,24 @@
 
     ;; -- Core helpers -----------------------------------------------------
 
+    ;;@doc (%obs-get obs var)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%obs-get`.
+    ;;@example
+    ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
       (let ((p (assq var obs)))
         (if p
             (cdr p)
             (error 'unknown-variable var))))
 
+    ;;@doc (%as-binary v x-name)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%as-binary`.
+    ;;@example
+    ;; (%as-binary 1 'x)
     (defun %as-binary (v x-name)
       (cond
         ((equal? v 1) 1.0)
@@ -41,6 +53,12 @@
         ((eq? v #f) 0.0)
         (else (error 'non-binary-treatment x-name v))))
 
+    ;;@doc (%as-action v)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%as-action`.
+    ;;@example
+    ;; (%as-action 1)
     (defun %as-action (v)
       (cond
         ((equal? v 1) 1.0)
@@ -49,6 +67,12 @@
         ((eq? v #f) 0.0)
         (else (error "policy: expected binary action in {0,1,#t,#f}" v))))
 
+    ;;@doc (%clip-prob p)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%clip-prob`.
+    ;;@example
+    ;; (%clip-prob 'x)
     (defun %clip-prob (p)
       (let ((eps 1e-6))
         (cond
@@ -56,29 +80,59 @@
           ((> p (- 1.0 eps)) (- 1.0 eps))
           (else p))))
 
+    ;;@doc (%assert-eq-length3 a b c who)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%assert-eq-length3`.
+    ;;@example
+    ;; (%assert-eq-length3 1 1 'x 'x)
     (defun %assert-eq-length3 (a b c who)
       (if (and (= (length a) (length b))
                (= (length a) (length c)))
           'ok
           (error (string-append who ": expected equal-length vectors"))))
 
+    ;;@doc (%assert-eq-length2 a b who)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%assert-eq-length2`.
+    ;;@example
+    ;; (%assert-eq-length2 1 1 'x)
     (defun %assert-eq-length2 (a b who)
       (if (= (length a) (length b))
           'ok
           (error (string-append who ": expected equal-length vectors"))))
 
+    ;;@doc (%map3 f xs ys zs)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%map3`.
+    ;;@example
+    ;; (%map3 (lambda (x) x) '() '() '())
     (defun %map3 (f xs ys zs)
       (if (or (null? xs) (null? ys) (null? zs))
           '()
           (cons (f (car xs) (car ys) (car zs))
                 (%map3 f (cdr xs) (cdr ys) (cdr zs)))))
 
+    ;;@doc (%map4 f ws xs ys zs)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%map4`.
+    ;;@example
+    ;; (%map4 (lambda (x) x) 'x '() '() '())
     (defun %map4 (f ws xs ys zs)
       (if (or (null? ws) (null? xs) (null? ys) (null? zs))
           '()
           (cons (f (car ws) (car xs) (car ys) (car zs))
                 (%map4 f (cdr ws) (cdr xs) (cdr ys) (cdr zs)))))
 
+    ;;@doc (%sort-desc-by-cate cate-preds y x)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%sort-desc-by-cate`.
+    ;;@example
+    ;; (%sort-desc-by-cate 'x 1 1)
     (defun %sort-desc-by-cate (cate-preds y x)
       (%assert-eq-length3 cate-preds y x "policy:qini-curve")
       (sort (lambda (a b) (> (car a) (car b)))
@@ -86,6 +140,11 @@
                      (list tau yi (%as-binary xi 'x)))
                    cate-preds y x)))
 
+    ;;@doc (%curve-area curve)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (%curve-area 'x)
     ;; Curve representation:
     ;;   list of (k . value), k in 1..n
     (defun %curve-area (curve)
@@ -98,6 +157,12 @@
                      (trap (* 0.5 (+ prev curr) step)))
                 (loop (cdr rest) curr (+ acc trap)))))))
 
+    ;;@doc (%curve-max-abs curve)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%curve-max-abs`.
+    ;;@example
+    ;; (%curve-max-abs 'x)
     (defun %curve-max-abs (curve)
       (foldl (lambda (acc kv)
                (let ((v (abs (cdr kv))))
@@ -105,14 +170,32 @@
              0.0
              curve))
 
+    ;;@doc (%last-curve-value curve)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%last-curve-value`.
+    ;;@example
+    ;; (%last-curve-value 'x)
     (defun %last-curve-value (curve)
       (if (null? curve)
           0.0
           (cdr (list-ref curve (- (length curve) 1)))))
 
+    ;;@doc (%row obs cols)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%row`.
+    ;;@example
+    ;; (%row 'x '())
     (defun %row (obs cols)
       (map* (lambda (col) (%obs-get obs col)) cols))
 
+    ;;@doc (%mark-top-k pairs k n)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%mark-top-k`.
+    ;;@example
+    ;; (%mark-top-k '() 1 1)
     (defun %mark-top-k (pairs k n)
       (let ((out (make-vector n 0)))
         (let loop ((rest pairs) (i 0))
@@ -122,6 +205,12 @@
                 (vector-set! out (cdr (car rest)) 1)
                 (loop (cdr rest) (+ i 1)))))))
 
+    ;;@doc (%budget->k n budget)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `%budget->k`.
+    ;;@example
+    ;; (%budget->k 1 'x)
     (defun %budget->k (n budget)
       (if (<= n 0)
           0
@@ -139,8 +228,13 @@
 
     ;; -- Ranking metrics --------------------------------------------------
 
+    ;;@doc (policy:qini-curve cate-preds y x)
+    ;;@category Causal
+    ;;@module std.causal.policy
     ;; Qini/cumulative uplift curve from CATE scores and observed (Y, X).
     ;; Returns list of (k . gain_k), k = 1..n.
+    ;;@example
+    ;; (policy:qini-curve 'x 1 1)
     (defun policy:qini-curve (cate-preds y x)
       (let* ((triples (%sort-desc-by-cate cate-preds y x))
              (n (length triples)))
@@ -168,10 +262,20 @@
                           n0*
                           (cons (cons i gain) curve))))))))
 
+    ;;@doc (policy:cumulative-gain-curve cate-preds y x)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:cumulative-gain-curve 'x 1 1)
     ;; Alias with the same shape as qini-curve.
     (defun policy:cumulative-gain-curve (cate-preds y x)
       (policy:qini-curve cate-preds y x))
 
+    ;;@doc (policy:qini-coefficient curve)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:qini-coefficient 'x)
     ;; Area between model Qini curve and the random-targeting line.
     (defun policy:qini-coefficient (curve)
       (let* ((auc (%curve-area curve))
@@ -179,6 +283,11 @@
              (baseline (* 0.5 end-v)))
         (- auc baseline)))
 
+    ;;@doc (policy:auuc curve)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:auuc 'x)
     ;; Normalized area under cumulative gain curve, clipped to [0,1].
     (defun policy:auuc (curve)
       (if (null? curve)
@@ -196,6 +305,11 @@
                     ((> raw 1.0) 1.0)
                     (else raw)))))))
 
+    ;;@doc (policy:rank-by-cate data cate-preds)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:rank-by-cate 'x 'x)
     ;; Sort rows by descending CATE predictions.
     ;; Returns (sorted-rows . sorted-cate).
     (defun policy:rank-by-cate (data cate-preds)
@@ -207,6 +321,11 @@
 
     ;; -- Policy values ----------------------------------------------------
 
+    ;;@doc (policy:value-ipw data y x z policy-fn e-hat)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:value-ipw 'x 1 1 1 (lambda (x) x) 'x)
     ;; Horvitz-Thompson policy value estimator.
     ;; `e-hat` is propensity for X=1, aligned with data.
     (defun policy:value-ipw (data y x z policy-fn e-hat)
@@ -225,6 +344,11 @@
                   data
                   e-hat))))
 
+    ;;@doc (policy:value-aipw data y x z policy-fn mu1 mu0 e-hat)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:value-aipw 'x 1 1 1 (lambda (x) x) 'x 'x 'x)
     ;; Doubly-robust policy value estimator.
     ;; Inputs `mu1`, `mu0`, `e-hat` are aligned vectors over `data`.
     (defun policy:value-aipw (data y x z policy-fn mu1 mu0 e-hat)
@@ -248,6 +372,12 @@
 
     ;; -- Synthetic truth metrics -----------------------------------------
 
+    ;;@doc (policy:pehe true-cate pred-cate)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;; Compute `policy:pehe`.
+    ;;@example
+    ;; (policy:pehe 'x 'x)
     (defun policy:pehe (true-cate pred-cate)
       (%assert-eq-length2 true-cate pred-cate "policy:pehe")
       (if (null? true-cate)
@@ -257,6 +387,11 @@
                                   true-cate
                                   pred-cate)))))
 
+    ;;@doc (policy:ate-rmse true-ate pred-ate)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:ate-rmse 'x 'x)
     ;; Root-mean-squared error of ATE estimates over repeats.
     ;; `true-ate` may be scalar or a same-length vector.
     (defun policy:ate-rmse (true-ate pred-ate)
@@ -276,6 +411,11 @@
                                         pred)))))
           (abs (- pred-ate true-ate))))
 
+    ;;@doc (policy:ate-bias true-ate pred-ate)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:ate-bias 'x 'x)
     ;; Mean signed bias of ATE estimates over repeats.
     ;; `true-ate` may be scalar or a same-length vector.
     (defun policy:ate-bias (true-ate pred-ate)
@@ -296,10 +436,20 @@
 
     ;; -- Policy construction ---------------------------------------------
 
+    ;;@doc (policy:greedy-treat-positive tau-hat)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:greedy-treat-positive 'x)
     ;; Greedy one-step policy: treat when tau-hat is positive.
     (defun policy:greedy-treat-positive (tau-hat)
       (if (> tau-hat 0.0) 1 0))
 
+    ;;@doc (policy:greedy-budget cate-preds budget)
+    ;;@category Causal
+    ;;@module std.causal.policy
+    ;;@example
+    ;; (policy:greedy-budget 'x 'x)
     ;; Build in-sample top-k treatment assignment from cate-preds.
     ;; `budget` accepts:
     ;;   - fraction in [0,1] => floor(budget * n)

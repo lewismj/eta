@@ -7,6 +7,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (mailbox)
+    ;;@category Concurrency
+    ;;@module pub-sub-publisher
+    ;; Publisher child for pub-sub.eta Uses `mailbox`.
+    ;;@example
+    ;; (display mailbox)
     (define mailbox (current-mailbox))
     (define pub-endpoint "tcp://127.0.0.1:5556")
 

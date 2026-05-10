@@ -16,7 +16,12 @@
     compare-and-set!)
   (begin
 
+    ;;@doc (atom:new)
+    ;;@category Atom
+    ;;@module std.atom
     ;; Collision-safe names.
+    ;;@example
+    ;; (display atom:new)
     (define atom:new %atom-new)
     (define atom:atom? %atom?)
     (define atom:deref %atom-deref)

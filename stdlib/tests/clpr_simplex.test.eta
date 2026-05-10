@@ -4,20 +4,50 @@
   (import std.test std.logic std.clpr)
   (begin
 
+    ;;@doc (lo bounds)
+    ;;@category Tests
+    ;;@module clpr-simplex-smoke
+    ;; Smoke tests for simplex-backed std.clpr Uses `lo`.
+    ;;@example
+    ;; (lo b1)
     (defun lo (bounds) (car bounds))
+    ;;@doc (hi bounds)
+    ;;@category Tests
+    ;;@module clpr-simplex-smoke
+    ;; Compute `hi`.
+    ;;@example
+    ;; (hi 'x)
     (defun hi (bounds) (cdr bounds))
 
+    ;;@doc (make-vars n)
+    ;;@category Tests
+    ;;@module clpr-simplex-smoke
+    ;; Construct `make-vars`.
+    ;;@example
+    ;; (make-vars 1)
     (defun make-vars (n)
       (if (= n 0)
           '()
           (cons (logic-var) (make-vars (- n 1)))))
 
+    ;;@doc (post-nonneg! xs)
+    ;;@category Tests
+    ;;@module clpr-simplex-smoke
+    ;; Compute `post-nonneg!`.
+    ;;@example
+    ;; (post-nonneg! '())
     (defun post-nonneg! (xs)
       (if (null? xs)
           #t
           (and (clp:r>= (car xs) 0)
                (post-nonneg! (cdr xs)))))
 
+    ;;@doc (sum-vars xs)
+    ;;@category Tests
+    ;;@module clpr-simplex-smoke
+    ;; Compute `sum-vars`.
+    ;;@example
+    ;; (sum-vars '())
     (defun sum-vars (xs)
       (if (null? xs)
           0.0

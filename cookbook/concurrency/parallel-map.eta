@@ -20,7 +20,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (inputs)
+    ;;@category Concurrency
+    ;;@module parallel-map
     ;; Inputs to map over
+    ;;@example
+    ;; (display inputs)
     (define inputs '(1 2 3 4 5 6))
 
     (println "parallel-map: doubling inputs in parallel...")

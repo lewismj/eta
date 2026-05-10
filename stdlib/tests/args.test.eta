@@ -4,6 +4,12 @@
   (import std.test std.args)
   (begin
 
+    ;;@doc (args:test-contains? text needle)
+    ;;@category Tests
+    ;;@module args.tests
+    ;; `.
+    ;;@example
+    ;; (args:test-contains? "sample" 'x)
     (defun args:test-contains? (text needle)
       (let ((n (string-length text))
             (m (string-length needle)))

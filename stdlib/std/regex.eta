@@ -14,75 +14,198 @@
     regex-match-span regex-match-group-span)
   (begin
 
+    ;;@doc (regex:compile pattern . flags)
+    ;;@category Regex
+    ;;@module std.regex
     ;; Compile a pattern once and reuse it across calls.
+    ;;@example
+    ;; (regex:compile "sample" '())
     (defun regex:compile (pattern . flags)
       (%regex-compile pattern flags))
 
+    ;;@doc (regex? x)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Return whether `regex?` holds.
+    ;;@example
+    ;; (regex? 1)
     (defun regex? (x) (%regex? x))
+    ;;@doc (regex:pattern r)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:pattern`.
+    ;;@example
+    ;; (regex:pattern 'x)
     (defun regex:pattern (r) (%regex-pattern r))
+    ;;@doc (regex:flags r)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:flags`.
+    ;;@example
+    ;; (regex:flags 'x)
     (defun regex:flags (r) (%regex-flags r))
 
+    ;;@doc (regex:match? r-or-pattern s)
+    ;;@category Regex
+    ;;@module std.regex
+    ;;@example
+    ;; (regex:match? 'x "sample")
     ;; Query helpers accept either a compiled regex or a pattern string.
     (defun regex:match? (r-or-pattern s)
       (if (%regex? r-or-pattern)
           (%regex-match? r-or-pattern s)
           (%regex-match?-str r-or-pattern s)))
 
+    ;;@doc (regex:search r-or-pattern s . start-rest)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:search`.
+    ;;@example
+    ;; (regex:search 'x "sample" '())
     (defun regex:search (r-or-pattern s . start-rest)
       (let ((start (if (null? start-rest) 0 (car start-rest))))
         (if (%regex? r-or-pattern)
             (%regex-search r-or-pattern s start)
             (%regex-search-str r-or-pattern s start))))
 
+    ;;@doc (regex:find-all r-or-pattern s)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:find-all`.
+    ;;@example
+    ;; (regex:find-all 'x "sample")
     (defun regex:find-all (r-or-pattern s)
       (if (%regex? r-or-pattern)
           (%regex-find-all r-or-pattern s)
           (%regex-find-all-str r-or-pattern s)))
 
+    ;;@doc (regex:replace r-or-pattern s replacement)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:replace`.
+    ;;@example
+    ;; (regex:replace 'x "sample" 'x)
     (defun regex:replace (r-or-pattern s replacement)
       (if (%regex? r-or-pattern)
           (%regex-replace r-or-pattern s replacement)
           (%regex-replace-str r-or-pattern s replacement)))
 
+    ;;@doc (regex:replace-fn r-or-pattern s fn)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:replace-fn`.
+    ;;@example
+    ;; (regex:replace-fn 'x "sample" (lambda (x) x))
     (defun regex:replace-fn (r-or-pattern s fn)
       (let ((r (if (%regex? r-or-pattern)
                    r-or-pattern
                    (regex:compile r-or-pattern))))
         (%regex-replace-fn r s fn)))
 
+    ;;@doc (regex:split r-or-pattern s)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:split`.
+    ;;@example
+    ;; (regex:split 'x "sample")
     (defun regex:split (r-or-pattern s)
       (if (%regex? r-or-pattern)
           (%regex-split r-or-pattern s)
           (%regex-split-str r-or-pattern s)))
 
+    ;;@doc (regex:quote s)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:quote`.
+    ;;@example
+    ;; (regex:quote "sample")
     (defun regex:quote (s) (%regex-quote s))
 
+    ;;@doc (regex-match? x)
+    ;;@category Regex
+    ;;@module std.regex
+    ;;@example
+    ;; (regex-match? 1)
     ;; Match payload accessors.
     (defun regex-match? (x)
       (and (vector? x) (= (vector-length x) 5)))
 
+    ;;@doc (regex-match-start m)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex-match-start`.
+    ;;@example
+    ;; (regex-match-start 1)
     (defun regex-match-start (m) (vector-ref m 0))
+    ;;@doc (regex-match-end m)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex-match-end`.
+    ;;@example
+    ;; (regex-match-end 1)
     (defun regex-match-end (m)   (vector-ref m 1))
 
+    ;;@doc (__regex-match-groups m)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `__regex-match-groups`.
+    ;;@example
+    ;; (__regex-match-groups 1)
     (defun __regex-match-groups (m)       (vector-ref m 2))
+    ;;@doc (__regex-match-named-groups m)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `__regex-match-named-groups`.
+    ;;@example
+    ;; (__regex-match-named-groups 1)
     (defun __regex-match-named-groups (m) (vector-ref m 3))
+    ;;@doc (__regex-match-input m)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `__regex-match-input`.
+    ;;@example
+    ;; (__regex-match-input 1)
     (defun __regex-match-input (m)        (vector-ref m 4))
 
+    ;;@doc (regex-match-span m)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex-match-span`.
+    ;;@example
+    ;; (regex-match-span 1)
     (defun regex-match-span (m)
       (cons (regex-match-start m) (regex-match-end m)))
 
+    ;;@doc (regex-match-group-span m i)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex-match-group-span`.
+    ;;@example
+    ;; (regex-match-group-span 1 1)
     (defun regex-match-group-span (m i)
       (let ((groups (__regex-match-groups m)))
         (if (or (< i 0) (>= i (vector-length groups)))
             #f
             (vector-ref groups i))))
 
+    ;;@doc (regex-match-group m i)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex-match-group`.
+    ;;@example
+    ;; (regex-match-group 1 1)
     (defun regex-match-group (m i)
       (let ((span (regex-match-group-span m i)))
         (if span
             (substring (__regex-match-input m) (car span) (cdr span))
             #f)))
 
+    ;;@doc (regex-match-named m name)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex-match-named`.
+    ;;@example
+    ;; (regex-match-named 1 "sample")
     (defun regex-match-named (m name)
       (let ((row (assoc name (__regex-match-named-groups m))))
         (if row
@@ -92,9 +215,21 @@
                   #f))
             #f)))
 
+    ;;@doc (regex:match-groups-hash m)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex:match-groups-hash`.
+    ;;@example
+    ;; (regex:match-groups-hash 1)
     (defun regex:match-groups-hash (m)
       (list->hash-map (__regex-match-named-groups m)))
 
+    ;;@doc (regex-match-text m)
+    ;;@category Regex
+    ;;@module std.regex
+    ;; Compute `regex-match-text`.
+    ;;@example
+    ;; (regex-match-text 1)
     (defun regex-match-text (m)
       (substring (__regex-match-input m)
                  (regex-match-start m)

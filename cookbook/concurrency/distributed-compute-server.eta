@@ -9,6 +9,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (endpoint)
+    ;;@category Concurrency
+    ;;@module distributed-compute-server
+    ;; Server child for distributed-compute.eta Uses `endpoint`.
+    ;;@example
+    ;; (display endpoint)
     (define endpoint "tcp://127.0.0.1:6000")
     (define mailbox (current-mailbox))
 

@@ -11,6 +11,12 @@
   (import std.test)
   (begin
 
+    ;;@doc (results)
+    ;;@category Tests
+    ;;@module torch-test-device-info
+    ;; Device management primitives Uses `results`.
+    ;;@example
+    ;; (display results)
     (define results
       (run (make-group "Device Info"
         (list

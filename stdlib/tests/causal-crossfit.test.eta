@@ -4,27 +4,57 @@
   (import std.test std.causal.crossfit std.causal.estimate std.stats std.core std.collections)
   (begin
 
+    ;;@doc (contains? x xs)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;; `.
+    ;;@example
+    ;; (contains? 1 '())
     (defun contains? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (contains? x (cdr xs)))))
 
+    ;;@doc (disjoint? xs ys)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;; Return whether `disjoint?` holds.
+    ;;@example
+    ;; (disjoint? '() '())
     (defun disjoint? (xs ys)
       (not (any? (lambda (x) (contains? x ys)) xs)))
 
+    ;;@doc (alist-ref key al)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;; Compute `alist-ref`.
+    ;;@example
+    ;; (alist-ref 'x 'x)
     (defun alist-ref (key al)
       (let ((entry (assq key al)))
         (if entry
             (cdr entry)
             (error "missing alist key in test result" key))))
 
+    ;;@doc (repeat-row n row)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;; Compute `repeat-row`.
+    ;;@example
+    ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
       (let loop ((i 0) (acc '()))
         (if (= i n)
             (reverse acc)
             (loop (+ i 1) (cons row acc)))))
 
+    ;;@doc (make-id-data n)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;; Construct `make-id-data`.
+    ;;@example
+    ;; (make-id-data 1)
     (defun make-id-data (n)
       (map* (lambda (i)
               (list
@@ -32,6 +62,11 @@
                 (cons 'y 0.0)))
             (range 0 n)))
 
+    ;;@doc (make-membership-learner)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;;@example
+    ;; (make-membership-learner)
     ;; Learner that predicts 1.0 if an id was seen during fit, 0.0 otherwise.
     ;; With correct OOF splits, every prediction should be 0.0.
     (defun make-membership-learner ()
@@ -49,6 +84,11 @@
           (cons 'predict predict)
           (cons 'kind 'regressor))))
 
+    ;;@doc (make-plr-row i)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;;@example
+    ;; (make-plr-row 1)
     ;; PLR DGP:
     ;;   x = 0.8*z1 - 0.6*z2 + u
     ;;   y = 1.0*x + 1.5*z1 - 0.2*z2 + v
@@ -65,9 +105,20 @@
           (cons 'x x)
           (cons 'y y))))
 
+    ;;@doc (make-plr-data n)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;; Construct `make-plr-data`.
+    ;;@example
+    ;; (make-plr-data 1)
     (defun make-plr-data (n)
       (map* make-plr-row (range 0 n)))
 
+    ;;@doc (make-irm-data)
+    ;;@category Tests
+    ;;@module causal.crossfit.tests
+    ;;@example
+    ;; (make-irm-data)
     ;; IRM DGP with both treatment arms present in every (z1,z2) stratum.
     (defun make-irm-data ()
       (let ((z1s '(-2 -1 0 1 2))

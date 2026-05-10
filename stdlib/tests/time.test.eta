@@ -4,9 +4,21 @@
   (import std.test std.time)
   (begin
 
+    ;;@doc (has-key? k alist)
+    ;;@category Tests
+    ;;@module time.tests
+    ;; Unit tests for std.time Uses `has-key?`.
+    ;;@example
+    ;; (has-key? 1 'x)
     (defun has-key? (k alist)
       (not (eq? (assoc k alist) #f)))
 
+    ;;@doc (digit-char? ch)
+    ;;@category Tests
+    ;;@module time.tests
+    ;; Return whether `digit-char?` holds.
+    ;;@example
+    ;; (digit-char? 'x)
     (defun digit-char? (ch)
       (let ((n (char->integer ch)))
         (and (>= n (char->integer #\0))

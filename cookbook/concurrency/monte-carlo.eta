@@ -26,6 +26,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (n-workers)
+    ;;@category Concurrency
+    ;;@module monte-carlo
+    ;; Parallel Monte Carlo π estimation Uses `n-workers`.
+    ;;@example
+    ;; (display n-workers)
     (define n-workers   8)        ; number of parallel worker processes
     (define samples-per-worker 50000)  ; Monte Carlo samples per worker
 

@@ -60,8 +60,13 @@
 
     (println "-- Propagation through calls --")
 
+    ;;@doc (safe-divide a b)
+    ;;@category Basics
+    ;;@module exceptions
     ;; (raise) escapes from any number of stack frames back to the nearest
     ;; matching (catch), just like a non-local exit.
+    ;;@example
+    ;; (safe-divide 1 1)
     (defun safe-divide (a b)
       (if (= b 0)
           (raise 'division-by-zero 'undefined)
@@ -75,6 +80,11 @@
 
     (println "-- Structured payloads --")
 
+    ;;@doc (validate-age age)
+    ;;@category Basics
+    ;;@module exceptions
+    ;;@example
+    ;; (validate-age 'x)
     ;; The raised value can be any Lisp value — here we pass a pair (code . value).
     (defun validate-age (age)
       (cond
@@ -98,6 +108,11 @@
 
     (println "-- Early exit pattern --")
 
+    ;;@doc (first-negative lst)
+    ;;@category Basics
+    ;;@module exceptions
+    ;;@example
+    ;; (first-negative '())
     ;; Find the first negative number in a list, or #f if none.
     ;; Raising 'found short-circuits the rest of the traversal.
     (defun first-negative (lst)
@@ -134,6 +149,11 @@
 
     (println "-- Re-raising --")
 
+    ;;@doc (process x)
+    ;;@category Basics
+    ;;@module exceptions
+    ;;@example
+    ;; (process 1)
     ;; An inner handler can inspect, wrap, and re-raise with a new tag/value,
     ;; giving callers a higher-level view of the error.
     (defun process (x)

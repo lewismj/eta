@@ -32,19 +32,39 @@
 
     ;; -- Convenience output --------------------------------------------------
 
+    ;;@doc (print x)
+    ;;@category Io
+    ;;@module std.io
     ;; deprecated - remove after one minor release
+    ;;@example
+    ;; (print 1)
     (defun print (x) (display x))
 
+    ;;@doc (println x)
+    ;;@category Io
+    ;;@module std.io
+    ;;@example
+    ;; (println 1)
     ;; Display followed by a newline.
     (defun println (x)
       (display x)
       (newline))
 
+    ;;@doc (eprintln x)
+    ;;@category Io
+    ;;@module std.io
+    ;;@example
+    ;; (eprintln 1)
     ;; Print to the current error port.
     (defun eprintln (x)
       (display x (current-error-port))
       (newline (current-error-port)))
 
+    ;;@doc (display->string x)
+    ;;@category Io
+    ;;@module std.io
+    ;;@example
+    ;; (display->string 1)
     ;; Format a value into a string using write representation.
     (defun display->string (x)
       (let ((p (open-output-string)))
@@ -83,14 +103,29 @@
 
     ;; -- Dynamic port redirection -------------------------------------------
 
+    ;;@doc (with-port port thunk)
+    ;;@category Io
+    ;;@module std.io
+    ;;@example
+    ;; (with-port 8080 (lambda (x) x))
     ;; Convenience wrapper around with-output-to-port.
     (defun with-port (port thunk)
       (with-output-to-port port thunk))
 
+    ;;@doc (with-input-port port thunk)
+    ;;@category Io
+    ;;@module std.io
+    ;;@example
+    ;; (with-input-port 8080 (lambda (x) x))
     ;; Convenience wrapper around with-input-from-port.
     (defun with-input-port (port thunk)
       (with-input-from-port port thunk))
 
+    ;;@doc (with-output-to-port port thunk)
+    ;;@category Io
+    ;;@module std.io
+    ;;@example
+    ;; (with-output-to-port 8080 (lambda (x) x))
     ;; Execute thunk with stdout redirected to port.
     (defun with-output-to-port (port thunk)
       (let ((old (current-output-port)))
@@ -99,6 +134,11 @@
           thunk
           (lambda () (set-current-output-port! old)))))
 
+    ;;@doc (with-input-from-port port thunk)
+    ;;@category Io
+    ;;@module std.io
+    ;;@example
+    ;; (with-input-from-port 8080 (lambda (x) x))
     ;; Execute thunk with stdin redirected to port.
     (defun with-input-from-port (port thunk)
       (let ((old (current-input-port)))
@@ -107,6 +147,11 @@
           thunk
           (lambda () (set-current-input-port! old)))))
 
+    ;;@doc (with-error-to-port port thunk)
+    ;;@category Io
+    ;;@module std.io
+    ;;@example
+    ;; (with-error-to-port 8080 (lambda (x) x))
     ;; Execute thunk with stderr redirected to port.
     (defun with-error-to-port (port thunk)
       (let ((old (current-error-port)))

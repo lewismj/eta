@@ -28,6 +28,12 @@
     ;;   parent(bob, ann)   parent(bob, pat)
     ;;   parent(pat, jim)
 
+    ;;@doc (parent-db)
+    ;;@category Logic
+    ;;@module logic
+    ;; Relational logic programming with named relations Uses `parent-db`.
+    ;;@example
+    ;; (display parent-db)
     (define parent-db
       '((tom bob) (tom liz) (bob ann) (bob pat) (pat jim)))
 
@@ -46,6 +52,12 @@
     ;;
     ;; This is the key insight: the *same relation* works in all directions.
 
+    ;;@doc (parento p c)
+    ;;@category Logic
+    ;;@module logic
+    ;; Compute `parento`.
+    ;;@example
+    ;; (parento 'x 'x)
     (defun parento (p c)
       (map* (lambda (fact)
                (lambda ()
@@ -136,6 +148,12 @@
     ;; The same two-step pattern scales to chains of any depth (great-grandparent,
     ;; ancestor, …) and composes with any relation that returns branches.
 
+    ;;@doc (grandparento gp gc)
+    ;;@category Logic
+    ;;@module logic
+    ;; Compute `grandparento`.
+    ;;@example
+    ;; (grandparento 'x 'x)
     (defun grandparento (gp gc)
       (let* ((mid  (logic-var))
              (mids (findall (lambda () (deref-lvar mid))

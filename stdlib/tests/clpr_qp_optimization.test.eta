@@ -4,9 +4,27 @@
   (import std.test std.logic std.clpr)
   (begin
 
+    ;;@doc (payload-tag p)
+    ;;@category Tests
+    ;;@module clpr-qp-optimize-smoke
+    ;; Smoke tests for CLP(R) QP optimization paths Uses `payload-tag`.
+    ;;@example
+    ;; (payload-tag p)
     (defun payload-tag (p) (car (cdr p)))
+    ;;@doc (payload-msg p)
+    ;;@category Tests
+    ;;@module clpr-qp-optimize-smoke
+    ;; Compute `payload-msg`.
+    ;;@example
+    ;; (payload-msg 'x)
     (defun payload-msg (p) (car (cdr (cdr p))))
 
+    ;;@doc (starts-with? s pfx)
+    ;;@category Tests
+    ;;@module clpr-qp-optimize-smoke
+    ;; Return whether `starts-with?` holds.
+    ;;@example
+    ;; (starts-with? "sample" 'x)
     (defun starts-with? (s pfx)
       (let ((ns (string-length s))
             (np (string-length pfx)))
@@ -20,27 +38,57 @@
                                      #f)))))
               (loop 0)))))
 
+    ;;@doc (apply-witness! witness)
+    ;;@category Tests
+    ;;@module clpr-qp-optimize-smoke
+    ;; Compute `apply-witness!`.
+    ;;@example
+    ;; (apply-witness! 'x)
     (defun apply-witness! (witness)
       (if (null? witness)
           #t
           (and (unify (car (car witness)) (cdr (car witness)))
                (apply-witness! (cdr witness)))))
 
+    ;;@doc (optimize->pair thunk)
+    ;;@category Tests
+    ;;@module clpr-qp-optimize-smoke
+    ;; Compute `optimize->pair`.
+    ;;@example
+    ;; (optimize->pair (lambda (x) x))
     (defun optimize->pair (thunk)
       (call-with-values thunk
         (lambda (opt witness)
           (cons opt witness))))
 
+    ;;@doc (portfolio-risk-expr x y)
+    ;;@category Tests
+    ;;@module clpr-qp-optimize-smoke
+    ;; Compute `portfolio-risk-expr`.
+    ;;@example
+    ;; (portfolio-risk-expr 1 1)
     (defun portfolio-risk-expr (x y)
       (clp:r+ (clp:r*scalar 0.04 (list '* x x))
               (clp:r*scalar 0.02 (list '* x y))
               (clp:r*scalar 0.09 (list '* y y))))
 
+    ;;@doc (portfolio-risk-value x y)
+    ;;@category Tests
+    ;;@module clpr-qp-optimize-smoke
+    ;; Compute `portfolio-risk-value`.
+    ;;@example
+    ;; (portfolio-risk-value 1 1)
     (defun portfolio-risk-value (x y)
       (+ (+ (* 0.04 (* x x))
             (* 0.02 (* x y)))
          (* 0.09 (* y y))))
 
+    ;;@doc (portfolio-return-value x y)
+    ;;@category Tests
+    ;;@module clpr-qp-optimize-smoke
+    ;; Compute `portfolio-return-value`.
+    ;;@example
+    ;; (portfolio-return-value 1 1)
     (defun portfolio-return-value (x y)
       (+ (* 0.10 x) (* 0.08 y)))
 

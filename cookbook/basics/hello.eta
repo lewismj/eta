@@ -7,6 +7,12 @@
   (begin
     (println "Hello, world!")
 
+    ;;@doc (factorial n)
+    ;;@category Basics
+    ;;@module hello
+    ;; Hello, Eta! Uses `factorial`.
+    ;;@example
+    ;; (factorial (- n 1)
     (defun factorial (n)
       (if (= n 0) 1
           (* n (factorial (- n 1)))))

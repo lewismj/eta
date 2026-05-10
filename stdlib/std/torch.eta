@@ -41,7 +41,12 @@
     train-step!)
   (begin
 
+    ;;@doc (tensor v . rest)
+    ;;@category Torch
+    ;;@module std.torch
     ;; -- Tensor creation (thin aliases) -------------------------------------
+    ;;@example
+    ;; (tensor 1 '())
     (defun tensor  (v . rest) (apply torch/tensor (cons v rest)))
     (define ones torch/ones)
     (define zeros torch/zeros)
@@ -110,6 +115,12 @@
 
     ;; -- NN layers -----------------------------------------------------------
     (define linear nn/linear)
+    ;;@doc (sequential first . rest)
+    ;;@category Torch
+    ;;@module std.torch
+    ;; Compute `sequential`.
+    ;;@example
+    ;; (sequential 'x '())
     (defun sequential (first . rest) (apply nn/sequential (cons first rest)))
     (define relu-layer nn/relu-layer)
     (define sigmoid-layer nn/sigmoid-layer)
@@ -142,15 +153,44 @@
     (define gpu-count torch/cuda-device-count)
     (define device torch/device)
     (define to-device torch/to-device)
+    ;;@doc (to-gpu t)
+    ;;@category Torch
+    ;;@module std.torch
+    ;; Compute `to-gpu`.
+    ;;@example
+    ;; (to-gpu 'x)
     (defun to-gpu (t) (torch/to-device t "cuda"))
+    ;;@doc (to-cpu t)
+    ;;@category Torch
+    ;;@module std.torch
+    ;; Compute `to-cpu`.
+    ;;@example
+    ;; (to-cpu 'x)
     (defun to-cpu (t) (torch/to-device t "cpu"))
 
     (define nn-to-device nn/to-device)
+    ;;@doc (nn-to-gpu m)
+    ;;@category Torch
+    ;;@module std.torch
+    ;; Compute `nn-to-gpu`.
+    ;;@example
+    ;; (nn-to-gpu 1)
     (defun nn-to-gpu (m) (nn/to-device m "cuda"))
+    ;;@doc (nn-to-cpu m)
+    ;;@category Torch
+    ;;@module std.torch
+    ;; Compute `nn-to-cpu`.
+    ;;@example
+    ;; (nn-to-cpu 1)
     (defun nn-to-cpu (m) (nn/to-device m "cpu"))
 
     ;; -- High-level helpers --------------------------------------------------
 
+    ;;@doc (train-step! model optimizer loss-fn input target)
+    ;;@category Torch
+    ;;@module std.torch
+    ;;@example
+    ;; (train-step! 'x 'x (lambda (x) x) 'x 'x)
     ;; (train-step! model optimizer loss-fn input target)
     ;; Performs one training step: zero grad -> forward -> loss -> backward -> step.
     ;; Returns the scalar loss value (double).

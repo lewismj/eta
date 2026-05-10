@@ -20,31 +20,66 @@
 
     ;;  Predicates 
 
+    ;;@doc (non-pair? x)
+    ;;@category Core
+    ;;@module std.core
     ;; True for anything that is not a pair.
+    ;;@example
+    ;; (non-pair? 1)
     (defun non-pair? (x) (not (pair? x)))
 
+    ;;@doc (void)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (void)
     ;; Returns '()  the canonical "no useful value" result.
     (defun void () '())
 
 
     ;;  Combinators 
 
+    ;;@doc (identity x)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (identity 1)
     ;; Returns its argument unchanged.
     (defun identity (x) x)
 
+    ;;@doc (compose f g)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (compose (lambda (x) x) 'x)
     ;; Function composition: (compose f g) returns a procedure that
     ;; applies g first, then f.
     (defun compose (f g)
       (lambda (x) (f (g x))))
 
+    ;;@doc (flip f)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (flip (lambda (x) x))
     ;; Swap the order of a two-argument function's parameters.
     (defun flip (f)
       (lambda (a b) (f b a)))
 
+    ;;@doc (constantly v)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (constantly 1)
     ;; Returns a function that always yields the given value.
     (defun constantly (v)
       (lambda args v))
 
+    ;;@doc (negate pred)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (negate (lambda (x) x))
     ;; Given a predicate, returns a new predicate that is its
     ;; logical negation.
     (defun negate (pred)
@@ -52,14 +87,49 @@
 
     ;;  Accessors 
 
+    ;;@doc (cadr xs)
+    ;;@category Core
+    ;;@module std.core
+    ;; Compute `cadr`.
+    ;;@example
+    ;; (cadr '())
     (defun cadr (xs)  (car (cdr xs)))
+    ;;@doc (caddr xs)
+    ;;@category Core
+    ;;@module std.core
+    ;; Compute `caddr`.
+    ;;@example
+    ;; (caddr '())
     (defun caddr (xs) (car (cdr (cdr xs))))
+    ;;@doc (caar xs)
+    ;;@category Core
+    ;;@module std.core
+    ;; Compute `caar`.
+    ;;@example
+    ;; (caar '())
     (defun caar (xs)  (car (car xs)))
+    ;;@doc (cdar xs)
+    ;;@category Core
+    ;;@module std.core
+    ;; Compute `cdar`.
+    ;;@example
+    ;; (cdar '())
     (defun cdar (xs)  (cdr (car xs)))
+    ;;@doc (caddar xs)
+    ;;@category Core
+    ;;@module std.core
+    ;; Compute `caddar`.
+    ;;@example
+    ;; (caddar '())
     (defun caddar (xs) (car (cdr (cdr (car xs)))))
 
     ;;  List utilities 
 
+    ;;@doc (last xs)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (last '())
     ;; Last element of a non-empty proper list.
     (defun last (xs)
       (let loop ((rest xs))
@@ -67,6 +137,11 @@
             (car rest)
             (loop (cdr rest)))))
 
+    ;;@doc (list? x)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (list? 1)
     ;; Proper-list predicate (handles dotted pairs correctly).
     (defun list? (x)
       (cond
@@ -74,6 +149,11 @@
         ((pair? x) (list? (cdr x)))
         (else #f)))
 
+    ;;@doc (iota count . rest)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (iota 1 '())
     ;; Generate a list of integers [start .. start+count-1].
     (defun iota (count . rest)
       (let ((start (if (null? rest) 0 (car rest)))
@@ -83,6 +163,11 @@
               acc
               (build (- i 1) (cons (+ start (* i step)) acc))))))
 
+    ;;@doc (assoc-ref key alist)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (assoc-ref 'x 'x)
     ;; Association list lookup: returns the value (cdr) of the first
     ;; pair whose car is equal? to key, or #f if not found.
     (defun assoc-ref (key alist)
@@ -91,6 +176,11 @@
 
     ;;  Platform 
 
+    ;;@doc (windows?)
+    ;;@category Core
+    ;;@module std.core
+    ;;@example
+    ;; (windows?)
     ;; True when running on Windows. (platform) is evaluated at VM
     ;; execution time, so this is safe for cross-platform bytecode.
     (defun windows? () (eq? (platform) 'Win32))

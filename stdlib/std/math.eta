@@ -19,27 +19,72 @@
 
     ;;  Constants 
 
+    ;;@doc (pi)
+    ;;@category Math
+    ;;@module std.math
+    ;; Mathematical constants and helpers Uses `pi`.
+    ;;@example
+    ;; (display pi)
     (define pi 3.141592653589793)
     (define e  2.718281828459045)
 
     ;;  Basic helpers 
 
+    ;;@doc (square x)
+    ;;@category Math
+    ;;@module std.math
+    ;; Compute `square`.
+    ;;@example
+    ;; (square 1)
     (defun square (x) (* x x))
+    ;;@doc (cube x)
+    ;;@category Math
+    ;;@module std.math
+    ;; Compute `cube`.
+    ;;@example
+    ;; (cube 1)
     (defun cube   (x) (* x x x))
 
+    ;;@doc (even? n)
+    ;;@category Math
+    ;;@module std.math
+    ;; Return whether `even?` holds.
+    ;;@example
+    ;; (even? 1)
     (defun even? (n) (= (modulo n 2) 0))
+    ;;@doc (odd? n)
+    ;;@category Math
+    ;;@module std.math
+    ;; Return whether `odd?` holds.
+    ;;@example
+    ;; (odd? 1)
     (defun odd?  (n) (not (= (modulo n 2) 0)))
 
+    ;;@doc (sign x)
+    ;;@category Math
+    ;;@module std.math
+    ;;@example
+    ;; (sign 1)
     ;; Returns -1, 0, or 1.
     (defun sign (x)
       (cond ((positive? x) 1)
             ((negative? x) -1)
             (else 0)))
 
+    ;;@doc (clamp x lo hi)
+    ;;@category Math
+    ;;@module std.math
+    ;;@example
+    ;; (clamp 1 'x 'x)
     ;; Restrict x to the range [lo, hi].
     (defun clamp (x lo hi)
       (min hi (max lo x)))
 
+    ;;@doc (quotient a b)
+    ;;@category Math
+    ;;@module std.math
+    ;;@example
+    ;; (quotient 1 1)
     ;; Integer division (truncating toward zero).
     (defun quotient (a b)
       (let ((r (/ a b)))
@@ -53,11 +98,21 @@
                         (- pos (modulo (let ((m (* pos 1.0))) m) 1.0))))
                 (- r (modulo (* r 1.0) 1.0))))))
 
+    ;;@doc (gcd a b)
+    ;;@category Math
+    ;;@module std.math
+    ;;@example
+    ;; (gcd 1 1)
     ;; Greatest common divisor (Euclidean algorithm).
     (defun gcd (a b)
       (let ((a (abs a)) (b (abs b)))
         (if (= b 0) a (gcd b (modulo a b)))))
 
+    ;;@doc (lcm a b)
+    ;;@category Math
+    ;;@module std.math
+    ;;@example
+    ;; (lcm 1 1)
     ;; Least common multiple.
     (defun lcm (a b)
       (if (or (= a 0) (= b 0))
@@ -68,26 +123,55 @@
     ;; These operate on the float representation; for fixnums they are
     ;; identity.
 
+    ;;@doc (floor x)
+    ;;@category Math
+    ;;@module std.math
+    ;; Compute `floor`.
+    ;;@example
+    ;; (floor 1)
     (defun floor (x)
       (if (integer? x) x
           (let ((t (- x (modulo (* x 1.0) 1.0))))
             (if (negative? x) (- t 1) t))))
 
+    ;;@doc (ceiling x)
+    ;;@category Math
+    ;;@module std.math
+    ;; Compute `ceiling`.
+    ;;@example
+    ;; (ceiling 1)
     (defun ceiling (x)
       (if (integer? x) x
           (let ((f (floor x)))
             (+ f 1))))
 
+    ;;@doc (truncate x)
+    ;;@category Math
+    ;;@module std.math
+    ;; Compute `truncate`.
+    ;;@example
+    ;; (truncate 1)
     (defun truncate (x)
       (if (integer? x) x
           (if (negative? x) (ceiling x) (floor x))))
 
+    ;;@doc (round x)
+    ;;@category Math
+    ;;@module std.math
+    ;; Compute `round`.
+    ;;@example
+    ;; (round 1)
     (defun round (x)
       (if (integer? x) x
           (floor (+ x 0.5))))
 
     ;;  Exponentiation 
 
+    ;;@doc (expt base exp)
+    ;;@category Math
+    ;;@module std.math
+    ;;@example
+    ;; (expt 'x 'x)
     ;; Integer exponentiation by squaring (non-negative exp only).
     (defun expt (base exp)
       (cond
@@ -99,6 +183,11 @@
 
     ;;  Summation helpers 
 
+    ;;@doc (sum xs)
+    ;;@category Math
+    ;;@module std.math
+    ;;@example
+    ;; (sum '())
     ;; Sum a list of numbers.
     (defun sum (xs)
       (let loop ((rest xs) (acc 0))
@@ -106,6 +195,11 @@
             acc
             (loop (cdr rest) (+ acc (car rest))))))
 
+    ;;@doc (product xs)
+    ;;@category Math
+    ;;@module std.math
+    ;;@example
+    ;; (product '())
     ;; Product of a list of numbers.
     (defun product (xs)
       (let loop ((rest xs) (acc 1))

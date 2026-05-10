@@ -22,6 +22,12 @@
   (import std.stats)
   (begin
 
+    ;;@doc (win)
+    ;;@category Numerics
+    ;;@module stats-example
+    ;; Descriptive statistics, hypothesis testing, and OLS regression Uses `win`.
+    ;;@example
+    ;; (display win)
     (define win (eq? (platform) 'Win32))
 
     ;; ============================================================

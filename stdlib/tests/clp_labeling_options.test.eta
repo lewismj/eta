@@ -6,8 +6,20 @@
   (import std.core std.collections std.logic std.clp)
   (begin
 
+    ;;@doc (fail-count)
+    ;;@category Tests
+    ;;@module clp-labeling-options
+    ;; Smoke test for the clp:labeling Uses `fail-count`.
+    ;;@example
+    ;; (display fail-count)
     (define fail-count 0)
 
+    ;;@doc (chk label expected actual)
+    ;;@category Tests
+    ;;@module clp-labeling-options
+    ;; Compute `chk`.
+    ;;@example
+    ;; (chk 'x 'x 'x)
     (defun chk (label expected actual)
       (display label) (display " => ") (display actual)
       (if (equal? actual expected)

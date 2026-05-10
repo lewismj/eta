@@ -4,20 +4,44 @@
   (import std.test std.causal.policy std.stats std.core std.collections)
   (begin
 
+    ;;@doc (make-row z x y)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;; Construct `make-row`.
+    ;;@example
+    ;; (make-row 1 1 1)
     (defun make-row (z x y)
       (list
         (cons 'z z)
         (cons 'x x)
         (cons 'y y)))
 
+    ;;@doc (repeat-row n row)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;; Compute `repeat-row`.
+    ;;@example
+    ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
       (let loop ((i 0) (acc '()))
         (if (= i n)
             (reverse acc)
             (loop (+ i 1) (cons row acc)))))
 
+    ;;@doc (z-of obs)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;; Compute `z-of`.
+    ;;@example
+    ;; (z-of 'x)
     (defun z-of (obs) (cdr (assq 'z obs)))
 
+    ;;@doc (make-flat-data)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;; Construct `make-flat-data`.
+    ;;@example
+    ;; (make-flat-data)
     (defun make-flat-data ()
       (let ((zs '(-2 -1 0 1 2)))
         (foldl
@@ -28,6 +52,11 @@
           '()
           zs)))
 
+    ;;@doc (make-rct-data)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;;@example
+    ;; (make-rct-data)
     ;; Balanced RCT with deterministic outcomes:
     ;;   y0(z) = 1 + 0.2*z
     ;;   y1(z) = y0(z) + 0.5 + 0.1*z
@@ -44,12 +73,36 @@
           '()
           zs)))
 
+    ;;@doc (policy-positive-z zrow)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;; Compute `policy-positive-z`.
+    ;;@example
+    ;; (policy-positive-z 'x)
     (defun policy-positive-z (zrow)
       (if (>= (car zrow) 0) 1 0))
 
+    ;;@doc (true-mu0 z)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;; Compute `true-mu0`.
+    ;;@example
+    ;; (true-mu0 1)
     (defun true-mu0 (z) (+ 1.0 (* 0.2 z)))
+    ;;@doc (true-mu1 z)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;; Compute `true-mu1`.
+    ;;@example
+    ;; (true-mu1 1)
     (defun true-mu1 (z) (+ (true-mu0 z) (+ 0.5 (* 0.1 z))))
 
+    ;;@doc (true-policy-value data)
+    ;;@category Tests
+    ;;@module causal.policy.tests
+    ;; Compute `true-policy-value`.
+    ;;@example
+    ;; (true-policy-value 'x)
     (defun true-policy-value (data)
       (stats:mean
         (map* (lambda (obs)

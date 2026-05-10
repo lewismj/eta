@@ -17,12 +17,24 @@
 
     ;; -- Core helpers -----------------------------------------------------
 
+    ;;@doc (%obs-get obs var)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%obs-get`.
+    ;;@example
+    ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
       (let ((p (assq var obs)))
         (if p
             (cdr p)
             (error 'unknown-variable var))))
 
+    ;;@doc (%as-binary v x-name)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%as-binary`.
+    ;;@example
+    ;; (%as-binary 1 'x)
     (defun %as-binary (v x-name)
       (cond
         ((equal? v 1) 1.0)
@@ -31,6 +43,12 @@
         ((eq? v #f) 0.0)
         (else (error 'non-binary-treatment x-name v))))
 
+    ;;@doc (%clip-prob p)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%clip-prob`.
+    ;;@example
+    ;; (%clip-prob 'x)
     (defun %clip-prob (p)
       (let ((eps 1e-6))
         (cond
@@ -38,6 +56,12 @@
           ((> p (- 1.0 eps)) (- 1.0 eps))
           (else p))))
 
+    ;;@doc (%remove-at xs idx)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%remove-at`.
+    ;;@example
+    ;; (%remove-at '() 1)
     (defun %remove-at (xs idx)
       (let loop ((rest xs) (i 0) (acc '()))
         (if (null? rest)
@@ -46,11 +70,21 @@
                 (append (reverse acc) (cdr rest))
                 (loop (cdr rest) (+ i 1) (cons (car rest) acc))))))
 
+    ;;@doc (%lcg-next seed)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;;@example
+    ;; (%lcg-next 'x)
     ;; Park-Miller minimal standard LCG.
     (defun %lcg-next (seed)
       (let ((s (if (<= seed 0) 1 seed)))
         (modulo (* 48271 s) 2147483647)))
 
+    ;;@doc (%shuffle xs seed)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;;@example
+    ;; (%shuffle '() 'x)
     ;; Returns (shuffled . next-seed).
     (defun %shuffle (xs seed)
       (let loop ((pool xs) (s seed) (acc '()))
@@ -62,6 +96,12 @@
                    (rest (%remove-at pool idx)))
               (loop rest s2 (cons picked acc))))))
 
+    ;;@doc (%learner-ref spec key who)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%learner-ref`.
+    ;;@example
+    ;; (%learner-ref 'x 'x 'x)
     (defun %learner-ref (spec key who)
       (let ((entry (assq key spec)))
         (if entry
@@ -69,38 +109,92 @@
             (error (string-append who ": learner-spec is missing required key")
                    key))))
 
+    ;;@doc (%learner-kind spec)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%learner-kind`.
+    ;;@example
+    ;; (%learner-kind 'x)
     (defun %learner-kind (spec)
       (let ((entry (assq 'kind spec)))
         (if entry (cdr entry) #f)))
 
+    ;;@doc (%assert-regressor spec who)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%assert-regressor`.
+    ;;@example
+    ;; (%assert-regressor 'x 'x)
     (defun %assert-regressor (spec who)
       (let ((kind (%learner-kind spec)))
         (if (and kind (not (eq? kind 'regressor)))
             (error (string-append who ": expected learner-spec kind=regressor"))
             'ok)))
 
+    ;;@doc (%assert-classifier spec who)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%assert-classifier`.
+    ;;@example
+    ;; (%assert-classifier 'x 'x)
     (defun %assert-classifier (spec who)
       (let ((kind (%learner-kind spec)))
         (if (and kind (not (eq? kind 'classifier)))
             (error (string-append who ": expected learner-spec kind=classifier"))
             'ok)))
 
+    ;;@doc (%fit spec x-matrix y-vector who)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%fit`.
+    ;;@example
+    ;; (%fit 'x 'x 'x 'x)
     (defun %fit (spec x-matrix y-vector who)
       ((%learner-ref spec 'fit who) x-matrix y-vector))
 
+    ;;@doc (%predict spec model x-matrix who)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%predict`.
+    ;;@example
+    ;; (%predict 'x 'x 'x 'x)
     (defun %predict (spec model x-matrix who)
       ((%learner-ref spec 'predict who) model x-matrix))
 
+    ;;@doc (%design data cols)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%design`.
+    ;;@example
+    ;; (%design 'x '())
     (defun %design (data cols)
       (causal:design-matrix data cols))
 
+    ;;@doc (%response data y)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%response`.
+    ;;@example
+    ;; (%response 'x 1)
     (defun %response (data y)
       (causal:response-vector data y))
 
+    ;;@doc (%select rows indices)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%select`.
+    ;;@example
+    ;; (%select '() 'x)
     (defun %select (rows indices)
       (map* (lambda (i) (list-ref rows i))
             indices))
 
+    ;;@doc (%scatter! vec indices vals who)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%scatter!`.
+    ;;@example
+    ;; (%scatter! 'x 'x '() 'x)
     (defun %scatter! (vec indices vals who)
       (if (not (= (length indices) (length vals)))
           (error (string-append who ": fold prediction length mismatch"))
@@ -111,14 +205,32 @@
                   (vector-set! vec (car is) (car vs))
                   (loop (cdr is) (cdr vs)))))))
 
+    ;;@doc (%sum-sq xs)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%sum-sq`.
+    ;;@example
+    ;; (%sum-sq '())
     (defun %sum-sq (xs)
       (foldl (lambda (acc x) (+ acc (* x x))) 0.0 xs))
 
+    ;;@doc (%arm-rows data x arm)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%arm-rows`.
+    ;;@example
+    ;; (%arm-rows 'x 1 'x)
     (defun %arm-rows (data x arm)
       (filter (lambda (obs)
                 (= (%as-binary (%obs-get obs x) x) arm))
               data))
 
+    ;;@doc (%arm-mean data y x arm who)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%arm-mean`.
+    ;;@example
+    ;; (%arm-mean 'x 1 1 'x 'x)
     (defun %arm-mean (data y x arm who)
       (let* ((rows (%arm-rows data x arm))
              (n (length rows)))
@@ -127,6 +239,12 @@
             (/ (foldl (lambda (acc obs) (+ acc (%obs-get obs y))) 0.0 rows)
                n))))
 
+    ;;@doc (%map4 f ws xs ys zs)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;; Compute `%map4`.
+    ;;@example
+    ;; (%map4 (lambda (x) x) 'x '() '() '())
     (defun %map4 (f ws xs ys zs)
       (if (or (null? ws) (null? xs) (null? ys) (null? zs))
           '()
@@ -135,8 +253,13 @@
 
     ;; -- Public API -------------------------------------------------------
 
+    ;;@doc (crossfit:k-folds n k seed)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
     ;; Deterministic K-fold partition with shuffled index assignment.
     ;; Returns list of (train-indices . test-indices), length k.
+    ;;@example
+    ;; (crossfit:k-folds 1 1 'x)
     (defun crossfit:k-folds (n k seed)
       (if (< n 0)
           (error "crossfit:k-folds: expected n >= 0")
@@ -157,6 +280,11 @@
                               (+ start size)
                               (cons (cons train test) acc)))))))))
 
+    ;;@doc (crossfit:nuisance learner-spec data cols y k seed)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;;@example
+    ;; (crossfit:nuisance 'x 'x '() 1 1 'x)
     ;; Out-of-fold predictions for one response target y over features cols.
     ;; Returns a list aligned with `data` order.
     (defun crossfit:nuisance (learner-spec data cols y k seed)
@@ -187,6 +315,11 @@
                             (%scatter! preds test-idx yhat who)
                             (loop (cdr rest)))))))))))
 
+    ;;@doc (crossfit:nuisance-arm learner-spec data y x z arm k seed)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;;@example
+    ;; (crossfit:nuisance-arm 'x 'x 1 1 1 'x 1 'x)
     ;; Per-arm OOF predictions mu_a(z) trained only on rows with X = arm.
     ;; Returns a list aligned with `data` order.
     (defun crossfit:nuisance-arm (learner-spec data y x z arm k seed)
@@ -226,6 +359,11 @@
                             (%scatter! preds test-idx yhat who)
                             (loop (cdr rest)))))))))))
 
+    ;;@doc (crossfit:influence-se psi den n)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;;@example
+    ;; (crossfit:influence-se 'x 'x 1)
     ;; Influence-function based standard error:
     ;;   se = sqrt( mean(psi^2) / ( mean(den_i)^2 * n ) )
     ;; with scalar denominator represented as `den = sum den_i`.
@@ -242,6 +380,11 @@
                                          (* mean-den mean-den n))))
                       (sqrt (if (< var-theta 0.0) 0.0 var-theta))))))))
 
+    ;;@doc (crossfit:dml-ci theta se alpha)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;;@example
+    ;; (crossfit:dml-ci 'x 'x 'x)
     ;; Symmetric normal-approximation CI for scalar DML estimands.
     ;; Returns (lower upper).
     (defun crossfit:dml-ci (theta se alpha)
@@ -252,6 +395,11 @@
             (list (- theta half-width)
                   (+ theta half-width)))))
 
+    ;;@doc (crossfit:dml-plr data y x z reg-mu reg-m k seed)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;;@example
+    ;; (crossfit:dml-plr 'x 1 1 1 'x 'x 1 'x)
     ;; DML PLR (partially linear regression):
     ;;   Y = theta*X + g(Z) + eps
     ;;   X = m(Z) + nu
@@ -286,6 +434,11 @@
                       (cons 'ci (crossfit:dml-ci theta se 0.05))
                       (cons 'n n))))))))
 
+    ;;@doc (crossfit:dml-irm data y x z reg-mu cls-e k seed)
+    ;;@category Causal
+    ;;@module std.causal.crossfit
+    ;;@example
+    ;; (crossfit:dml-irm 'x 1 1 1 'x 'x 1 'x)
     ;; DML IRM (binary treatment):
     ;;   theta = E[ mu1(Z)-mu0(Z)
     ;;              + X*(Y-mu1(Z))/e(Z)

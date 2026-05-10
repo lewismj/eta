@@ -8,13 +8,31 @@
           std.collections)
   (begin
 
+    ;;@doc (fail? expr)
+    ;;@category Tests
+    ;;@module causal.counterfactual.tests
+    ;; `.
+    ;;@example
+    ;; (fail? 'x)
     (defun fail? (expr)
       (and (pair? expr)
            (eq? (car expr) 'fail)))
 
+    ;;@doc (edge-member? edge g)
+    ;;@category Tests
+    ;;@module causal.counterfactual.tests
+    ;; Return whether `edge-member?` holds.
+    ;;@example
+    ;; (edge-member? 'x 'x)
     (defun edge-member? (edge g)
       (any? (lambda (e) (equal? e edge)) g))
 
+    ;;@doc (prime v)
+    ;;@category Tests
+    ;;@module causal.counterfactual.tests
+    ;; Compute `prime`.
+    ;;@example
+    ;; (prime 1)
     (defun prime (v)
       (string->symbol (string-append (symbol->string v) "'")))
 

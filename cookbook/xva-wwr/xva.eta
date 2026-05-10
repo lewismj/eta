@@ -8,15 +8,33 @@
   (import market)
   (begin
 
+    ;;@doc (assoc-num key table fallback)
+    ;;@category Xva Wwr
+    ;;@module xva
+    ;; Compute `assoc-num`.
+    ;;@example
+    ;; (assoc-num 'x 'x 'x)
     (defun assoc-num (key table fallback)
       (let ((v (if (hash-map? table)
                    (hash-map-ref table key #f)
                    (assoc-ref key table))))
         (if (number? v) v fallback)))
 
+    ;;@doc (discount-factor discount-shift t)
+    ;;@category Xva Wwr
+    ;;@module xva
+    ;; Compute `discount-factor`.
+    ;;@example
+    ;; (discount-factor 'x 'x)
     (defun discount-factor (discount-shift t)
       (exp (* -1 (* (+ base-risk-free-rate discount-shift) t))))
 
+    ;;@doc (cva-curve curve hazard recovery discount-shift fx-shift)
+    ;;@category Xva Wwr
+    ;;@module xva
+    ;; Compute `cva-curve`.
+    ;;@example
+    ;; (cva-curve 'x 'x 'x 'x 'x)
     (defun cva-curve (curve hazard recovery discount-shift fx-shift)
       (let loop ((rest curve) (step 1) (acc 0.0))
         (if (null? rest)
@@ -29,6 +47,12 @@
                    (bucket (* (- 1.0 recovery) ee df pd fx-mult)))
               (loop (cdr rest) (+ step 1) (+ acc bucket))))))
 
+    ;;@doc (cva-table ee-curves hazards recoveries discount-shift fx-shift)
+    ;;@category Xva Wwr
+    ;;@module xva
+    ;; CVA aggregation and one-pass AAD greeks Uses `cva-table`.
+    ;;@example
+    ;; (cva-table ee-curves hazards recoveries discount-shift fx-shift)
     (defun cva-table (ee-curves hazards recoveries discount-shift fx-shift)
       (let* ((hazards* (if (hash-map? hazards) hazards (list->hash-map hazards)))
              (recoveries* (if (hash-map? recoveries) recoveries (list->hash-map recoveries))))
@@ -41,9 +65,21 @@
               (cons cp (cva-curve curve haz rec discount-shift fx-shift))))
           ee-curves)))
 
+    ;;@doc (total-cva table)
+    ;;@category Xva Wwr
+    ;;@module xva
+    ;; Compute `total-cva`.
+    ;;@example
+    ;; (total-cva 'x)
     (defun total-cva (table)
       (foldl (lambda (acc entry) (+ acc (cdr entry))) 0.0 table))
 
+    ;;@doc (shift-map alist delta lo hi)
+    ;;@category Xva Wwr
+    ;;@module xva
+    ;; Compute `shift-map`.
+    ;;@example
+    ;; (shift-map 'x 'x 'x 'x)
     (defun shift-map (alist delta lo hi)
       (map*
         (lambda (entry)
@@ -51,6 +87,11 @@
             (cons (car entry) (max lo (min hi v)))))
         alist))
 
+    ;;@doc (cva-with-greeks ee-curves market-scalars)
+    ;;@category Xva Wwr
+    ;;@module xva
+    ;;@example
+    ;; (cva-with-greeks 'x 'x)
     ;; (cva-with-greeks ee-curves '(hazard-shift recovery-shift discount-shift fx-shift))
     ;; -> (value grad-vector)
     (defun cva-with-greeks (ee-curves market-scalars)
@@ -62,6 +103,12 @@
             (total-cva table)))
         market-scalars))
 
+    ;;@doc (top-contributors table n)
+    ;;@category Xva Wwr
+    ;;@module xva
+    ;; Compute `top-contributors`.
+    ;;@example
+    ;; (top-contributors 'x 1)
     (defun top-contributors (table n)
       (take n (sort (lambda (a b) (> (cdr a) (cdr b))) table)))
 

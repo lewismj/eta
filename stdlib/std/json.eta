@@ -8,21 +8,45 @@
     json:write-string)
   (begin
 
+    ;;@doc (json:strip-leading-colon s)
+    ;;@category Json
+    ;;@module std.json
+    ;; Compute `json:strip-leading-colon`.
+    ;;@example
+    ;; (json:strip-leading-colon "sample")
     (defun json:strip-leading-colon (s)
       (if (and (> (string-length s) 0)
                (eq? (string-ref s 0) #\:))
           (substring s 1 (string-length s))
           s))
 
+    ;;@doc (json:normalize-opt-key k)
+    ;;@category Json
+    ;;@module std.json
+    ;; Compute `json:normalize-opt-key`.
+    ;;@example
+    ;; (json:normalize-opt-key 1)
     (defun json:normalize-opt-key (k)
       (cond
         ((symbol? k) (string->symbol (json:strip-leading-colon (symbol->string k))))
         ((string? k) (string->symbol (json:strip-leading-colon k)))
         (#t (error "json: option key must be a symbol or string"))))
 
+    ;;@doc (json:boolean? x)
+    ;;@category Json
+    ;;@module std.json
+    ;; Return whether `json:boolean?` holds.
+    ;;@example
+    ;; (json:boolean? 1)
     (defun json:boolean? (x)
       (or (eq? x #t) (eq? x #f)))
 
+    ;;@doc (json:read-options->keep-exact opts)
+    ;;@category Json
+    ;;@module std.json
+    ;; Compute `json:read-options->keep-exact`.
+    ;;@example
+    ;; (json:read-options->keep-exact 'x)
     (defun json:read-options->keep-exact (opts)
       (letrec ((loop (lambda (xs keep)
                        (if (null? xs)
@@ -38,18 +62,42 @@
                                      (error "json: unknown option key"))))))))
         (loop opts #f)))
 
+    ;;@doc (json:read port . opts)
+    ;;@category Json
+    ;;@module std.json
+    ;; JSON helpers backed by %json-* runtime primitives Uses `json:read`.
+    ;;@example
+    ;; (json:read-options->keep-exact opts)
     (defun json:read (port . opts)
       (%json-read port (json:read-options->keep-exact opts)))
 
+    ;;@doc (json:read-string str . opts)
+    ;;@category Json
+    ;;@module std.json
+    ;; Compute `json:read-string`.
+    ;;@example
+    ;; (json:read-string "sample" '())
     (defun json:read-string (str . opts)
       (%json-read-string str (json:read-options->keep-exact opts)))
 
+    ;;@doc (json:write value . rest)
+    ;;@category Json
+    ;;@module std.json
+    ;; Compute `json:write`.
+    ;;@example
+    ;; (json:write 1 '())
     (defun json:write (value . rest)
       (if (and (pair? rest) (pair? (cdr rest)))
           (error "json:write: expected value and optional port")
           (let ((port (if (null? rest) (current-output-port) (car rest))))
             (%json-write value port))))
 
+    ;;@doc (json:write-string value)
+    ;;@category Json
+    ;;@module std.json
+    ;; Compute `json:write-string`.
+    ;;@example
+    ;; (json:write-string 1)
     (defun json:write-string (value)
       (%json-write-string value))
 

@@ -35,12 +35,40 @@
   (import std.io)
   (begin
 
+    ;;@doc (non-pair? x)
+    ;;@category Logic
+    ;;@module symbolic-diff
     ;; ── Prelude helpers ─────────────────────────────────────────────
+    ;;@example
+    ;; (non-pair? 1)
     (defun non-pair? (x) (not (pair? x)))
+    ;;@doc (op e)
+    ;;@category Logic
+    ;;@module symbolic-diff
+    ;; Compute `op`.
+    ;;@example
+    ;; (op 'x)
     (defun op (e) (car e))
+    ;;@doc (a1 e)
+    ;;@category Logic
+    ;;@module symbolic-diff
+    ;; Compute `a1`.
+    ;;@example
+    ;; (a1 'x)
     (defun a1 (e) (car (cdr e)))
+    ;;@doc (a2 e)
+    ;;@category Logic
+    ;;@module symbolic-diff
+    ;; Compute `a2`.
+    ;;@example
+    ;; (a2 'x)
     (defun a2 (e) (car (cdr (cdr e))))
 
+    ;;@doc (simplify e)
+    ;;@category Logic
+    ;;@module symbolic-diff
+    ;;@example
+    ;; (simplify 'x)
     ;; ── Algebraic simplifier ────────────────────────────────────────
     (defun simplify (e)
       (cond
@@ -73,11 +101,21 @@
         ;; default: pass through
         (#t e)))
 
+    ;;@doc (simplify* e)
+    ;;@category Logic
+    ;;@module symbolic-diff
+    ;;@example
+    ;; (simplify* 'x)
     ;; Fixed-point simplifier: keep going until stable
     (defun simplify* (e)
       (let ((s (simplify e)))
         (if (equal? s e) s (simplify* s))))
 
+    ;;@doc (diff e v)
+    ;;@category Logic
+    ;;@module symbolic-diff
+    ;;@example
+    ;; (diff 'x 1)
     ;; ── Symbolic differentiator ─────────────────────────────────────
     (defun diff (e v)
       (cond
@@ -123,6 +161,11 @@
 
         (#t 0)))
 
+    ;;@doc (D expr var)
+    ;;@category Logic
+    ;;@module symbolic-diff
+    ;;@example
+    ;; (D 'x 'x)
     ;; ── Helper: differentiate and simplify ──────────────────────────
     (defun D (expr var)
       (simplify* (diff expr var)))

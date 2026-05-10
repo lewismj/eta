@@ -22,16 +22,58 @@
 
     ;; -- Edge helpers -----------------------------------------------------
 
+    ;;@doc (%edge-from e)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%edge-from`.
+    ;;@example
+    ;; (%edge-from 'x)
     (defun %edge-from (e) (car e))
+    ;;@doc (%edge-kind e)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%edge-kind`.
+    ;;@example
+    ;; (%edge-kind 'x)
     (defun %edge-kind (e) (cadr e))
+    ;;@doc (%edge-to e)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%edge-to`.
+    ;;@example
+    ;; (%edge-to 'x)
     (defun %edge-to (e) (caddr e))
 
+    ;;@doc (%directed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Return whether `%directed-edge?` holds.
+    ;;@example
+    ;; (%directed-edge? 'x)
     (defun %directed-edge? (e)   (eq? (%edge-kind e) '->))
+    ;;@doc (%bidirected-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Return whether `%bidirected-edge?` holds.
+    ;;@example
+    ;; (%bidirected-edge? 'x)
     (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
 
+    ;;@doc (%symbol<? a b)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Return whether `%symbol<?` holds.
+    ;;@example
+    ;; (%symbol<? 1 1)
     (defun %symbol<? (a b)
       (string<? (symbol->string a) (symbol->string b)))
 
+    ;;@doc (%district<? a b)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Return whether `%district<?` holds.
+    ;;@example
+    ;; (%district<? 1 1)
     (defun %district<? (a b)
       (let ((ha (if (null? a) "" (symbol->string (car a))))
             (hb (if (null? b) "" (symbol->string (car b)))))
@@ -39,6 +81,12 @@
             (< (length a) (length b))
             (string<? ha hb))))
 
+    ;;@doc (%edge<? a b)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Return whether `%edge<?` holds.
+    ;;@example
+    ;; (%edge<? 1 1)
     (defun %edge<? (a b)
       (let* ((af (symbol->string (%edge-from a)))
              (bf (symbol->string (%edge-from b)))
@@ -53,23 +101,59 @@
           ((string<? bk ak) #f)
           (else (string<? at bt)))))
 
+    ;;@doc (%set->sorted-symbol-list s)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%set->sorted-symbol-list`.
+    ;;@example
+    ;; (%set->sorted-symbol-list "sample")
     (defun %set->sorted-symbol-list (s)
       (sort %symbol<? (hash-set->list s)))
 
+    ;;@doc (%set->sorted-edge-list s)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%set->sorted-edge-list`.
+    ;;@example
+    ;; (%set->sorted-edge-list "sample")
     (defun %set->sorted-edge-list (s)
       (sort %edge<? (hash-set->list s)))
 
+    ;;@doc (%map-set-add m k v)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%map-set-add`.
+    ;;@example
+    ;; (%map-set-add 1 1 1)
     (defun %map-set-add (m k v)
       (hash-map-assoc m k
                       (hash-set-add (hash-map-ref m k (make-hash-set))
                                     v)))
 
+    ;;@doc (%map-set-values m k)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%map-set-values`.
+    ;;@example
+    ;; (%map-set-values 1 1)
     (defun %map-set-values (m k)
       (hash-set->list (hash-map-ref m k (make-hash-set))))
 
+    ;;@doc (%push-all xs stack)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%push-all`.
+    ;;@example
+    ;; (%push-all '() 'x)
     (defun %push-all (xs stack)
       (foldl (lambda (acc x) (cons x acc)) stack xs))
 
+    ;;@doc (%closure-set next seeds)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%closure-set`.
+    ;;@example
+    ;; (%closure-set 'x 'x)
     (defun %closure-set (next seeds)
       (let loop ((stack seeds) (seen (make-hash-set)))
         (if (null? stack)
@@ -80,6 +164,11 @@
                   (loop (%push-all (next v) (cdr stack))
                         (hash-set-add seen v)))))))
 
+    ;;@doc (%admg-build-index g)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (%admg-build-index 'x)
     ;; ADMG index tuple:
     ;;   (nodes-set bidirected-neighbors-map directed-parents-map)
     (defun %admg-build-index (g)
@@ -101,10 +190,33 @@
                                  parents)))
               (loop (cdr rest) nodes2 bidir2 parents2)))))
 
+    ;;@doc (%index-nodes idx)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%index-nodes`.
+    ;;@example
+    ;; (%index-nodes 1)
     (defun %index-nodes (idx)   (car idx))
+    ;;@doc (%index-bidir idx)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%index-bidir`.
+    ;;@example
+    ;; (%index-bidir 1)
     (defun %index-bidir (idx)   (cadr idx))
+    ;;@doc (%index-parents idx)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%index-parents`.
+    ;;@example
+    ;; (%index-parents 1)
     (defun %index-parents (idx) (caddr idx))
 
+    ;;@doc (%dag-build-children-index dag)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (%dag-build-children-index 'x)
     ;; DAG children adjacency map built once per call.
     (defun %dag-build-children-index (dag)
       (foldl (lambda (acc e)
@@ -112,17 +224,40 @@
              (make-hash-map)
              dag))
 
+    ;;@doc (admg:directed g)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; ADMG helpers and latent projection Uses `admg:directed`.
+    ;;@example
+    ;; (admg:directed 'x)
     (defun admg:directed (g)
       (filter %directed-edge? g))
 
+    ;;@doc (admg:bidirected g)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `admg:bidirected`.
+    ;;@example
+    ;; (admg:bidirected 'x)
     (defun admg:bidirected (g)
       (filter %bidirected-edge? g))
 
+    ;;@doc (admg:nodes g)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `admg:nodes`.
+    ;;@example
+    ;; (admg:nodes 'x)
     (defun admg:nodes (g)
       (%set->sorted-symbol-list (%index-nodes (%admg-build-index g))))
 
     ;; -- Districts (c-components) ----------------------------------------
 
+    ;;@doc (admg:district g v)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (admg:district 'x 1)
     ;; Bidirected-connected component containing `v`.
     (defun admg:district (g v)
       (let* ((idx (%admg-build-index g))
@@ -134,6 +269,11 @@
                             (list v)))
             (error 'unknown-variable v))))
 
+    ;;@doc (admg:districts g)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (admg:districts 'x)
     ;; District partition induced by <-> reachability.
     (defun admg:districts (g)
       (let* ((idx (%admg-build-index g))
@@ -154,11 +294,29 @@
                             remaining2
                             (cons (%set->sorted-symbol-list d-set) acc)))))))))
 
+    ;;@doc (admg:c-component g v)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `admg:c-component`.
+    ;;@example
+    ;; (admg:c-component 'x 1)
     (defun admg:c-component  (g v) (admg:district g v))
+    ;;@doc (admg:c-components g)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `admg:c-components`.
+    ;;@example
+    ;; (admg:c-components 'x)
     (defun admg:c-components (g)   (admg:districts g))
 
     ;; -- Ancestors --------------------------------------------------------
 
+    ;;@doc (%as-node-set x)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%as-node-set`.
+    ;;@example
+    ;; (%as-node-set 1)
     (defun %as-node-set (x)
       (cond
         ((null? x) '())
@@ -166,6 +324,12 @@
         ((list? x) x)
         (else (error "admg: expected symbol or list"))))
 
+    ;;@doc (%assert-vars nodes-set vs)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%assert-vars`.
+    ;;@example
+    ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes-set vs)
       (if (null? vs)
           '()
@@ -175,6 +339,11 @@
                 (error 'unknown-variable (car vs)))
             (%assert-vars nodes-set (cdr vs)))))
 
+    ;;@doc (admg:ancestors g v)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (admg:ancestors 'x 1)
     ;; Directed ancestors in the ADMG (bidirected edges are ignored).
     (defun admg:ancestors (g v)
       (let* ((idx (%admg-build-index g))
@@ -193,11 +362,22 @@
 
     ;; -- Latent projection ------------------------------------------------
 
+    ;;@doc (%ordered-pair a b)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%ordered-pair`.
+    ;;@example
+    ;; (%ordered-pair 1 1)
     (defun %ordered-pair (a b)
       (if (string<? (symbol->string a) (symbol->string b))
           (list a b)
           (list b a)))
 
+    ;;@doc (%projected-directed-targets children-map latents-set src)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (%projected-directed-targets 'x 'x 'x)
     ;; Observed targets reachable from observed source via latent-only
     ;; internal nodes.
     (defun %projected-directed-targets (children-map latents-set src)
@@ -215,6 +395,12 @@
                             targets))
                   (loop (cdr stack) seen-lat (hash-set-add targets n)))))))
 
+    ;;@doc (admg:%project-directed children-map latents-set obs-set obs-list)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `admg:%project-directed`.
+    ;;@example
+    ;; (admg:%project-directed 'x 'x 'x 'x)
     (defun admg:%project-directed (children-map latents-set obs-set obs-list)
       (foldl
        (lambda (acc src)
@@ -229,6 +415,11 @@
        (make-hash-set)
        obs-list))
 
+    ;;@doc (%latent-observed-descendants children-map latents-set latent-root)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (%latent-observed-descendants 'x 'x 'x)
     ;; Observed descendants of a latent source through latent-only chains.
     (defun %latent-observed-descendants (children-map latents-set latent-root)
       (let loop ((stack (list latent-root))
@@ -249,12 +440,24 @@
                           (hash-set-add seen-lat n)
                           targets2)))))))
 
+    ;;@doc (%pairs xs)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%pairs`.
+    ;;@example
+    ;; (%pairs '())
     (defun %pairs (xs)
       (if (null? xs)
           '()
           (append (map* (lambda (y) (list (car xs) y)) (cdr xs))
                   (%pairs (cdr xs)))))
 
+    ;;@doc (admg:%project-bidirected children-map all-set latents-set obs-set latents-list)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `admg:%project-bidirected`.
+    ;;@example
+    ;; (admg:%project-bidirected 'x 'x 'x 'x 'x)
     (defun admg:%project-bidirected (children-map all-set latents-set obs-set latents-list)
       (let ((present-latents (filter (lambda (l) (hash-set-contains? all-set l))
                                      latents-list)))
@@ -276,6 +479,11 @@
          (make-hash-set)
          present-latents)))
 
+    ;;@doc (admg:project dag latents)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (admg:project 'x 'x)
     ;; Latent projection (Verma-Pearl) from (DAG, latent set) to ADMG over
     ;; observed nodes.
     (defun admg:project (dag latents)
@@ -291,6 +499,12 @@
 
     ;; -- Moralization -----------------------------------------------------
 
+    ;;@doc (%marriage-links parents)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `%marriage-links`.
+    ;;@example
+    ;; (%marriage-links 'x)
     (defun %marriage-links (parents)
       (if (null? parents)
           '()
@@ -298,6 +512,12 @@
                         (cdr parents))
                   (%marriage-links (cdr parents)))))
 
+    ;;@doc (admg:%add-marriages subg parents-map nodes-set)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `admg:%add-marriages`.
+    ;;@example
+    ;; (admg:%add-marriages 'x 'x 'x)
     (defun admg:%add-marriages (subg parents-map nodes-set)
       (foldl (lambda (acc node)
                (append (%marriage-links (%set->sorted-symbol-list
@@ -306,6 +526,12 @@
              subg
              (%set->sorted-symbol-list nodes-set)))
 
+    ;;@doc (admg:%undirected g)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;; Compute `admg:%undirected`.
+    ;;@example
+    ;; (admg:%undirected 'x)
     (defun admg:%undirected (g)
       (let ((out
               (foldl (lambda (acc e)
@@ -320,6 +546,11 @@
                      g)))
         (%set->sorted-edge-list out)))
 
+    ;;@doc (admg:moralize g s)
+    ;;@category Causal
+    ;;@module std.causal.admg
+    ;;@example
+    ;; (admg:moralize 'x "sample")
     ;; Ancestral moral graph for a target set `s`.
     (defun admg:moralize (g s)
       (let* ((idx (%admg-build-index g))

@@ -53,7 +53,6 @@ std::vector<std::string> duplicate_stdlib_doc_symbols() {
     };
 
     for (const auto& metadata : generated::kStdlibDocs) {
-        record_key(metadata.name);
         record_key(metadata.qualified_name);
     }
 

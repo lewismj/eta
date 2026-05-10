@@ -18,6 +18,12 @@
   (import std.collections)
   (begin
 
+    ;;@doc (cp-name i)
+    ;;@category Xva Wwr
+    ;;@module market
+    ;; Market data and causal shock sensitivities Uses `cp-name`.
+    ;;@example
+    ;; (cp-name i)
     (defun cp-name (i)
       (if (< i 10)
           (string-append "CP-0" (number->string i))
@@ -38,6 +44,11 @@
         (0.35  1.00  0.30)
         (-0.20 0.30  1.00)))
 
+    ;;@doc (base-ee i)
+    ;;@category Xva Wwr
+    ;;@module market
+    ;;@example
+    ;; (base-ee 1)
     ;; Baseline expected-exposure levels by counterparty.
     (defun base-ee (i)
       (+ 80000 (* 12000 (modulo i 11))))
@@ -45,10 +56,21 @@
     (define baseline-curves
       (map* (lambda (i) (cons (cp-name i) (base-ee i))) (iota 30 1)))
 
+    ;;@doc (base-hazard i)
+    ;;@category Xva Wwr
+    ;;@module market
+    ;;@example
+    ;; (base-hazard 1)
     ;; Baseline hazard and recovery terms.
     (defun base-hazard (i)
       (+ 0.012 (* 0.0015 (modulo i 8))))
 
+    ;;@doc (base-recovery i)
+    ;;@category Xva Wwr
+    ;;@module market
+    ;; Compute `base-recovery`.
+    ;;@example
+    ;; (base-recovery 1)
     (defun base-recovery (i)
       (- 0.45 (* 0.02 (modulo i 4))))
 
@@ -58,6 +80,11 @@
     (define recovery-rates
       (map* (lambda (i) (cons (cp-name i) (base-recovery i))) (iota 30 1)))
 
+    ;;@doc (cp-betas i)
+    ;;@category Xva Wwr
+    ;;@module market
+    ;;@example
+    ;; (cp-betas 1)
     ;; Counterparty shock betas for causal interventions.
     (defun cp-betas (i)
       (let ((oil    (+ 0.20 (* 0.06 (modulo i 5))))

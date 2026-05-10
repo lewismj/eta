@@ -6,7 +6,12 @@
   (import std.core std.io std.collections std.math)
   (begin
 
+    ;;@doc (inc-then-double)
+    ;;@category Basics
+    ;;@module composition
     ;; ── compose — chain two functions: (f ∘ g)(x) = f(g(x)) ────────
+    ;;@example
+    ;; (display inc-then-double)
     (define inc-then-double
       (compose (lambda (x) (* 2 x))
                (lambda (x) (+ x 1))))
@@ -25,6 +30,11 @@
     (println (always-42))            ; => 42
     (println (always-42 'ignored))   ; => 42
 
+    ;;@doc (add a)
+    ;;@category Basics
+    ;;@module composition
+    ;;@example
+    ;; (add 1)
     ;; ── Manual currying — return a closure for partial application ──
     (defun add (a)
       (lambda (b) (+ a b)))
@@ -35,6 +45,11 @@
     (println (inc 99))               ; => 100
     (println (add10 32))             ; => 42
 
+    ;;@doc (mul a)
+    ;;@category Basics
+    ;;@module composition
+    ;;@example
+    ;; (mul 1)
     ;; ── Curried multiply ────────────────────────────────────────────
     (defun mul (a)
       (lambda (b) (* a b)))

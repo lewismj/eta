@@ -16,11 +16,16 @@
 
     (println "inproc: spawning in-process threads...")
 
+    ;;@doc (make-worker offset)
+    ;;@category Concurrency
+    ;;@module inproc
     ;; make-worker captures 'offset' as an upvalue in the thunk.
     ;; The thread VM reconstructs the closure, then:
     ;;   1. calls (current-mailbox) to get its end of the PAIR socket
     ;;   2. blocks on recv! waiting for the parent's input
     ;;   3. adds the captured offset and sends the result back
+    ;;@example
+    ;; (make-worker 'x)
     (define (make-worker offset)
       (spawn-thread
         (lambda ()

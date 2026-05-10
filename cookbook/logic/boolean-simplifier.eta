@@ -16,15 +16,42 @@
   (import std.io)
   (begin
 
+    ;;@doc (non-pair? x)
+    ;;@category Logic
+    ;;@module boolean-simplifier
     ;; ── Helpers ─────────────────────────────────────────────────────
     ;; non-pair? — true for anything that is not a pair (symbols, bools, etc.)
+    ;;@example
+    ;; (non-pair? 1)
     (defun non-pair? (x) (not (pair? x)))
 
+    ;;@doc (op e)
+    ;;@category Logic
+    ;;@module boolean-simplifier
+    ;;@example
+    ;; (op 'x)
     ;; Extract operator and arguments from an expression tree
     (defun op (e) (car e))
+    ;;@doc (a1 e)
+    ;;@category Logic
+    ;;@module boolean-simplifier
+    ;; Compute `a1`.
+    ;;@example
+    ;; (a1 'x)
     (defun a1 (e) (car (cdr e)))
+    ;;@doc (a2 e)
+    ;;@category Logic
+    ;;@module boolean-simplifier
+    ;; Compute `a2`.
+    ;;@example
+    ;; (a2 'x)
     (defun a2 (e) (car (cdr (cdr e))))
 
+    ;;@doc (simplify-bool e)
+    ;;@category Logic
+    ;;@module boolean-simplifier
+    ;;@example
+    ;; (simplify-bool 'x)
     ;; ── One-step simplifier ─────────────────────────────────────────
     (defun simplify-bool (e)
       (cond
@@ -74,6 +101,11 @@
         ;; Anything else passes through unchanged
         (#t e)))
 
+    ;;@doc (simplify-bool* e)
+    ;;@category Logic
+    ;;@module boolean-simplifier
+    ;;@example
+    ;; (simplify-bool* 'x)
     ;; ── Fixed-point wrapper: keep simplifying until stable ──────────
     (defun simplify-bool* (e)
       (let ((s (simplify-bool e)))

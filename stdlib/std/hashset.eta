@@ -8,12 +8,30 @@
     hash-set-equal?)
   (begin
 
+    ;;@doc (hash-set-size s)
+    ;;@category Hashset
+    ;;@module std.hashset
+    ;; Hash set helpers over runtime hash-set primitives Uses `hash-set-size`.
+    ;;@example
+    ;; (hash-set-size s)
     (defun hash-set-size (s)
       (length (hash-set->list s)))
 
+    ;;@doc (hash-set-empty? s)
+    ;;@category Hashset
+    ;;@module std.hashset
+    ;; Return whether `hash-set-empty?` holds.
+    ;;@example
+    ;; (hash-set-empty? "sample")
     (defun hash-set-empty? (s)
       (= 0 (hash-set-size s)))
 
+    ;;@doc (hash-set-subset? left right)
+    ;;@category Hashset
+    ;;@module std.hashset
+    ;; Return whether `hash-set-subset?` holds.
+    ;;@example
+    ;; (hash-set-subset? 'x 'x)
     (defun hash-set-subset? (left right)
       (letrec ((loop (lambda (xs)
                        (if (null? xs)
@@ -22,6 +40,12 @@
                                 (loop (cdr xs)))))))
         (loop (hash-set->list left))))
 
+    ;;@doc (hash-set-equal? a b)
+    ;;@category Hashset
+    ;;@module std.hashset
+    ;; Return whether `hash-set-equal?` holds.
+    ;;@example
+    ;; (hash-set-equal? 1 1)
     (defun hash-set-equal? (a b)
       (and (= (hash-set-size a) (hash-set-size b))
            (hash-set-subset? a b)))

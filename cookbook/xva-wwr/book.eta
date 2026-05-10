@@ -7,16 +7,40 @@
   (import std.fact_table)
   (begin
 
+    ;;@doc (cp-name i)
+    ;;@category Xva Wwr
+    ;;@module book
+    ;; Compute `cp-name`.
+    ;;@example
+    ;; (cp-name 1)
     (defun cp-name (i)
       (if (< i 10)
           (string-append "CP-0" (number->string i))
           (string-append "CP-" (number->string i))))
 
+    ;;@doc (make-counterparties n)
+    ;;@category Xva Wwr
+    ;;@module book
+    ;; Construct `make-counterparties`.
+    ;;@example
+    ;; (make-counterparties 1)
     (defun make-counterparties (n)
       (map* cp-name (iota n 1)))
 
+    ;;@doc (counterparties)
+    ;;@category Xva Wwr
+    ;;@module book
+    ;; Deterministic demo book and CSA terms Uses `counterparties`.
+    ;;@example
+    ;; (display counterparties)
     (define counterparties (make-counterparties 30))
 
+    ;;@doc (make-trade idx)
+    ;;@category Xva Wwr
+    ;;@module book
+    ;; Construct `make-trade`.
+    ;;@example
+    ;; (make-trade 1)
     (defun make-trade (idx)
       (let* ((cp-index (+ 1 (modulo (- idx 1) 30)))
              (cp (cp-name cp-index))
@@ -30,6 +54,12 @@
           (cons 'maturity-years maturity)
           (cons 'fixed-rate fixed-rate))))
 
+    ;;@doc (insert-trade! ft trade)
+    ;;@category Xva Wwr
+    ;;@module book
+    ;; Compute `insert-trade!`.
+    ;;@example
+    ;; (insert-trade! 'x 'x)
     (defun insert-trade! (ft trade)
       (fact-table-insert! ft
                           (assoc-ref 'id trade)
@@ -38,6 +68,12 @@
                           (assoc-ref 'maturity-years trade)
                           (assoc-ref 'fixed-rate trade)))
 
+    ;;@doc (make-book)
+    ;;@category Xva Wwr
+    ;;@module book
+    ;; Construct `make-book`.
+    ;;@example
+    ;; (make-book)
     (defun make-book ()
       (let ((ft (make-fact-table 'id 'cp 'notional 'maturity-years 'fixed-rate)))
         (let loop ((ids (iota 200 1)))
@@ -49,6 +85,12 @@
                 (insert-trade! ft (make-trade (car ids)))
                 (loop (cdr ids)))))))
 
+    ;;@doc (make-csa idx)
+    ;;@category Xva Wwr
+    ;;@module book
+    ;; Construct `make-csa`.
+    ;;@example
+    ;; (make-csa 1)
     (defun make-csa (idx)
       (list
         (cons 'cp (cp-name idx))

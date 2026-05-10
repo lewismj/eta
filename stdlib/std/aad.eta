@@ -22,7 +22,12 @@
     (define default-atol 1e-7)
     (define default-step-scale 1.0)
 
+    ;;@doc (grad f vals)
+    ;;@category Aad
+    ;;@module std.aad
     ;; Compute (value, grad-vector) for scalar f at point vals.
+    ;;@example
+    ;; (grad (lambda (x) x) '())
     (defun grad (f vals)
       (let ((tape (tape-new))
             (n (length vals)))
@@ -46,41 +51,104 @@
                 (fill vars 0))
               (list (tape-primal tape out) g))))))
 
+    ;;@doc (ad-abs x)
+    ;;@category Aad
+    ;;@module std.aad
+    ;;@example
+    ;; (ad-abs 1)
     ;; Piecewise helpers use runtime policy controls for kink behavior.
     (defun ad-abs (x) (abs x))
+    ;;@doc (ad-max a b . rest)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `ad-max`.
+    ;;@example
+    ;; (ad-max 1 1 '())
     (defun ad-max (a b . rest)
       (if (null? rest)
           (max a b)
           (apply max (cons a (cons b rest)))))
+    ;;@doc (ad-min a b . rest)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `ad-min`.
+    ;;@example
+    ;; (ad-min 1 1 '())
     (defun ad-min (a b . rest)
       (if (null? rest)
           (min a b)
           (apply min (cons a (cons b rest)))))
+    ;;@doc (ad-relu x)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `ad-relu`.
+    ;;@example
+    ;; (ad-relu 1)
     (defun ad-relu (x) (ad-max 0.0 x))
+    ;;@doc (ad-clamp x lo hi)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `ad-clamp`.
+    ;;@example
+    ;; (ad-clamp 1 'x 'x)
     (defun ad-clamp (x lo hi) (ad-min hi (ad-max lo x)))
 
+    ;;@doc (softplus x beta)
+    ;;@category Aad
+    ;;@module std.aad
+    ;;@example
+    ;; (softplus 1 'x)
     ;; Smooth helpers avoid exact branch points and keep epsilon explicit.
     (defun softplus (x beta)
       (if (<= beta 0.0)
           (error "softplus: beta must be > 0")
           (/ (log (+ 1.0 (exp (* beta x)))) beta)))
 
+    ;;@doc (smooth-abs x epsilon)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `smooth-abs`.
+    ;;@example
+    ;; (smooth-abs 1 'x)
     (defun smooth-abs (x epsilon)
       (if (<= epsilon 0.0)
           (error "smooth-abs: epsilon must be > 0")
           (sqrt (+ (* x x) (* epsilon epsilon)))))
 
+    ;;@doc (__smooth-max a b beta)
+    ;;@category Aad
+    ;;@module std.aad
+    ;;@example
+    ;; (__smooth-max 1 1 'x)
     ;; Smooth max/min via softplus:
     ;; max(a,b) ~ b + softplus(a-b, beta)
     ;; min(a,b) ~ a - softplus(a-b, beta)
     (defun __smooth-max (a b beta)
       (+ b (softplus (- a b) beta)))
+    ;;@doc (__smooth-min a b beta)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `__smooth-min`.
+    ;;@example
+    ;; (__smooth-min 1 1 'x)
     (defun __smooth-min (a b beta)
       (- a (softplus (- a b) beta)))
 
+    ;;@doc (smooth-clamp x lo hi beta)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `smooth-clamp`.
+    ;;@example
+    ;; (smooth-clamp 1 'x 'x 'x)
     (defun smooth-clamp (x lo hi beta)
       (__smooth-min hi (__smooth-max x lo beta) beta))
 
+    ;;@doc (__replace-at xs idx value)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `__replace-at`.
+    ;;@example
+    ;; (__replace-at '() 1 1)
     (defun __replace-at (xs idx value)
       (letrec ((go (lambda (ys i)
                      (if (null? ys)
@@ -90,9 +158,21 @@
                              (cons (car ys) (go (cdr ys) (+ i 1))))))))
         (go xs 0)))
 
+    ;;@doc (__step-size x step-scale)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `__step-size`.
+    ;;@example
+    ;; (__step-size 1 'x)
     (defun __step-size (x step-scale)
       (* step-scale (sqrt fd-eps) (max 1.0 (abs x))))
 
+    ;;@doc (__fd-component f vals i step-scale)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `__fd-component`.
+    ;;@example
+    ;; (__fd-component (lambda (x) x) '() 1 'x)
     (defun __fd-component (f vals i step-scale)
       (let ((x0 (list-ref vals i)))
         (let ((h (__step-size x0 step-scale)))
@@ -101,6 +181,12 @@
             (/ (- (apply f x+) (apply f x-))
                (* 2.0 h))))))
 
+    ;;@doc (__fd-grad f vals step-scale)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `__fd-grad`.
+    ;;@example
+    ;; (__fd-grad (lambda (x) x) '() 'x)
     (defun __fd-grad (f vals step-scale)
       (let ((n (length vals))
             (out (make-vector (length vals) 0.0)))
@@ -112,11 +198,22 @@
                                (loop (+ i 1)))))))
           (loop 0))))
 
+    ;;@doc (__opt opts idx default)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `__opt`.
+    ;;@example
+    ;; (__opt 'x 1 'x)
     (defun __opt (opts idx default)
       (if (< idx (length opts))
           (list-ref opts idx)
           default))
 
+    ;;@doc (check-grad-report f vals . opts)
+    ;;@category Aad
+    ;;@module std.aad
+    ;;@example
+    ;; (check-grad-report (lambda (x) x) '() '())
     ;; Returns a vector:
     ;;   [ok, max-error, aad-grad, fd-grad, rtol, atol, step-scale]
     (defun check-grad-report (f vals . opts)
@@ -139,9 +236,20 @@
                                            (max max-err err))))))))
               (scan 0 #t 0.0))))))
 
+    ;;@doc (check-grad f vals . opts)
+    ;;@category Aad
+    ;;@module std.aad
+    ;; Compute `check-grad`.
+    ;;@example
+    ;; (check-grad (lambda (x) x) '() '())
     (defun check-grad (f vals . opts)
       (vector-ref (apply check-grad-report (cons f (cons vals opts))) 0))
 
+    ;;@doc (with-checkpoint thunk)
+    ;;@category Aad
+    ;;@module std.aad
+    ;;@example
+    ;; (with-checkpoint (lambda (x) x))
     ;; MVP checkpoint API.
     ;; Current behavior evaluates thunk directly.
     (defun with-checkpoint (thunk)

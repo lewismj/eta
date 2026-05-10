@@ -8,6 +8,12 @@
           std.collections)
   (begin
 
+    ;;@doc (transport-fail? expr)
+    ;;@category Tests
+    ;;@module causal.transport.tests
+    ;; `.
+    ;;@example
+    ;; (transport-fail? 'x)
     (defun transport-fail? (expr)
       (and (pair? expr)
            (eq? (car expr) 'fail)

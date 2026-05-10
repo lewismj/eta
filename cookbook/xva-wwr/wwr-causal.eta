@@ -12,6 +12,12 @@
   (import xva)
   (begin
 
+    ;;@doc (scm)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; SCM sampling and counterfactual CVA sweep Uses `scm`.
+    ;;@example
+    ;; (scm:parents-of node edges)
     (define scm
       '((oil -> usd-rates)
         (oil -> fx-usd)
@@ -20,44 +26,98 @@
         (fx-usd -> exposure)
         (energy-credit -> hazard)))
 
+    ;;@doc (assoc-val key table)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `assoc-val`.
+    ;;@example
+    ;; (assoc-val 'x 'x)
     (defun assoc-val (key table)
       (if (hash-map? table)
           (hash-map-ref table key #f)
           (assoc-ref key table)))
 
+    ;;@doc (assoc-num key table fallback)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `assoc-num`.
+    ;;@example
+    ;; (assoc-num 'x 'x 'x)
     (defun assoc-num (key table fallback)
       (let ((v (assoc-val key table)))
         (if (number? v) v fallback)))
 
+    ;;@doc (ensure-hash-map table)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `ensure-hash-map`.
+    ;;@example
+    ;; (ensure-hash-map 'x)
     (defun ensure-hash-map (table)
       (cond
         ((hash-map? table) table)
         ((null? table) (make-hash-map))
         (else (list->hash-map table))))
 
+    ;;@doc (abs-val x)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `abs-val`.
+    ;;@example
+    ;; (abs-val 1)
     (defun abs-val (x)
       (if (< x 0) (* -1 x) x))
 
+    ;;@doc (member-eq? x xs)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Return whether `member-eq?` holds.
+    ;;@example
+    ;; (member-eq? 1 '())
     (defun member-eq? (x xs)
       (cond
         ((null? xs) #f)
         ((eq? x (car xs)) #t)
         (else (member-eq? x (cdr xs)))))
 
+    ;;@doc (add-unique x xs)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `add-unique`.
+    ;;@example
+    ;; (add-unique 1 '())
     (defun add-unique (x xs)
       (if (member-eq? x xs) xs (cons x xs)))
 
+    ;;@doc (remove-first x xs)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `remove-first`.
+    ;;@example
+    ;; (remove-first 1 '())
     (defun remove-first (x xs)
       (cond
         ((null? xs) '())
         ((eq? x (car xs)) (cdr xs))
         (else (cons (car xs) (remove-first x (cdr xs))))))
 
+    ;;@doc (%id-status estimand)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `%id-status`.
+    ;;@example
+    ;; (%id-status 'x)
     (defun %id-status (estimand)
       (if (and (pair? estimand) (eq? (car estimand) 'fail))
           'fail
           'ident))
 
+    ;;@doc (scm:nodes edges)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `scm:nodes`.
+    ;;@example
+    ;; (scm:nodes 'x)
     (defun scm:nodes (edges)
       (let loop ((rest edges) (acc '()))
         (if (null? rest)
@@ -68,13 +128,30 @@
               (loop (cdr rest)
                     (add-unique dst (add-unique src acc)))))))
 
+    ;;@doc (scm:parents-of node edges)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `scm:parents-of`.
+    ;;@example
+    ;; (scm:parents-of 'x 'x)
     (defun scm:parents-of (node edges)
       (map* car (filter (lambda (e) (eq? (caddr e) node)) edges)))
 
+    ;;@doc (node-ready? node edges placed)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Return whether `node-ready?` holds.
+    ;;@example
+    ;; (node-ready? 'x 'x 'x)
     (defun node-ready? (node edges placed)
       (every? (lambda (p) (member-eq? p placed))
               (scm:parents-of node edges)))
 
+    ;;@doc (scm:topo-sort edges)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;;@example
+    ;; (scm:topo-sort 'x)
     ;; Topological sort for edge triples '(src -> dst).
     (defun scm:topo-sort (edges)
       (let ((nodes (scm:nodes edges)))
@@ -88,6 +165,11 @@
                       (loop (remove-first n remaining)
                             (cons n placed)))))))))
 
+    ;;@doc (scm:causal-audit)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;;@example
+    ;; (scm:causal-audit)
     ;; Causal audit over the xVA SCM and two ADMG stress motifs:
     ;;   1) bow graph (non-identifiable)
     ;;   2) front-door pattern (identifiable)
@@ -131,6 +213,11 @@
           (cons 'front-door-idc-status (%id-status front-door-idc))
           (cons 'front-door-idc-estimand front-door-idc))))
 
+    ;;@doc (mechanism-edges mechanisms)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;;@example
+    ;; (mechanism-edges 'x)
     ;; Mechanism format:
     ;;   (cons var (list parents coeffs intercept sigma))
     (defun mechanism-edges (mechanisms)
@@ -145,12 +232,24 @@
           '()
           entries)))
 
+    ;;@doc (dot xs ys)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `dot`.
+    ;;@example
+    ;; (dot '() '())
     (defun dot (xs ys)
       (if (or (null? xs) (null? ys))
           0.0
           (+ (* (car xs) (car ys))
              (dot (cdr xs) (cdr ys)))))
 
+    ;;@doc (mechanism-value v m env exogenous)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `mechanism-value`.
+    ;;@example
+    ;; (mechanism-value 1 1 'x 'x)
     (defun mechanism-value (v m env exogenous)
       (let* ((parents (car m))
              (coeffs (cadr m))
@@ -160,6 +259,12 @@
              (parent-vals (map* (lambda (p) (assoc-num p env 0.0)) parents)))
         (+ intercept (+ (dot coeffs parent-vals) (* sigma noise)))))
 
+    ;;@doc (sample-node-value v env mechanisms exogenous interventions)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `sample-node-value`.
+    ;;@example
+    ;; (sample-node-value 1 'x 'x 'x 'x)
     (defun sample-node-value (v env mechanisms exogenous interventions)
       (let ((forced (assoc-val v interventions)))
         (if (number? forced)
@@ -169,6 +274,11 @@
                   (mechanism-value v m env exogenous)
                   (assoc-num v exogenous 0.0))))))
 
+    ;;@doc (scm:sample mechanisms exogenous interventions)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;;@example
+    ;; (scm:sample 'x 'x 'x)
     ;; Draw one SCM sample via topo-order and linear-Gaussian mechanisms.
     (defun scm:sample (mechanisms exogenous interventions)
       (let* ((mechanisms* (ensure-hash-map mechanisms))
@@ -187,6 +297,12 @@
                       (hash-map-assoc env v value)
                       (cons (cons v value) rows)))))))
 
+    ;;@doc (cp-beta cp var betas)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `cp-beta`.
+    ;;@example
+    ;; (cp-beta 'x 'x 'x)
     (defun cp-beta (cp var betas)
       (let ((b (assoc-val cp betas)))
         (cond
@@ -196,6 +312,12 @@
           ((eq? var 'eur-usd) (cp-betas-eur-usd b))
           (else 0.0))))
 
+    ;;@doc (adjust-hazards do-var do-value betas)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `adjust-hazards`.
+    ;;@example
+    ;; (adjust-hazards 'x 'x 'x)
     (defun adjust-hazards (do-var do-value betas)
       (map*
         (lambda (entry)
@@ -205,6 +327,11 @@
             (cons cp (* hazard (exp (* beta do-value))))))
         hazard-rates))
 
+    ;;@doc (cva-under-do do-var do-value base-curves betas)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;;@example
+    ;; (cva-under-do 'x 'x 'x 'x)
     ;; Returns (total-cva . per-cp-table).
     (defun cva-under-do (do-var do-value base-curves betas)
       (let* ((tilt (list (cons do-var do-value)))
@@ -214,9 +341,21 @@
              (table (cva-table ee hazards recovery-rates 0.0 0.0)))
         (cons (total-cva table) table)))
 
+    ;;@doc (table-value cp table fallback)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `table-value`.
+    ;;@example
+    ;; (table-value 'x 'x 'x)
     (defun table-value (cp table fallback)
       (assoc-num cp table fallback))
 
+    ;;@doc (elasticity-table down-table up-table span)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `elasticity-table`.
+    ;;@example
+    ;; (elasticity-table 'x 'x 'x)
     (defun elasticity-table (down-table up-table span)
       (map*
         (lambda (entry)
@@ -227,6 +366,12 @@
             (cons cp eps)))
         down-table))
 
+    ;;@doc (merge-one-elasticity acc entry)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `merge-one-elasticity`.
+    ;;@example
+    ;; (merge-one-elasticity 'x 'x)
     (defun merge-one-elasticity (acc entry)
       (let* ((cp (car entry))
              (eps (cdr entry))
@@ -236,9 +381,20 @@
             (hash-map-assoc acc cp eps)
             acc)))
 
+    ;;@doc (merge-elasticity acc eps-table)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;; Compute `merge-elasticity`.
+    ;;@example
+    ;; (merge-elasticity 'x 'x)
     (defun merge-elasticity (acc eps-table)
       (foldl merge-one-elasticity acc eps-table))
 
+    ;;@doc (counterfactual-sweep queries base-curves betas)
+    ;;@category Xva Wwr
+    ;;@module wwr-causal
+    ;;@example
+    ;; (counterfactual-sweep 'x 'x 'x)
     ;; queries: '((oil -0.30 0.30) (usd-10y -0.01 0.01) ...)
     ;; Returns an alist with rows and ranked elasticity buckets.
     (defun counterfactual-sweep (queries base-curves betas)

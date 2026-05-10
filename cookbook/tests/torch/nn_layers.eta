@@ -15,6 +15,12 @@
   (import std.test)
   (begin
 
+    ;;@doc (results)
+    ;;@category Tests
+    ;;@module torch-test-nn-layers
+    ;; Neural network layer primitives Uses `results`.
+    ;;@example
+    ;; (display results)
     (define results
       (run (make-group "NN Layers"
         (list

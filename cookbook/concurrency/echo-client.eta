@@ -9,6 +9,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (endpoint)
+    ;;@category Concurrency
+    ;;@module echo-client
+    ;; REQ client for echo-server.eta Uses `endpoint`.
+    ;;@example
+    ;; (display endpoint)
     (define endpoint "tcp://localhost:5555")
 
     (println "echo-client: connecting to echo-server...")

@@ -4,6 +4,12 @@
   (import std.test std.causal std.core std.collections)
   (begin
 
+    ;;@doc (chain-dag)
+    ;;@category Tests
+    ;;@module causal.tests
+    ;; Unit tests for std.causal Uses `chain-dag`.
+    ;;@example
+    ;; (display chain-dag)
     (define chain-dag
       '((a -> b)
         (b -> c)))
@@ -26,9 +32,21 @@
         (latent -> y)
         (x -> y)))
 
+    ;;@doc (contains-edge? dag edge)
+    ;;@category Tests
+    ;;@module causal.tests
+    ;; Return whether `contains-edge?` holds.
+    ;;@example
+    ;; (contains-edge? 'x 'x)
     (defun contains-edge? (dag edge)
       (any? (lambda (e) (equal? e edge)) dag))
 
+    ;;@doc (index-of x xs)
+    ;;@category Tests
+    ;;@module causal.tests
+    ;; Compute `index-of`.
+    ;;@example
+    ;; (index-of 1 '())
     (defun index-of (x xs)
       (let loop ((rest xs) (i 0))
         (cond

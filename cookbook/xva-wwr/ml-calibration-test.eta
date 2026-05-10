@@ -14,9 +14,21 @@
   (import market)
   (begin
 
+    ;;@doc (abs-val x)
+    ;;@category Xva Wwr
+    ;;@module xva-wwr-ml-calibration-test
+    ;; WWR ML calibration regression tests Uses `abs-val`.
+    ;;@example
+    ;; (abs-val (- cp17-oil 2.91)
     (defun abs-val (x)
       (if (< x 0) (* -1 x) x))
 
+    ;;@doc (calibrate)
+    ;;@category Xva Wwr
+    ;;@module xva-wwr-ml-calibration-test
+    ;; Compute `calibrate`.
+    ;;@example
+    ;; (calibrate)
     (defun calibrate ()
       (let* ((panel (generate-shock-panel 500 0.05 20260427))
              (x (car panel))

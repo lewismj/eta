@@ -26,8 +26,20 @@
   (import std.core std.collections std.logic std.clp std.clpr)
   (begin
 
+    ;;@doc (fail-count)
+    ;;@category Tests
+    ;;@module clpr-domain-smoke
+    ;; Smoke test for the RDomain Uses `fail-count`.
+    ;;@example
+    ;; (display fail-count)
     (define fail-count 0)
 
+    ;;@doc (chk label expected actual)
+    ;;@category Tests
+    ;;@module clpr-domain-smoke
+    ;; Compute `chk`.
+    ;;@example
+    ;; (chk 'x 'x 'x)
     (defun chk (label expected actual)
       (display label) (display " => ") (display actual)
       (if (equal? actual expected)

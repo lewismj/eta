@@ -3,6 +3,12 @@
   (begin
     (display "compound smoke: start\n")
 
+    ;;@doc (t)
+    ;;@category Tests
+    ;;@module compound-smoke
+    ;; Smoke test for compound-term primitives Uses `t`.
+    ;;@example
+    ;; (display t)
     (define t (term 'f 1 2 3))
     (display "t = ") (display t) (newline)
     (display "compound? t = ") (display (compound? t)) (newline)

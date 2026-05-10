@@ -4,6 +4,12 @@
   (import std.test std.core)
   (begin
 
+    ;;@doc (payload-tag p)
+    ;;@category Tests
+    ;;@module eval.tests
+    ;; Tests for eval Uses `payload-tag`.
+    ;;@example
+    ;; (payload-tag p)
     (defun payload-tag (p) (car (cdr p)))
 
     (define suite

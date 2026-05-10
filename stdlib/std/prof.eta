@@ -11,23 +11,53 @@
     prof/enabled?)
   (begin
 
+    ;;@doc (prof/start ...)
+    ;;@category Prof
+    ;;@module std.prof
+    ;; Runtime profiling helpers Uses `prof/start`.
+    ;;@example
+    ;; (prof/start)
     (defun prof/start opts
       (let ((mode (if (null? opts) "trace" (car opts)))
             (hz   (if (or (null? opts) (null? (cdr opts))) 1000 (car (cdr opts)))))
         (let ((mode-str (if (symbol? mode) (symbol->string mode) mode)))
           (%prof-start mode-str hz))))
 
+    ;;@doc (prof/stop session)
+    ;;@category Prof
+    ;;@module std.prof
+    ;; Compute `prof/stop`.
+    ;;@example
+    ;; (prof/stop 'x)
     (defun prof/stop (session)
       (%prof-stop session))
 
+    ;;@doc (prof/report handle . opts)
+    ;;@category Prof
+    ;;@module std.prof
+    ;; Compute `prof/report`.
+    ;;@example
+    ;; (prof/report 'x '())
     (defun prof/report (handle . opts)
       (if (null? opts)
           (%prof-report handle)
           (%prof-report handle (car opts))))
 
+    ;;@doc (prof/counter name n)
+    ;;@category Prof
+    ;;@module std.prof
+    ;; Compute `prof/counter`.
+    ;;@example
+    ;; (prof/counter "sample" 1)
     (defun prof/counter (name n)
       (%prof-counter name n))
 
+    ;;@doc (prof/with thunk . opts)
+    ;;@category Prof
+    ;;@module std.prof
+    ;; Compute `prof/with`.
+    ;;@example
+    ;; (prof/with (lambda (x) x) '())
     (defun prof/with (thunk . opts)
       (let ((session (if (null? opts)
                          (prof/start)
@@ -36,12 +66,24 @@
           (let ((handle (prof/stop session)))
             (values result handle)))))
 
+    ;;@doc (prof/region name thunk)
+    ;;@category Prof
+    ;;@module std.prof
+    ;; Compute `prof/region`.
+    ;;@example
+    ;; (prof/region "sample" (lambda (x) x))
     (defun prof/region (name thunk)
       (dynamic-wind
         (lambda () (%prof-region-enter name))
         thunk
         (lambda () (%prof-region-exit))))
 
+    ;;@doc (prof/enabled?)
+    ;;@category Prof
+    ;;@module std.prof
+    ;; Return whether `prof/enabled?` holds.
+    ;;@example
+    ;; (prof/enabled?)
     (defun prof/enabled? ()
       (%prof-enabled?))
 

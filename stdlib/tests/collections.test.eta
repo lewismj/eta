@@ -4,6 +4,12 @@
   (import std.test std.collections std.math)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module collections.tests
+    ;; Unit tests for std.collections Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "std.collections"
         (list

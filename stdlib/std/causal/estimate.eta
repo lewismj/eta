@@ -33,10 +33,20 @@
 
     ;; -- Public API --------------------------------------------------------
 
+    ;;@doc (do:ate data y x z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
     ;; Default ATE estimator (AIPW).
+    ;;@example
+    ;; (do:ate 'x 1 1 1)
     (defun do:ate (data y x z)
       (do:ate-aipw data y x z))
 
+    ;;@doc (do:ate-gformula data y x z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (do:ate-gformula 'x 1 1 1)
     ;; G-formula ATE using nonparametric stratified outcome means.
     ;; Assumes binary treatment X in {0,1}.
     (defun do:ate-gformula (data y x z)
@@ -53,6 +63,11 @@
                    0.0
                    stats))))
 
+    ;;@doc (do:ate-ipw data y x z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (do:ate-ipw 'x 1 1 1)
     ;; IPW ATE with stratified empirical propensity scores.
     ;; Assumes binary treatment X in {0,1}.
     (defun do:ate-ipw (data y x z)
@@ -86,6 +101,11 @@
              (mu0 (if (= den0 0.0) 0.0 (/ num0 den0))))
         (- mu1 mu0)))
 
+    ;;@doc (do:ate-aipw data y x z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (do:ate-aipw 'x 1 1 1)
     ;; AIPW ATE with stratified nuisance models.
     ;; Assumes binary treatment X in {0,1}.
     (defun do:ate-aipw (data y x z)
@@ -107,6 +127,11 @@
                       data)
                n))))
 
+    ;;@doc (do:ate-tmle data y x z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (do:ate-tmle 'x 1 1 1)
     ;; TMLE ATE with one-step fluctuation under an identity-link update.
     ;; Assumes binary treatment X in {0,1}.
     (defun do:ate-tmle (data y x z)
@@ -147,6 +172,11 @@
                         data)
                  n)))))
 
+    ;;@doc (do:propensity-score data x z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (do:propensity-score 'x 1 1)
     ;; Stratified empirical propensity score for each observation.
     ;; Returns probabilities aligned with input data order.
     (defun do:propensity-score (data x z)
@@ -157,6 +187,11 @@
                     (%find-stats stats (%z-key obs z)))))
               data)))
 
+    ;;@doc (causal:design-matrix data cols)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (causal:design-matrix 'x '())
     ;; Shared feature/target extraction helpers used by CATE and DML modules.
     ;; Returns an n x p row-major matrix following `cols` order exactly.
     (defun causal:design-matrix (data cols)
@@ -165,11 +200,21 @@
                     cols))
             data))
 
+    ;;@doc (causal:response-vector data y)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (causal:response-vector 'x 1)
     ;; Returns target vector aligned with `data` order.
     (defun causal:response-vector (data y)
       (map* (lambda (obs) (%obs-get obs y))
             data))
 
+    ;;@doc (do:bootstrap-ci estimator data n-boot alpha . rest)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (do:bootstrap-ci 'x 'x 'x 'x '())
     ;; Percentile bootstrap CI for any scalar estimator:
     ;;   estimator: (lambda (sample) -> number)
     ;;   n-boot: number of bootstrap resamples
@@ -198,6 +243,11 @@
                    (hi (stats:percentile thetas hi-p)))
               (cons lo hi)))))
 
+    ;;@doc (do:e-value rr)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (do:e-value 'x)
     ;; VanderWeele and Ding E-value for risk ratios.
     ;; Accepts any positive risk ratio; protective effects (<1) are inverted.
     (defun do:e-value (rr)
@@ -206,6 +256,11 @@
           (let ((rr* (if (< rr 1.0) (/ 1.0 rr) rr)))
             (+ rr* (sqrt (* rr* (- rr* 1.0)))))))
 
+    ;;@doc (do:rosenbaum-bound ratio gamma)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (do:rosenbaum-bound 'x 'x)
     ;; Rosenbaum-style multiplicative sensitivity envelope around a ratio
     ;; estimand (typically odds ratio or risk ratio):
     ;;   lower = ratio / gamma, upper = ratio * gamma, gamma >= 1.
@@ -219,12 +274,24 @@
 
     ;; -- Internal helpers --------------------------------------------------
 
+    ;;@doc (%obs-get obs var)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%obs-get`.
+    ;;@example
+    ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
       (let ((p (assq var obs)))
         (if p
             (cdr p)
             (error 'unknown-variable var))))
 
+    ;;@doc (%as-binary v x-name)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%as-binary`.
+    ;;@example
+    ;; (%as-binary 1 'x)
     (defun %as-binary (v x-name)
       (cond
         ((equal? v 1) 1.0)
@@ -233,6 +300,12 @@
         ((eq? v #f) 0.0)
         (else (error 'non-binary-treatment x-name v))))
 
+    ;;@doc (%clip-prob p)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%clip-prob`.
+    ;;@example
+    ;; (%clip-prob 'x)
     (defun %clip-prob (p)
       (let ((eps 1e-6))
         (cond
@@ -240,39 +313,86 @@
           ((> p (- 1.0 eps)) (- 1.0 eps))
           (else p))))
 
+    ;;@doc (%member? x xs)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%adjoin x xs)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%adjoin`.
+    ;;@example
+    ;; (%adjoin 1 '())
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    ;;@doc (%z-key obs z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (%z-key 'x 1)
     ;; Project a z-stratum key from an observation.
     (defun %z-key (obs z)
       (map* (lambda (zv) (cons zv (%obs-get obs zv))) z))
 
+    ;;@doc (%key-value key z-name)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%key-value`.
+    ;;@example
+    ;; (%key-value 'x 'x)
     (defun %key-value (key z-name)
       (let ((p (assq z-name key)))
         (if p
             (cdr p)
             #f)))
 
+    ;;@doc (%key-equal? a b)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Return whether `%key-equal?` holds.
+    ;;@example
+    ;; (%key-equal? 1 1)
     (defun %key-equal? (a b)
       (and (= (length a) (length b))
            (every? (lambda (kv)
                      (equal? (cdr kv) (%key-value b (car kv))))
                    a)))
 
+    ;;@doc (%rows-for-key data z key)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%rows-for-key`.
+    ;;@example
+    ;; (%rows-for-key 'x 1 'x)
     (defun %rows-for-key (data z key)
       (filter (lambda (obs)
                 (%key-equal? (%z-key obs z) key))
               data))
 
+    ;;@doc (%mean-or sum n fallback)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%mean-or`.
+    ;;@example
+    ;; (%mean-or 'x 1 'x)
     (defun %mean-or (sum n fallback)
       (if (= n 0) fallback (/ (* 1.0 sum) n)))
 
+    ;;@doc (%global-mean-y data y x xval)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%global-mean-y`.
+    ;;@example
+    ;; (%global-mean-y 'x 1 1 'x)
     (defun %global-mean-y (data y x xval)
       (let* ((rows (filter (lambda (obs)
                              (= (%as-binary (%obs-get obs x) x) xval))
@@ -281,16 +401,57 @@
              (sumy (foldl (lambda (acc obs) (+ acc (%obs-get obs y))) 0.0 rows)))
         (%mean-or sumy n 0.0)))
 
+    ;;@doc (%make-stats key n n1 mu1 mu0 p)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (%make-stats 'x 1 'x 'x 'x 'x)
     ;; Stats record: (key n n1 mu1 mu0 propensity)
     (defun %make-stats (key n n1 mu1 mu0 p)
       (list key n n1 mu1 mu0 p))
 
+    ;;@doc (%stats-key s)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%stats-key`.
+    ;;@example
+    ;; (%stats-key "sample")
     (defun %stats-key        (s) (list-ref s 0))
+    ;;@doc (%stats-n s)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%stats-n`.
+    ;;@example
+    ;; (%stats-n "sample")
     (defun %stats-n          (s) (list-ref s 1))
+    ;;@doc (%stats-mu1 s)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%stats-mu1`.
+    ;;@example
+    ;; (%stats-mu1 "sample")
     (defun %stats-mu1        (s) (list-ref s 3))
+    ;;@doc (%stats-mu0 s)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%stats-mu0`.
+    ;;@example
+    ;; (%stats-mu0 "sample")
     (defun %stats-mu0        (s) (list-ref s 4))
+    ;;@doc (%stats-propensity s)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%stats-propensity`.
+    ;;@example
+    ;; (%stats-propensity "sample")
     (defun %stats-propensity (s) (list-ref s 5))
 
+    ;;@doc (%find-stats stats key)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;; Compute `%find-stats`.
+    ;;@example
+    ;; (%find-stats 'x 'x)
     (defun %find-stats (stats key)
       (let loop ((ss stats))
         (if (null? ss)
@@ -299,6 +460,11 @@
                 (car ss)
                 (loop (cdr ss))))))
 
+    ;;@doc (%stratum-stats data y x z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (%stratum-stats 'x 1 1 1)
     ;; Build per-stratum nuisance statistics once for all estimators.
     (defun %stratum-stats (data y x z)
       (let* ((keys (reverse
@@ -333,6 +499,11 @@
                   (%make-stats key n n1 mu1 mu0 p)))
               keys)))
 
+    ;;@doc (%stratum-propensity-stats data x z)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (%stratum-propensity-stats 'x 1 1)
     ;; Build per-stratum propensity-only statistics.
     (defun %stratum-propensity-stats (data x z)
       (let ((keys (reverse
@@ -350,11 +521,21 @@
                   (%make-stats key n n1 0.0 0.0 p)))
               keys)))
 
+    ;;@doc (%lcg-next seed)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (%lcg-next 'x)
     ;; Pseudorandom generator (Park-Miller minimal standard LCG).
     (defun %lcg-next (seed)
       (let ((s (if (<= seed 0) 1 seed)))
         (modulo (* 48271 s) 2147483647)))
 
+    ;;@doc (%bootstrap-sample data seed)
+    ;;@category Causal
+    ;;@module std.causal.estimate
+    ;;@example
+    ;; (%bootstrap-sample 'x 'x)
     ;; Returns (sample . next-seed).
     (defun %bootstrap-sample (data seed)
       (let ((n (length data)))

@@ -4,6 +4,12 @@
   (import std.test std.causal.cate std.causal.estimate std.stats std.core std.collections)
   (begin
 
+    ;;@doc (make-row x z1 z2 y)
+    ;;@category Tests
+    ;;@module causal.cate.tests
+    ;; Construct `make-row`.
+    ;;@example
+    ;; (make-row 1 'x 'x 1)
     (defun make-row (x z1 z2 y)
       (list
         (cons 'x x)
@@ -11,15 +17,32 @@
         (cons 'z2 z2)
         (cons 'y y)))
 
+    ;;@doc (repeat-row n row)
+    ;;@category Tests
+    ;;@module causal.cate.tests
+    ;; Compute `repeat-row`.
+    ;;@example
+    ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
       (let loop ((i 0) (acc '()))
         (if (= i n)
             (reverse acc)
             (loop (+ i 1) (cons row acc)))))
 
+    ;;@doc (append3 a b c)
+    ;;@category Tests
+    ;;@module causal.cate.tests
+    ;; Compute `append3`.
+    ;;@example
+    ;; (append3 1 1 'x)
     (defun append3 (a b c)
       (append a (append b c)))
 
+    ;;@doc (make-constant-cate-data)
+    ;;@category Tests
+    ;;@module causal.cate.tests
+    ;;@example
+    ;; (make-constant-cate-data)
     ;; Constant treatment effect: tau(z)=1.2.
     (defun make-constant-cate-data ()
       (let ((z1s '(-2 -1 0 1 2))
@@ -41,6 +64,11 @@
           '()
           z1s)))
 
+    ;;@doc (make-imbalanced-cate-data)
+    ;;@category Tests
+    ;;@module causal.cate.tests
+    ;;@example
+    ;; (make-imbalanced-cate-data)
     ;; Imbalanced treatment assignment with heterogeneous tau(z1)=0.8+0.25*z1.
     (defun make-imbalanced-cate-data ()
       (let ((z1s '(-2 -1 0 1 2))
@@ -63,6 +91,11 @@
           '()
           z1s)))
 
+    ;;@doc (make-overlap-data)
+    ;;@category Tests
+    ;;@module causal.cate.tests
+    ;;@example
+    ;; (make-overlap-data)
     ;; Overlap data for orthogonal / doubly robust learners.
     ;; tau(z2)=1.0+0.2*z2 so average tau is exactly 1.0 on this grid.
     (defun make-overlap-data ()

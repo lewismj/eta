@@ -17,6 +17,12 @@
   (import std.core std.collections std.logic std.clp)
   (begin
 
+    ;;@doc (solve ...)
+    ;;@category Logic
+    ;;@module send-more-money
+    ;; The classic cryptarithmetic puzzle Uses `solve`.
+    ;;@example
+    ;; (solve)
     (defun solve ()
       (let ((s (logic-var)) (e (logic-var)) (n (logic-var)) (d (logic-var))
             (m (logic-var)) (o (logic-var)) (r (logic-var)) (y (logic-var)))

@@ -4,11 +4,41 @@
   (import std.test std.logic std.clpr std.clp)
   (begin
 
+    ;;@doc (lo bounds)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Smoke tests for CLP(R) optimization Uses `lo`.
+    ;;@example
+    ;; (lo before-x)
     (defun lo (bounds) (car bounds))
+    ;;@doc (hi bounds)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Compute `hi`.
+    ;;@example
+    ;; (hi 'x)
     (defun hi (bounds) (cdr bounds))
+    ;;@doc (payload-tag p)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Compute `payload-tag`.
+    ;;@example
+    ;; (payload-tag 'x)
     (defun payload-tag (p) (car (cdr p)))
+    ;;@doc (payload-msg p)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Compute `payload-msg`.
+    ;;@example
+    ;; (payload-msg 'x)
     (defun payload-msg (p) (car (cdr (cdr p))))
 
+    ;;@doc (starts-with? s pfx)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Return whether `starts-with?` holds.
+    ;;@example
+    ;; (starts-with? "sample" 'x)
     (defun starts-with? (s pfx)
       (let ((ns (string-length s))
             (np (string-length pfx)))
@@ -22,34 +52,70 @@
                                      #f)))))
               (loop 0)))))
 
+    ;;@doc (make-vars n)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Construct `make-vars`.
+    ;;@example
+    ;; (make-vars 1)
     (defun make-vars (n)
       (if (= n 0)
           '()
           (cons (logic-var) (make-vars (- n 1)))))
 
+    ;;@doc (dot coeffs vars)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Compute `dot`.
+    ;;@example
+    ;; (dot 'x 'x)
     (defun dot (coeffs vars)
       (if (null? coeffs)
           0.0
           (clp:r+ (clp:r*scalar (car coeffs) (car vars))
                   (dot (cdr coeffs) (cdr vars)))))
 
+    ;;@doc (apply-witness! witness)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Compute `apply-witness!`.
+    ;;@example
+    ;; (apply-witness! 'x)
     (defun apply-witness! (witness)
       (if (null? witness)
           #t
           (and (unify (car (car witness)) (cdr (car witness)))
                (apply-witness! (cdr witness)))))
 
+    ;;@doc (optimize->pair thunk)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Compute `optimize->pair`.
+    ;;@example
+    ;; (optimize->pair (lambda (x) x))
     (defun optimize->pair (thunk)
       (call-with-values thunk
         (lambda (opt witness)
           (cons opt witness))))
 
+    ;;@doc (post-lower-bounds! xs lo)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Compute `post-lower-bounds!`.
+    ;;@example
+    ;; (post-lower-bounds! '() 'x)
     (defun post-lower-bounds! (xs lo)
       (if (null? xs)
           #t
           (and (clp:r>= (car xs) lo)
                (post-lower-bounds! (cdr xs) lo))))
 
+    ;;@doc (post-upper-bounds! xs hi)
+    ;;@category Tests
+    ;;@module clpr-optimize-smoke
+    ;; Compute `post-upper-bounds!`.
+    ;;@example
+    ;; (post-upper-bounds! '() 'x)
     (defun post-upper-bounds! (xs hi)
       (if (null? xs)
           #t

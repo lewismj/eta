@@ -32,6 +32,11 @@
   (export freeze dif)
   (begin
 
+    ;;@doc (%freeze-hook var bound-val attr-val)
+    ;;@category Freeze
+    ;;@module std.freeze
+    ;;@example
+    ;; (%freeze-hook 'x 'x 'x)
     ;;  freeze 
     ;;
     ;; Hook payload on a variable under the 'freeze module is a *list*
@@ -51,6 +56,12 @@
     ;; Install the hook once at module load.
     (register-attr-hook! 'freeze %freeze-hook)
 
+    ;;@doc (freeze v goal-thunk)
+    ;;@category Freeze
+    ;;@module std.freeze
+    ;; attributed-variable combinators Uses `freeze`.
+    ;;@example
+    ;; (freeze 1 'x)
     (defun freeze (v goal-thunk)
       ;; If v is already ground, run goal-thunk now.
       (cond
@@ -82,6 +93,12 @@
     ;; trail-mark / unify / unwind probe so the probe itself makes no
     ;; lasting bindings.
 
+    ;;@doc (%dif-equal? a b)
+    ;;@category Freeze
+    ;;@module std.freeze
+    ;; Return whether `%dif-equal?` holds.
+    ;;@example
+    ;; (%dif-equal? 1 1)
     (defun %dif-equal? (a b)
       ;; Succeeds iff `a` and `b` unify to the same value without any
       ;; new bindings surviving (i.e., were already structurally equal
@@ -95,12 +112,24 @@
         ;; `equal?` after deref suffices for the already-equal check.
         (and ok (equal? (deref-lvar a) (deref-lvar b)))))
 
+    ;;@doc (%dif-can-unify? a b)
+    ;;@category Freeze
+    ;;@module std.freeze
+    ;; Return whether `%dif-can-unify?` holds.
+    ;;@example
+    ;; (%dif-can-unify? 1 1)
     (defun %dif-can-unify? (a b)
       (let* ((m  (trail-mark))
              (ok (unify a b)))
         (unwind-trail m)
         ok))
 
+    ;;@doc (%dif-hook var bound-val attr-val)
+    ;;@category Freeze
+    ;;@module std.freeze
+    ;; Compute `%dif-hook`.
+    ;;@example
+    ;; (%dif-hook 'x 'x 'x)
     (defun %dif-hook (var bound-val attr-val)
       ;; attr-val is a list of (other-term . nil) witnesses  each entry
       ;; is a term that must stay *different* from `var`.
@@ -117,11 +146,23 @@
 
     (register-attr-hook! 'dif %dif-hook)
 
+    ;;@doc (%dif-add-witness v other)
+    ;;@category Freeze
+    ;;@module std.freeze
+    ;; Compute `%dif-add-witness`.
+    ;;@example
+    ;; (%dif-add-witness 1 'x)
     (defun %dif-add-witness (v other)
       (let* ((existing (get-attr v 'dif))
              (pending  (if existing existing '())))
         (put-attr v 'dif (cons (cons other #f) pending))))
 
+    ;;@doc (dif x y)
+    ;;@category Freeze
+    ;;@module std.freeze
+    ;; Compute `dif`.
+    ;;@example
+    ;; (dif 1 1)
     (defun dif (x y)
       ;; Fast path: already ground on both sides.
       (let ((dx (if (logic-var? x) (deref-lvar x) x))

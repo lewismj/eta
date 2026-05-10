@@ -4,6 +4,12 @@
   (import std.test std.prof)
   (begin
 
+    ;;@doc (string-contains? hay needle)
+    ;;@category Tests
+    ;;@module prof.tests
+    ;; Unit tests for std.prof Uses `string-contains?`.
+    ;;@example
+    ;; (string-contains? 'x 'x)
     (defun string-contains? (hay needle)
       (let ((hlen (string-length hay))
             (nlen (string-length needle)))
@@ -16,6 +22,12 @@
                       #t
                       (loop (+ i 1))))))))
 
+    ;;@doc (work n)
+    ;;@category Tests
+    ;;@module prof.tests
+    ;; Compute `work`.
+    ;;@example
+    ;; (work 1)
     (defun work (n)
       (if (= n 0)
           0

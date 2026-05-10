@@ -27,27 +27,69 @@
 
     ;; -- Basic helpers ----------------------------------------------------
 
+    ;;@doc (%member? x xs)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%member?` holds.
+    ;;@example
+    ;; (%member? 1 '())
     (defun %member? (x xs)
       (cond
         ((null? xs) #f)
         ((equal? x (car xs)) #t)
         (else (%member? x (cdr xs)))))
 
+    ;;@doc (%adjoin x xs)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%adjoin`.
+    ;;@example
+    ;; (%adjoin 1 '())
     (defun %adjoin (x xs)
       (if (%member? x xs) xs (cons x xs)))
 
+    ;;@doc (%set-union a b)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%set-union`.
+    ;;@example
+    ;; (%set-union 1 1)
     (defun %set-union (a b)
       (foldl (lambda (acc x) (%adjoin x acc)) a b))
 
+    ;;@doc (%set-diff a b)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%set-diff`.
+    ;;@example
+    ;; (%set-diff 1 1)
     (defun %set-diff (a b)
       (filter (lambda (x) (not (%member? x b))) a))
 
+    ;;@doc (%subset? a b)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%subset?` holds.
+    ;;@example
+    ;; (%subset? 1 1)
     (defun %subset? (a b)
       (every? (lambda (x) (%member? x b)) a))
 
+    ;;@doc (%proper-subset? a b)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%proper-subset?` holds.
+    ;;@example
+    ;; (%proper-subset? 1 1)
     (defun %proper-subset? (a b)
       (and (%subset? a b) (< (length a) (length b))))
 
+    ;;@doc (%normalize-vars vars)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%normalize-vars`.
+    ;;@example
+    ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
       (let loop ((rest vars) (acc '()))
         (if (null? rest)
@@ -57,6 +99,12 @@
                   (loop (cdr rest) acc)
                   (loop (cdr rest) (cons v acc)))))))
 
+    ;;@doc (%as-node-set x)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%as-node-set`.
+    ;;@example
+    ;; (%as-node-set 1)
     (defun %as-node-set (x)
       (cond
         ((null? x) '())
@@ -64,6 +112,12 @@
         ((list? x) (%normalize-vars x))
         (else (error "expected symbol or list of symbols"))))
 
+    ;;@doc (%assert-vars nodes vs)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%assert-vars`.
+    ;;@example
+    ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes vs)
       (if (null? vs)
           'ok
@@ -73,41 +127,113 @@
                 (error 'unknown-variable (car vs)))
             (%assert-vars nodes (cdr vs)))))
 
+    ;;@doc (%find pred xs)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%find`.
+    ;;@example
+    ;; (%find (lambda (x) x) '())
     (defun %find (pred xs)
       (cond
         ((null? xs) #f)
         ((pred (car xs)) (car xs))
         (else (%find pred (cdr xs)))))
 
+    ;;@doc (%contains-set? sets s)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%contains-set?` holds.
+    ;;@example
+    ;; (%contains-set? 'x "sample")
     (defun %contains-set? (sets s)
       (any? (lambda (x) (equal? x s)) sets))
 
     ;; -- Mixed-graph helpers ----------------------------------------------
 
+    ;;@doc (%edge-from e)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%edge-from`.
+    ;;@example
+    ;; (%edge-from 'x)
     (defun %edge-from (e) (car e))
+    ;;@doc (%edge-kind e)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%edge-kind`.
+    ;;@example
+    ;; (%edge-kind 'x)
     (defun %edge-kind (e) (cadr e))
+    ;;@doc (%edge-to e)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%edge-to`.
+    ;;@example
+    ;; (%edge-to 'x)
     (defun %edge-to (e) (caddr e))
 
+    ;;@doc (%directed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%directed-edge?` holds.
+    ;;@example
+    ;; (%directed-edge? 'x)
     (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
+    ;;@doc (%bidirected-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%bidirected-edge?` holds.
+    ;;@example
+    ;; (%bidirected-edge? 'x)
     (defun %bidirected-edge? (e) (eq? (%edge-kind e) '<->))
 
+    ;;@doc (%mixed-edge? e)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%mixed-edge?` holds.
+    ;;@example
+    ;; (%mixed-edge? 'x)
     (defun %mixed-edge? (e)
       (and (list? e)
            (= (length e) 3)
            (or (%directed-edge? e) (%bidirected-edge? e))))
 
+    ;;@doc (%graph-nodes g)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%graph-nodes`.
+    ;;@example
+    ;; (%graph-nodes 'x)
     (defun %graph-nodes (g)
       (foldl (lambda (acc e)
                (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
              '()
              g))
 
+    ;;@doc (%directed-only g)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%directed-only`.
+    ;;@example
+    ;; (%directed-only 'x)
     (defun %directed-only (g)
       (filter %directed-edge? g))
 
+    ;;@doc (%bidirected-only g)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%bidirected-only`.
+    ;;@example
+    ;; (%bidirected-only 'x)
     (defun %bidirected-only (g)
       (filter %bidirected-edge? g))
 
+    ;;@doc (%assert-mixed-graph g)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%assert-mixed-graph`.
+    ;;@example
+    ;; (%assert-mixed-graph 'x)
     (defun %assert-mixed-graph (g)
       (if (every? %mixed-edge? g)
           (let ((d (%directed-only g)))
@@ -116,12 +242,30 @@
                 (error 'invalid-admg g)))
           (error 'invalid-admg g)))
 
+    ;;@doc (%edge-member? e edges)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%edge-member?` holds.
+    ;;@example
+    ;; (%edge-member? 'x 'x)
     (defun %edge-member? (e edges)
       (any? (lambda (x) (equal? e x)) edges))
 
+    ;;@doc (%edge-adjoin e edges)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%edge-adjoin`.
+    ;;@example
+    ;; (%edge-adjoin 'x 'x)
     (defun %edge-adjoin (e edges)
       (if (%edge-member? e edges) edges (cons e edges)))
 
+    ;;@doc (%children dag node)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%children`.
+    ;;@example
+    ;; (%children 'x 'x)
     (defun %children (dag node)
       (foldl (lambda (acc e)
                (if (and (eq? (%edge-kind e) '->)
@@ -131,6 +275,12 @@
              '()
              dag))
 
+    ;;@doc (%neighbors dag node)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%neighbors`.
+    ;;@example
+    ;; (%neighbors 'x 'x)
     (defun %neighbors (dag node)
       (foldl (lambda (acc e)
                (cond
@@ -140,6 +290,12 @@
              '()
              dag))
 
+    ;;@doc (%has-directed-edge? dag from to)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%has-directed-edge?` holds.
+    ;;@example
+    ;; (%has-directed-edge? 'x 'x 'x)
     (defun %has-directed-edge? (dag from to)
       (any? (lambda (e)
               (and (eq? (%edge-kind e) '->)
@@ -147,9 +303,20 @@
                    (eq? (%edge-to e) to)))
             dag))
 
+    ;;@doc (%filter-present nodes xs)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%filter-present`.
+    ;;@example
+    ;; (%filter-present 'x '())
     (defun %filter-present (nodes xs)
       (filter (lambda (x) (%member? x nodes)) xs))
 
+    ;;@doc (%d-separated-lite? dag x-set y-set z-set)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;;@example
+    ;; (%d-separated-lite? 'x 'x 'x 'x)
     ;; d-separation helper that tolerates isolates removed by edge-only DAG
     ;; representations (e.g., after graph mutilation).
     (defun %d-separated-lite? (dag x-set y-set z-set)
@@ -163,6 +330,12 @@
 
     ;; -- ADMG -> DAG expansion for d-separation checks --------------------
 
+    ;;@doc (%fresh-latent used idx)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%fresh-latent`.
+    ;;@example
+    ;; (%fresh-latent 'x 1)
     (defun %fresh-latent (used idx)
       (let ((n (string->symbol
                  (string-append "__u" (number->string idx)))))
@@ -170,6 +343,12 @@
             (%fresh-latent used (+ idx 1))
             n)))
 
+    ;;@doc (%admg->latent-dag g)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%admg->latent-dag`.
+    ;;@example
+    ;; (%admg->latent-dag 'x)
     (defun %admg->latent-dag (g)
       (let* ((directed (%directed-only g))
              (bidirected (%bidirected-only g))
@@ -193,6 +372,12 @@
 
     ;; -- Path enumeration / activity --------------------------------------
 
+    ;;@doc (%all-simple-undirected-paths dag src dst)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%all-simple-undirected-paths`.
+    ;;@example
+    ;; (%all-simple-undirected-paths 'x 'x 'x)
     (defun %all-simple-undirected-paths (dag src dst)
       (letrec ((dfs (lambda (curr visited path-rev)
                       (if (eq? curr dst)
@@ -209,6 +394,12 @@
                                          nexts)))))))
         (dfs src (list src) (list src))))
 
+    ;;@doc (%all-directed-paths dag src dst)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%all-directed-paths`.
+    ;;@example
+    ;; (%all-directed-paths 'x 'x 'x)
     (defun %all-directed-paths (dag src dst)
       (letrec ((dfs (lambda (curr visited path-rev)
                       (if (eq? curr dst)
@@ -225,15 +416,32 @@
                                          nexts)))))))
         (dfs src (list src) (list src))))
 
+    ;;@doc (%path-collider? dag a b c)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%path-collider?` holds.
+    ;;@example
+    ;; (%path-collider? 'x 1 1 'x)
     (defun %path-collider? (dag a b c)
       (and (%has-directed-edge? dag a b)
            (%has-directed-edge? dag c b)))
 
+    ;;@doc (%desc-or-self-in-z? dag node z-set)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%desc-or-self-in-z?` holds.
+    ;;@example
+    ;; (%desc-or-self-in-z? 'x 'x 'x)
     (defun %desc-or-self-in-z? (dag node z-set)
       (or (%member? node z-set)
           (any? (lambda (d) (%member? d z-set))
                 (dag:descendants dag node))))
 
+    ;;@doc (%path-active? dag path z-set)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;;@example
+    ;; (%path-active? 'x "sample" 'x)
     ;; d-separation path activity on DAG paths.
     (defun %path-active? (dag path z-set)
       (if (< (length path) 3)
@@ -249,6 +457,12 @@
                                  (and open? (walk b c (cdr rest))))))))
             (walk (car path) (cadr path) (cdr (cdr path))))))
 
+    ;;@doc (%causal-directed-path? dag path)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%causal-directed-path?` holds.
+    ;;@example
+    ;; (%causal-directed-path? 'x "sample")
     (defun %causal-directed-path? (dag path)
       (if (< (length path) 2)
           #f
@@ -261,6 +475,12 @@
 
     ;; -- GAC helpers ------------------------------------------------------
 
+    ;;@doc (%proper-causal-paths dag x-set y-set)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%proper-causal-paths`.
+    ;;@example
+    ;; (%proper-causal-paths 'x 'x 'x)
     (defun %proper-causal-paths (dag x-set y-set)
       (foldr append
              '()
@@ -272,6 +492,12 @@
                                   y-set)))
                    x-set)))
 
+    ;;@doc (%proper-non-causal-paths dag x-set y-set)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%proper-non-causal-paths`.
+    ;;@example
+    ;; (%proper-non-causal-paths 'x 'x 'x)
     (defun %proper-non-causal-paths (dag x-set y-set)
       (filter (lambda (p)
                 (not (%causal-directed-path? dag p)))
@@ -285,6 +511,12 @@
                                           y-set)))
                            x-set))))
 
+    ;;@doc (%proper-forbidden-nodes dag x-set y-set)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%proper-forbidden-nodes`.
+    ;;@example
+    ;; (%proper-forbidden-nodes 'x 'x 'x)
     (defun %proper-forbidden-nodes (dag x-set y-set)
       (let* ((causal-paths (%proper-causal-paths dag x-set y-set))
              (causal-nodes
@@ -302,6 +534,12 @@
                '()
                causal-nodes)))
 
+    ;;@doc (dag:gac? g x y z)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; `.
+    ;;@example
+    ;; (dag:gac? 'x 1 1 1)
     (defun dag:gac? (g x y z)
       (%assert-mixed-graph g)
       (let* ((nodes (%graph-nodes g))
@@ -323,6 +561,12 @@
 
     ;; -- Minimal adjustment-set enumeration -------------------------------
 
+    ;;@doc (%choose-k xs k)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%choose-k`.
+    ;;@example
+    ;; (%choose-k '() 1)
     (defun %choose-k (xs k)
       (cond
         ((= k 0) (list '()))
@@ -334,6 +578,12 @@
                  (%choose-k (cdr xs) (- k 1)))
            (%choose-k (cdr xs) k)))))
 
+    ;;@doc (%subsets-all xs)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%subsets-all`.
+    ;;@example
+    ;; (%subsets-all '())
     (defun %subsets-all (xs)
       (letrec ((loop (lambda (k acc)
                        (if (> k (length xs))
@@ -342,12 +592,24 @@
                                  (append acc (%choose-k xs k)))))))
         (loop 0 '())))
 
+    ;;@doc (%minimal-sets sets)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%minimal-sets`.
+    ;;@example
+    ;; (%minimal-sets 'x)
     (defun %minimal-sets (sets)
       (filter
         (lambda (s)
           (not (any? (lambda (t) (%proper-subset? t s)) sets)))
         sets))
 
+    ;;@doc (dag:minimal-adjustments g x y observed)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `dag:minimal-adjustments`.
+    ;;@example
+    ;; (dag:minimal-adjustments 'x 1 1 'x)
     (defun dag:minimal-adjustments (g x y observed)
       (%assert-mixed-graph g)
       (let* ((nodes (%graph-nodes g))
@@ -366,9 +628,21 @@
 
     ;; -- Front-door / IV criteria ----------------------------------------
 
+    ;;@doc (%path-intersects? path nodes)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Return whether `%path-intersects?` holds.
+    ;;@example
+    ;; (%path-intersects? "sample" 'x)
     (defun %path-intersects? (path nodes)
       (any? (lambda (n) (%member? n nodes)) path))
 
+    ;;@doc (%fresh-star base used idx)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;; Compute `%fresh-star`.
+    ;;@example
+    ;; (%fresh-star 'x 'x 1)
     (defun %fresh-star (base used idx)
       (let* ((s0 (symbol->string base))
              (name (if (= idx 0)
@@ -379,6 +653,11 @@
             (%fresh-star base used (+ idx 1))
             name)))
 
+    ;;@doc (front-door? g x y m)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;;@example
+    ;; (front-door? 'x 1 1 1)
     ;; Front-door criterion for mediator set `m`.
     ;; `x` and `y` are expected to be symbols.
     (defun front-door? (g x y m)
@@ -405,6 +684,11 @@
                               (dag:satisfies-backdoor? dag* mi y (list x)))
                             m-set)))))))
 
+    ;;@doc (do:front-door-formula y x m)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;;@example
+    ;; (do:front-door-formula 1 1 1)
     ;; Canonical front-door estimand:
     ;;   sum_m P(m|x) * sum_x* P(y|x*,m) P(x*)
     (defun do:front-door-formula (y x m)
@@ -423,6 +707,11 @@
                                     (list 'P (append (list y x-star) m-set))
                                     (list 'P (list x-star)))))))))
 
+    ;;@doc (iv? g z x y)
+    ;;@category Causal
+    ;;@module std.causal.adjustment
+    ;;@example
+    ;; (iv? 'x 1 1 1)
     ;; Instrumental-variable criterion:
     ;;   1) z -> x
     ;;   2) z _||_ y in G_{do(x)}

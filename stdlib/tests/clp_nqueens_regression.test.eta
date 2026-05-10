@@ -12,8 +12,20 @@
   (import std.core std.collections std.logic std.clp)
   (begin
 
+    ;;@doc (fail-count)
+    ;;@category Tests
+    ;;@module clp-nqueens
+    ;; Regression test: N-queens correctness Uses `fail-count`.
+    ;;@example
+    ;; (display fail-count)
     (define fail-count 0)
 
+    ;;@doc (chk label expected actual)
+    ;;@category Tests
+    ;;@module clp-nqueens
+    ;; Compute `chk`.
+    ;;@example
+    ;; (chk 'x 'x 'x)
     (defun chk (label expected actual)
       (display label) (display " => ") (display actual)
       (if (equal? actual expected)
@@ -23,6 +35,11 @@
                  (set! fail-count (+ fail-count 1))))
       (newline))
 
+    ;;@doc (nqueens-all n)
+    ;;@category Tests
+    ;;@module clp-nqueens
+    ;;@example
+    ;; (nqueens-all 1)
     ;; Return all N-queens solutions as a list of column-assignment lists.
     (defun nqueens-all (n)
       (let loop ((i 0) (qs '()) (as '()) (bs '()))

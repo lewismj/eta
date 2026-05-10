@@ -6,6 +6,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (win)
+    ;;@category Basics
+    ;;@module basics
+    ;; Core language fundamentals Uses `win`.
+    ;;@example
+    ;; (display win)
     (define win (eq? (platform) 'Win32))
 
     (println (if win "-- Arithmetic --"              "── Arithmetic ──"))

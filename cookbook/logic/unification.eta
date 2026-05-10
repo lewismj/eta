@@ -22,7 +22,12 @@
 
     (println "-- 1. Basic unification --")
 
+    ;;@doc (x)
+    ;;@category Logic
+    ;;@module unification
     ;; Binding a fresh logic variable
+    ;;@example
+    ;; (display x)
     (define x (logic-var))
     (unify x 42)
     (println (deref-lvar x))               ; => 42
@@ -104,6 +109,11 @@
     (define parent-db
       '((tom bob) (tom liz) (bob ann) (bob pat) (pat jim)))
 
+    ;;@doc (solve-parent pvar cvar db)
+    ;;@category Logic
+    ;;@module unification
+    ;;@example
+    ;; (solve-parent 'x 'x 'x)
     ;; solve-parent pvar cvar db
     ;;   Unifies ?pvar and ?cvar against every fact in db.
     ;;   Each attempt uses trail-mark / unwind-trail so that failed attempts
@@ -158,6 +168,11 @@
     (println "")
     (println "-- 6. Derived rule: grandparent --")
 
+    ;;@doc (solve-grandparent db)
+    ;;@category Logic
+    ;;@module unification
+    ;;@example
+    ;; (solve-grandparent 'x)
     ;; Prolog rule: grandparent(GP, GC) :- parent(GP, Mid), parent(Mid, GC)
     ;;
     ;; Implemented as a two-step join:
@@ -197,6 +212,11 @@
     (println "")
     (println "-- 7. Pattern matching via unification --")
 
+    ;;@doc (dispatch msg)
+    ;;@category Logic
+    ;;@module unification
+    ;;@example
+    ;; (dispatch "sample")
     ;; Decode a tagged message by unifying it against expected shapes.
     ;; Each branch saves a mark, attempts the match, backtracks on failure.
     (defun dispatch (msg)
@@ -307,6 +327,11 @@
     (println "  Database queries with findall:")
     (define fdb '((tom bob) (tom liz) (bob ann) (bob pat) (pat jim)))
 
+    ;;@doc (db-branches pv cv db)
+    ;;@category Logic
+    ;;@module unification
+    ;;@example
+    ;; (db-branches 'x 'x 'x)
     ;; Build one branch thunk per fact; each thunk tries to unify pv/cv
     (defun db-branches (pv cv db)
       (map* (lambda (fact)

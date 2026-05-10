@@ -16,12 +16,24 @@
 
     ;; -- Helpers ----------------------------------------------------------
 
+    ;;@doc (%obs-get obs var)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%obs-get`.
+    ;;@example
+    ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
       (let ((p (assq var obs)))
         (if p
             (cdr p)
             (error 'unknown-variable var))))
 
+    ;;@doc (%as-binary v x-name)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%as-binary`.
+    ;;@example
+    ;; (%as-binary 1 'x)
     (defun %as-binary (v x-name)
       (cond
         ((equal? v 1) 1.0)
@@ -30,6 +42,12 @@
         ((eq? v #f) 0.0)
         (else (error 'non-binary-treatment x-name v))))
 
+    ;;@doc (%clip-prob p)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%clip-prob`.
+    ;;@example
+    ;; (%clip-prob 'x)
     (defun %clip-prob (p)
       (let ((eps 1e-6))
         (cond
@@ -37,6 +55,12 @@
           ((> p (- 1.0 eps)) (- 1.0 eps))
           (else p))))
 
+    ;;@doc (%opts->alist opts who)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%opts->alist`.
+    ;;@example
+    ;; (%opts->alist 'x 'x)
     (defun %opts->alist (opts who)
       (let loop ((xs opts) (acc '()))
         (cond
@@ -47,39 +71,93 @@
            (loop (cdr (cdr xs))
                  (cons (cons (car xs) (cadr xs)) acc))))))
 
+    ;;@doc (%opt-ref opts key default)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%opt-ref`.
+    ;;@example
+    ;; (%opt-ref 'x 'x 'x)
     (defun %opt-ref (opts key default)
       (let ((entry (assq key opts)))
         (if entry (cdr entry) default)))
 
+    ;;@doc (%normalize-int v fallback)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%normalize-int`.
+    ;;@example
+    ;; (%normalize-int 1 'x)
     (defun %normalize-int (v fallback)
       (if (and (number? v) (> v 0))
           v
           fallback))
 
+    ;;@doc (%half-floor n)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%half-floor`.
+    ;;@example
+    ;; (%half-floor 1)
     (defun %half-floor (n)
       (/ (- n (modulo n 2)) 2))
 
+    ;;@doc (%clip x lo hi)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%clip`.
+    ;;@example
+    ;; (%clip 1 'x 'x)
     (defun %clip (x lo hi)
       (cond
         ((< x lo) lo)
         ((> x hi) hi)
         (else x)))
 
+    ;;@doc (%map4 f ws xs ys zs)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%map4`.
+    ;;@example
+    ;; (%map4 (lambda (x) x) 'x '() '() '())
     (defun %map4 (f ws xs ys zs)
       (if (or (null? ws) (null? xs) (null? ys) (null? zs))
           '()
           (cons (f (car ws) (car xs) (car ys) (car zs))
                 (%map4 f (cdr ws) (cdr xs) (cdr ys) (cdr zs)))))
 
+    ;;@doc (%row obs cols)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%row`.
+    ;;@example
+    ;; (%row 'x '())
     (defun %row (obs cols)
       (map* (lambda (col) (%obs-get obs col)) cols))
 
+    ;;@doc (%design data cols)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%design`.
+    ;;@example
+    ;; (%design 'x '())
     (defun %design (data cols)
       (causal:design-matrix data cols))
 
+    ;;@doc (%response data y)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%response`.
+    ;;@example
+    ;; (%response 'x 1)
     (defun %response (data y)
       (causal:response-vector data y))
 
+    ;;@doc (%model-ref model key who)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%model-ref`.
+    ;;@example
+    ;; (%model-ref 'x 'x 'x)
     (defun %model-ref (model key who)
       (let ((entry (assq key model)))
         (if entry
@@ -87,6 +165,12 @@
             (error (string-append who ": invalid causal-forest model; missing key")
                    key))))
 
+    ;;@doc (%learner-ref spec key who)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%learner-ref`.
+    ;;@example
+    ;; (%learner-ref 'x 'x 'x)
     (defun %learner-ref (spec key who)
       (let ((entry (assq key spec)))
         (if entry
@@ -94,26 +178,62 @@
             (error (string-append who ": learner-spec is missing required key")
                    key))))
 
+    ;;@doc (%fit-classifier spec x-matrix y-vector who)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%fit-classifier`.
+    ;;@example
+    ;; (%fit-classifier 'x 'x 'x 'x)
     (defun %fit-classifier (spec x-matrix y-vector who)
       ((%learner-ref spec 'fit who) x-matrix y-vector))
 
+    ;;@doc (%predict-classifier spec model x-matrix who)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%predict-classifier`.
+    ;;@example
+    ;; (%predict-classifier 'x 'x 'x 'x)
     (defun %predict-classifier (spec model x-matrix who)
       ((%learner-ref spec 'predict who) model x-matrix))
 
+    ;;@doc (%predict-one-forest model row)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%predict-one-forest`.
+    ;;@example
+    ;; (%predict-one-forest 'x 'x)
     (defun %predict-one-forest (model row)
       (let ((ys (forest:predict model (list row))))
         (if (null? ys) 0.0 (car ys))))
 
+    ;;@doc (%filter-arm data x arm)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%filter-arm`.
+    ;;@example
+    ;; (%filter-arm 'x 1 'x)
     (defun %filter-arm (data x arm)
       (filter (lambda (obs)
                 (= (%as-binary (%obs-get obs x) x) arm))
               data))
 
+    ;;@doc (%assert-both-arms d0 d1 who)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%assert-both-arms`.
+    ;;@example
+    ;; (%assert-both-arms 'x 'x 'x)
     (defun %assert-both-arms (d0 d1 who)
       (if (or (null? d0) (null? d1))
           (error (string-append who ": expected both treatment arms in data"))
           'ok))
 
+    ;;@doc (%forest-fit x-matrix y-vector n-trees min-leaf max-depth subsample honest? seed mtry-opt)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%forest-fit`.
+    ;;@example
+    ;; (%forest-fit 'x 'x 'x 'x 'x 'x #t 'x 'x)
     (defun %forest-fit (x-matrix y-vector n-trees min-leaf max-depth
                                  subsample honest? seed mtry-opt)
       (let ((base
@@ -128,6 +248,12 @@
             (apply forest:fit (append base (list 'mtry mtry-opt)))
             (apply forest:fit base))))
 
+    ;;@doc (%leaf-members-by-id leaves leaf-id)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%leaf-members-by-id`.
+    ;;@example
+    ;; (%leaf-members-by-id 'x 'x)
     (defun %leaf-members-by-id (leaves leaf-id)
       (let loop ((rest leaves))
         (if (null? rest)
@@ -139,6 +265,12 @@
                     (if m-entry (cdr m-entry) '()))
                   (loop (cdr rest)))))))
 
+    ;;@doc (%accumulate-members! weights members w n)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;; Compute `%accumulate-members!`.
+    ;;@example
+    ;; (%accumulate-members! 'x 'x 'x 1)
     (defun %accumulate-members! (weights members w n)
       (let loop ((ms members))
         (when (not (null? ms))
@@ -149,10 +281,15 @@
 
     ;; -- Public API -------------------------------------------------------
 
+    ;;@doc (forest:fit-causal-forest data y x z . opts)
+    ;;@category Causal
+    ;;@module std.causal.forest
     ;; Fit a causal forest with DR pseudo-outcomes:
     ;;   phi = mu1(z) - mu0(z)
     ;;         + x*(y-mu1(z))/e(z) - (1-x)*(y-mu0(z))/(1-e(z))
     ;; and then regress phi on z via random forest.
+    ;;@example
+    ;; (forest:fit-causal-forest 'x 1 1 1 '())
     (defun forest:fit-causal-forest (data y x z . opts)
       (let* ((who "forest:fit-causal-forest")
              (opt-map (%opts->alist opts who))
@@ -235,12 +372,22 @@
             (cons 'propensity e-hat)
             (cons 'options opt-map)))))
 
+    ;;@doc (forest:predict-cate cf row)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;;@example
+    ;; (forest:predict-cate 'x 'x)
     ;; Predict tau(z) for one observation alist.
     (defun forest:predict-cate (cf row)
       (let* ((z (%model-ref cf 'z "forest:predict-cate"))
              (tau-forest (%model-ref cf 'tau-forest "forest:predict-cate")))
         (%predict-one-forest tau-forest (%row row z))))
 
+    ;;@doc (forest:variable-importance cf)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;;@example
+    ;; (forest:variable-importance 'x)
     ;; Importance aligned with z columns:
     ;;   ((z1 . w1) (z2 . w2) ...)
     (defun forest:variable-importance (cf)
@@ -252,6 +399,11 @@
                           (map* (lambda (_z) 0.0) z))))
         (map2 (lambda (name w) (cons name w)) z weights)))
 
+    ;;@doc (forest:local-aipw cf row)
+    ;;@category Causal
+    ;;@module std.causal.forest
+    ;;@example
+    ;; (forest:local-aipw 'x 'x)
     ;; Alpha-weighted local AIPW estimate at query row.
     ;; Uses leaf memberships from all trees to form observation weights.
     (defun forest:local-aipw (cf row)

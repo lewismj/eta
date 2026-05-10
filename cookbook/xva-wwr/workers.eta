@@ -8,13 +8,31 @@
   (import market)
   (begin
 
+    ;;@doc (run-path-shard shard-id)
+    ;;@category Xva Wwr
+    ;;@module workers
+    ;; Deterministic shard helpers for supervisor demos Uses `run-path-shard`.
+    ;;@example
+    ;; (run-path-shard shard-id)
     (defun run-path-shard (shard-id)
       (simulate-paths baseline-curves '() factor-correlation
                       250 12 0.25 (+ 20260427 shard-id)))
 
+    ;;@doc (curve-sum curve)
+    ;;@category Xva Wwr
+    ;;@module workers
+    ;; Compute `curve-sum`.
+    ;;@example
+    ;; (curve-sum 'x)
     (defun curve-sum (curve)
       (foldl (lambda (acc x) (+ acc x)) 0.0 curve))
 
+    ;;@doc (shard-hash ee-curves)
+    ;;@category Xva Wwr
+    ;;@module workers
+    ;; Compute `shard-hash`.
+    ;;@example
+    ;; (shard-hash 'x)
     (defun shard-hash (ee-curves)
       (foldl
         (lambda (acc entry)
@@ -22,6 +40,11 @@
         0.0
         ee-curves))
 
+    ;;@doc (rerun-shard-and-check shard-id)
+    ;;@category Xva Wwr
+    ;;@module workers
+    ;;@example
+    ;; (rerun-shard-and-check 'x)
     ;; Re-run the same shard seed and assert deterministic hash equality.
     (defun rerun-shard-and-check (shard-id)
       (let ((h1 (shard-hash (run-path-shard shard-id)))

@@ -23,45 +23,128 @@
     jupyter:tensor-explorer)
   (begin
 
+    ;;@doc (%jupyter-wrap mime payload)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `%jupyter-wrap`.
+    ;;@example
+    ;; (%jupyter-wrap 'x 'x)
     (defun %jupyter-wrap (mime payload)
       (vector 'jupyter-display mime payload))
 
+    ;;@doc (jupyter:display obj)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; notebook-focused display helpers Uses `jupyter:display`.
+    ;;@example
+    ;; (jupyter:display 'x)
     (defun jupyter:display (obj)
       obj)
 
+    ;;@doc (jupyter:html text)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:html`.
+    ;;@example
+    ;; (jupyter:html "sample")
     (defun jupyter:html (text)
       (%jupyter-wrap "text/html" text))
 
+    ;;@doc (jupyter:markdown text)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:markdown`.
+    ;;@example
+    ;; (jupyter:markdown "sample")
     (defun jupyter:markdown (text)
       (%jupyter-wrap "text/markdown" text))
 
+    ;;@doc (jupyter:latex text)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:latex`.
+    ;;@example
+    ;; (jupyter:latex "sample")
     (defun jupyter:latex (text)
       (%jupyter-wrap "text/latex" text))
 
+    ;;@doc (jupyter:svg svg)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:svg`.
+    ;;@example
+    ;; (jupyter:svg 'x)
     (defun jupyter:svg (svg)
       (%jupyter-wrap "image/svg+xml" svg))
 
+    ;;@doc (jupyter:png bytes)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:png`.
+    ;;@example
+    ;; (jupyter:png 'x)
     (defun jupyter:png (bytes)
       (%jupyter-wrap "image/png" bytes))
 
+    ;;@doc (jupyter:vega spec)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:vega`.
+    ;;@example
+    ;; (jupyter:vega 'x)
     (defun jupyter:vega (spec)
       (%jupyter-wrap "application/vnd.vegalite.v5+json" spec))
 
+    ;;@doc (jupyter:table fact-table)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:table`.
+    ;;@example
+    ;; (jupyter:table 'x)
     (defun jupyter:table (fact-table)
       (%jupyter-wrap "application/vnd.eta.facttable+json" fact-table))
 
+    ;;@doc (jupyter:tensor tensor)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:tensor`.
+    ;;@example
+    ;; (jupyter:tensor 'x)
     (defun jupyter:tensor (tensor)
       (%jupyter-wrap "application/vnd.eta.tensor+json" tensor))
 
+    ;;@doc (jupyter:heap)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:heap`.
+    ;;@example
+    ;; (jupyter:heap)
     (defun jupyter:heap ()
       (%jupyter-wrap "application/vnd.eta.heap+json" '()))
 
+    ;;@doc (jupyter:disasm query)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:disasm`.
+    ;;@example
+    ;; (jupyter:disasm 'x)
     (defun jupyter:disasm (query)
       (%jupyter-wrap "application/vnd.eta.disasm+json" query))
 
+    ;;@doc (jupyter:actors)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:actors`.
+    ;;@example
+    ;; (jupyter:actors)
     (defun jupyter:actors ()
       (%jupyter-wrap "application/vnd.eta.actors+json" '()))
 
+    ;;@doc (%dag-edge? edge)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;;@example
+    ;; (%dag-edge? 'x)
     ;; Accept either:
     ;;   1) canonical graph-json object/alist shape
     ;;   2) edge list shape: '((a -> b) (b -> c) ...)
@@ -74,6 +157,12 @@
            (eq? (car (cdr edge)) '->)
            (symbol? (car (cdr (cdr edge))))))
 
+    ;;@doc (%dag-edge-list? graph)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Return whether `%dag-edge-list?` holds.
+    ;;@example
+    ;; (%dag-edge-list? 'x)
     (defun %dag-edge-list? (graph)
       (letrec ((loop (lambda (xs)
                        (if (null? xs)
@@ -83,15 +172,33 @@
                                 (loop (cdr xs)))))))
         (loop graph)))
 
+    ;;@doc (%dag-member? x xs)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Return whether `%dag-member?` holds.
+    ;;@example
+    ;; (%dag-member? 1 '())
     (defun %dag-member? (x xs)
       (if (null? xs)
           #f
           (or (eq? x (car xs))
               (%dag-member? x (cdr xs)))))
 
+    ;;@doc (%dag-adjoin-rev x xs)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `%dag-adjoin-rev`.
+    ;;@example
+    ;; (%dag-adjoin-rev 1 '())
     (defun %dag-adjoin-rev (x xs)
       (if (%dag-member? x xs) xs (cons x xs)))
 
+    ;;@doc (%dag-collect-nodes-rev edges acc)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `%dag-collect-nodes-rev`.
+    ;;@example
+    ;; (%dag-collect-nodes-rev 'x 'x)
     (defun %dag-collect-nodes-rev (edges acc)
       (if (null? edges)
           acc
@@ -102,12 +209,24 @@
               (cdr edges)
               (%dag-adjoin-rev to (%dag-adjoin-rev from acc))))))
 
+    ;;@doc (%dag-node-objects nodes)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `%dag-node-objects`.
+    ;;@example
+    ;; (%dag-node-objects 'x)
     (defun %dag-node-objects (nodes)
       (map (lambda (n)
              (list (list 'id n)
                    (list 'label n)))
            nodes))
 
+    ;;@doc (%dag-edge-objects edges)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `%dag-edge-objects`.
+    ;;@example
+    ;; (%dag-edge-objects 'x)
     (defun %dag-edge-objects (edges)
       (map (lambda (e)
              (let ((from (car e))
@@ -116,21 +235,45 @@
                      (list 'to to))))
            edges))
 
+    ;;@doc (%dag-edges->graph-json edges)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `%dag-edges->graph-json`.
+    ;;@example
+    ;; (%dag-edges->graph-json 'x)
     (defun %dag-edges->graph-json (edges)
       (let ((nodes (reverse (%dag-collect-nodes-rev edges '()))))
         (list
           (list 'nodes (%dag-node-objects nodes))
           (list 'edges (%dag-edge-objects edges)))))
 
+    ;;@doc (jupyter:dag graph)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:dag`.
+    ;;@example
+    ;; (jupyter:dag 'x)
     (defun jupyter:dag (graph)
       (%jupyter-wrap "application/vnd.eta.dag+json"
                      (if (%dag-edge-list? graph)
                          (%dag-edges->graph-json graph)
                          graph)))
 
+    ;;@doc (jupyter:tensor-explorer tensor)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:tensor-explorer`.
+    ;;@example
+    ;; (jupyter:tensor-explorer 'x)
     (defun jupyter:tensor-explorer (tensor)
       (%jupyter-wrap "application/vnd.eta.tensor-explorer+json" tensor))
 
+    ;;@doc (%zip-xy xs ys)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `%zip-xy`.
+    ;;@example
+    ;; (%zip-xy '() '())
     (defun %zip-xy (xs ys)
       (if (or (null? xs) (null? ys))
           '()
@@ -138,6 +281,12 @@
             (list (cons 'x (car xs)) (cons 'y (car ys)))
             (%zip-xy (cdr xs) (cdr ys)))))
 
+    ;;@doc (jupyter:plot kind xs ys)
+    ;;@category Jupyter
+    ;;@module std.jupyter
+    ;; Compute `jupyter:plot`.
+    ;;@example
+    ;; (jupyter:plot 'x '() '())
     (defun jupyter:plot (kind xs ys)
       (jupyter:vega
         (list

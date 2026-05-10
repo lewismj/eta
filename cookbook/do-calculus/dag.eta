@@ -15,12 +15,17 @@
 
     (println "── DAG utilities demo ──────────────────────────────────")
 
+    ;;@doc (weather-dag)
+    ;;@category Do Calculus
+    ;;@module dag
     ;; ── Weather DAG (Pearl 2009) ──────────────────────────────────────────
     ;;
     ;;   season ──→ rain ──────────────┐
     ;;     │                           ↓
     ;;     └──→ sprinkler ──→ wet-grass
     ;;
+    ;;@example
+    ;; (display weather-dag)
     (define weather-dag
       '((season     -> rain)
         (season     -> sprinkler)

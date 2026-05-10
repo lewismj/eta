@@ -4,6 +4,12 @@
   (import std.test std.hashset)
   (begin
 
+    ;;@doc (test-empty-constructor)
+    ;;@category Tests
+    ;;@module hashset.tests
+    ;; Tests for std.hashset wrappers Uses `test-empty-constructor`.
+    ;;@example
+    ;; (display test-empty-constructor)
     (define test-empty-constructor
       (make-test "hash-set empty constructor and predicate"
         (lambda ()

@@ -4,18 +4,41 @@
   (import std.test std.causal.estimate std.core std.collections)
   (begin
 
+    ;;@doc (make-row x z y)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;; Construct `make-row`.
+    ;;@example
+    ;; (make-row 1 1 1)
     (defun make-row (x z y)
       (list (cons 'x x) (cons 'z z) (cons 'y y)))
 
+    ;;@doc (make-row-xz x z)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;; Construct `make-row-xz`.
+    ;;@example
+    ;; (make-row-xz 1 1)
     (defun make-row-xz (x z)
       (list (cons 'x x) (cons 'z z)))
 
+    ;;@doc (repeat-row n row)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;; Compute `repeat-row`.
+    ;;@example
+    ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
       (let loop ((i 0) (acc '()))
         (if (= i n)
             (reverse acc)
             (loop (+ i 1) (cons row acc)))))
 
+    ;;@doc (make-confounded-data)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;;@example
+    ;; (make-confounded-data)
     ;; Synthetic confounded sample:
     ;;   Z affects both treatment assignment and outcome.
     ;;   Structural effect of X on Y is exactly +2.
@@ -28,16 +51,46 @@
         (repeat-row 30 (make-row 0 1 10))
         (repeat-row 70 (make-row 1 1 12))))
 
+    ;;@doc (mean xs)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;; Compute `mean`.
+    ;;@example
+    ;; (mean '())
     (defun mean (xs)
       (if (null? xs)
           0.0
           (/ (foldl (lambda (acc x) (+ acc x)) 0.0 xs)
              (length xs))))
 
+    ;;@doc (treatment obs)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;; Compute `treatment`.
+    ;;@example
+    ;; (treatment 'x)
     (defun treatment (obs) (cdr (assq 'x obs)))
+    ;;@doc (outcome obs)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;; Compute `outcome`.
+    ;;@example
+    ;; (outcome 'x)
     (defun outcome (obs)   (cdr (assq 'y obs)))
+    ;;@doc (confounder obs)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;; Compute `confounder`.
+    ;;@example
+    ;; (confounder 'x)
     (defun confounder (obs) (cdr (assq 'z obs)))
 
+    ;;@doc (naive-diff data)
+    ;;@category Tests
+    ;;@module causal.estimate.tests
+    ;; Compute `naive-diff`.
+    ;;@example
+    ;; (naive-diff 'x)
     (defun naive-diff (data)
       (let* ((treated (filter (lambda (o) (= (treatment o) 1)) data))
              (control (filter (lambda (o) (= (treatment o) 0)) data))

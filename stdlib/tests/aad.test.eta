@@ -4,6 +4,12 @@
   (import std.test std.aad)
   (begin
 
+    ;;@doc (suite)
+    ;;@category Tests
+    ;;@module aad.tests
+    ;; Unit tests for std.aad Uses `suite`.
+    ;;@example
+    ;; (display suite)
     (define suite
       (make-group "std.aad"
         (list

@@ -11,6 +11,12 @@
   (import std.test)
   (begin
 
+    ;;@doc (results)
+    ;;@category Tests
+    ;;@module torch-test-tensor-creation
+    ;; Tensor creation primitives Uses `results`.
+    ;;@example
+    ;; (display results)
     (define results
       (run (make-group "Tensor Creation"
         (list

@@ -24,6 +24,12 @@
   (import std.io)
   (begin
 
+    ;;@doc (survey-endpoint)
+    ;;@category Concurrency
+    ;;@module scatter-gather
+    ;; SURVEYOR/RESPONDENT scatter-gather demo Uses `survey-endpoint`.
+    ;;@example
+    ;; (display survey-endpoint)
     (define survey-endpoint "tcp://127.0.0.1:5557")
     (define n-workers 3)
 

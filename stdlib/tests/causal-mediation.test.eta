@@ -4,15 +4,32 @@
   (import std.test std.causal.mediation std.core std.collections)
   (begin
 
+    ;;@doc (make-row x m y)
+    ;;@category Tests
+    ;;@module causal.mediation.tests
+    ;; Construct `make-row`.
+    ;;@example
+    ;; (make-row 1 1 1)
     (defun make-row (x m y)
       (list (cons 'x x) (cons 'm m) (cons 'y y)))
 
+    ;;@doc (repeat-row n row)
+    ;;@category Tests
+    ;;@module causal.mediation.tests
+    ;; Compute `repeat-row`.
+    ;;@example
+    ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
       (let loop ((i 0) (acc '()))
         (if (= i n)
             (reverse acc)
             (loop (+ i 1) (cons row acc)))))
 
+    ;;@doc (make-linear-mediation-data)
+    ;;@category Tests
+    ;;@module causal.mediation.tests
+    ;;@example
+    ;; (make-linear-mediation-data)
     ;; Linear mediation data-generating process:
     ;;   m ~ Bernoulli(p_x), with p_0=0.2 and p_1=0.8
     ;;   E[Y | x,m] = 1.0 + 0.7*x + 1.2*m
@@ -23,15 +40,39 @@
         (repeat-row 10 (make-row 1 0 1.7))
         (repeat-row 40 (make-row 1 1 2.9))))
 
+    ;;@doc (mean xs)
+    ;;@category Tests
+    ;;@module causal.mediation.tests
+    ;; Compute `mean`.
+    ;;@example
+    ;; (mean '())
     (defun mean (xs)
       (if (null? xs)
           0.0
           (/ (foldl (lambda (acc x) (+ acc x)) 0.0 xs)
              (length xs))))
 
+    ;;@doc (treatment obs)
+    ;;@category Tests
+    ;;@module causal.mediation.tests
+    ;; Compute `treatment`.
+    ;;@example
+    ;; (treatment 'x)
     (defun treatment (obs) (cdr (assq 'x obs)))
+    ;;@doc (outcome obs)
+    ;;@category Tests
+    ;;@module causal.mediation.tests
+    ;; Compute `outcome`.
+    ;;@example
+    ;; (outcome 'x)
     (defun outcome (obs)   (cdr (assq 'y obs)))
 
+    ;;@doc (total-effect data)
+    ;;@category Tests
+    ;;@module causal.mediation.tests
+    ;; Compute `total-effect`.
+    ;;@example
+    ;; (total-effect 'x)
     (defun total-effect (data)
       (let* ((treated (filter (lambda (o) (= (treatment o) 1)) data))
              (control (filter (lambda (o) (= (treatment o) 0)) data))
