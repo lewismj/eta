@@ -67,8 +67,6 @@ jobs:
             --skip-native \
             --eta-exe "${{ github.workspace }}/build/eta/cli/eta"
 
-      - name: Install
-        run: cmake --install build
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -102,6 +100,12 @@ jobs:
           mkdir -p "$PREFIX/packages"
           cp -a "${{ github.workspace }}/packages/." "$PREFIX/packages/"
           find "$PREFIX/packages" -type d \( -name __pycache__ -o -name .ipynb_checkpoints -o -name .git \) -prune -exec rm -rf {} +
+
+          # Install binaries, stdlib, and native sidecar artifacts into the
+          # prefix AFTER the cp -a so that cmake --install always wins and the
+          # built .so/.dylib files are never accidentally clobbered by the
+          # source-tree copy (which lacks them on a fresh git checkout).
+          cmake --install build
 
           # Validate required binaries, package manifests, and package builds.
           bash scripts/check-unix-bundle.sh \
