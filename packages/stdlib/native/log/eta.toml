@@ -1,5 +1,5 @@
 [package]
-name = "eta-log-sidecar"
+name = "eta-log"
 version = "0.1.0"
 license = "MIT"
 
@@ -14,20 +14,20 @@ entry = "eta_register_log_extension_v1"
 
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
-artifact = "native/windows-x64/eta_log_sidecar.dll"
+artifact = "native/windows-x64/eta_log.dll"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "x86_64-unknown-linux-gnu"
-artifact = "native/linux-x64/libeta_log_sidecar.so"
+artifact = "native/linux-x64/libeta_log.so"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "x86_64-apple-darwin"
-artifact = "native/macos-x64/libeta_log_sidecar.dylib"
+artifact = "native/macos-x64/libeta_log.dylib"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "aarch64-apple-darwin"
-artifact = "native/macos-arm64/libeta_log_sidecar.dylib"
+artifact = "native/macos-arm64/libeta_log.dylib"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

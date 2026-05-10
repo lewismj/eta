@@ -2,16 +2,16 @@
 
 [Back to README](../../README.md) |
 [Packages Guide](../guide/packages.md) |
-[Native Sidecar Plan](native_sidecar_plan.md)
+[Native Sidecar Plan](../old/native_sidecar_plan.md)
 
-Status: proposed (2026-05-10).
+Status: D1 standalone package build implemented (2026-05-10); D2-D5 proposed.
 
 ---
 
 ## 1) Objective
 
-Deliver DuckDB support as a package-managed native sidecar plus Eta wrapper
-APIs, with these constraints:
+Deliver DuckDB support as a package-managed native sidecar with Eta wrapper
+APIs in the same package, with these constraints:
 
 1. no edits to core/runtime CMake wiring,
 2. sidecar builds outside core system,
@@ -35,14 +35,11 @@ APIs, with these constraints:
 
 ## 3) Recommended package layout
 
-Use two packages:
-
-1. `eta-duckdb-sidecar`: native sidecar artifact package.
-2. `eta-duckdb`: Eta wrapper + DSL package depending on sidecar package.
+Use one package that contains both sidecar/native sources and Eta module files.
 
 ```text
 packages/
-  databases/
+  db/
     native/
       duckdb/
         eta.toml
@@ -50,51 +47,32 @@ packages/
         CMakeLists.txt              # standalone sidecar build
         cmake/
           FetchDuckDB.cmake         # optional, if vendoring/fetching
+          StageDuckDBSidecar.cmake  # stage artifact + update host sha256
         src/
-          duckdb_sidecar.cpp
-          duckdb_bindings.h
-        include/
-          eta/duckdb/...
+          db/duckdb.eta             # Eta module surface
+          eta/duckdb/...            # native extension entry + primitives
         native/
-          windows-x64/eta_duckdb_sidecar.dll
-          linux-x64/libeta_duckdb_sidecar.so
-          macos-x64/libeta_duckdb_sidecar.dylib
-          macos-arm64/libeta_duckdb_sidecar.dylib
+          amd64/libs/eta_duckdb.dll
+          amd64/libs/libeta_duckdb.so
+          amd64/libs/libeta_duckdb.dylib
+          arm64/libs/libeta_duckdb.dylib
         tests/
-          smoke.test.eta
-          query.test.eta
-          errors.test.eta
-        scripts/
-          build.ps1
-          build.sh
-          test.ps1
-          test.sh
-
-    duckdb/
-      eta.toml
-      README.md
-      src/
-        std/duckdb.eta
-        std/duckdb/query.eta
-      tests/
-        dsl.test.eta
-        integration.test.eta
+          unit/...
+          eta/...
 ```
 
 Notes:
 
-1. If you want one package only, `std/duckdb*.eta` can live in the sidecar
-   package directly, but two packages keep native/runtime and API/DSL ownership
-   cleaner.
+1. `db.duckdb` Eta APIs now live under `packages/db/native/duckdb/src/db`.
 2. This layout keeps all build/test operations package-local.
 
 ---
 
-## 4) Sidecar package (`eta-duckdb-sidecar`)
+## 4) Sidecar package (`eta-duckdb`)
 
 ## 4.1 Manifest shape
 
-`packages/databases/native/duckdb/eta.toml` follows existing sidecar metadata:
+`packages/db/native/duckdb/eta.toml` follows existing sidecar metadata:
 
 1. `[package]`,
 2. `[compatibility]`,
@@ -123,9 +101,9 @@ Stage-2 surface:
 
 ---
 
-## 5) Eta wrapper package (`eta-duckdb`)
+## 5) Eta wrapper module (`db.duckdb`)
 
-`std.duckdb` should expose function-first APIs regardless of DSL use:
+`db.duckdb` should expose function-first APIs regardless of DSL use:
 
 1. `duckdb:open`, `duckdb:close!`,
 2. `duckdb:exec`, `duckdb:query`,
@@ -213,17 +191,31 @@ This gives fluent ergonomics without requiring procedural macros.
 
 1. Create package directories and `eta.toml` files.
 2. Add sidecar README/build/test usage.
-3. Add wrapper README with import/dependency examples.
+3. Add Eta module scaffold in package-local `src/db`.
+
+Implemented in this repo snapshot:
+
+1. `packages/db/native/duckdb` sidecar scaffold with pinned `v1.5.1` fetch helper.
+2. importable `db.duckdb` module in `packages/db/native/duckdb/src/db/duckdb.eta`.
+3. package-local C++ tests validating extension metadata and entrypoint behavior.
 
 Gate:
 
-1. `eta pkg` metadata parses cleanly for both packages.
+1. `eta tree --manifest-path` parses cleanly for the package.
 
 ## D1 - Standalone sidecar build
 
-1. Add package-local `CMakeLists.txt` and scripts (`build.sh`, `build.ps1`).
-2. Build per host platform into `native/<platform>/...`.
+1. Add package-local `CMakeLists.txt` and host staging helpers.
+2. Build per host platform into `native/<arch>/libs/...`.
 3. Compute and write target checksums for `[[native.targets]]`.
+
+Implemented in this repo snapshot:
+
+1. package-local CMake build and tests for `eta_duckdb`.
+2. `cmake/StageDuckDBSidecar.cmake` to stage host artifact and update host
+   `sha256` in `eta.toml`.
+3. Eta smoke test fixture that validates metadata parse, lockfile sidecar
+   metadata, and `db.duckdb` module import.
 
 Gate:
 
@@ -241,7 +233,7 @@ Gate:
 
 ## D3 - Eta wrappers
 
-1. Implement `std.duckdb` function-first API.
+1. Implement `db.duckdb` function-first API.
 2. Normalize result row shape and error behavior.
 3. Add wrapper tests for open/close/query/parameterized query.
 
@@ -251,7 +243,7 @@ Gate:
 
 ## D4 - Fluent DSL macro tool
 
-1. Add `define-syntax` macros in `std/duckdb/query.eta`.
+1. Add `define-syntax` macros in `db/duckdb/query.eta`.
 2. Add expansion-focused tests (`dsl.test.eta`) for each clause form.
 3. Verify generated SQL + params match function-only builder output.
 
@@ -267,29 +259,26 @@ Gate:
 
 Gate:
 
-1. package docs + tests fully runnable with package-local scripts.
+1. package docs + tests fully runnable with package-local build/test commands.
 
 ---
 
 ## 8) Testing plan (package-local only)
 
-`packages/databases/native/duckdb/tests/`:
+`packages/db/native/duckdb/tests/`:
 
-1. sidecar load smoke test,
-2. open/close and error-path tests,
-3. basic query/parameterization tests.
-
-`packages/databases/duckdb/tests/`:
-
-1. wrapper API tests,
-2. DSL expansion/equivalence tests,
-3. integration tests with in-memory DB fixtures.
+1. C++ unit tests for extension metadata + entrypoint scaffold behavior.
+2. Eta smoke test that materializes a fixture package with host sidecar artifact.
+3. D2+ will add open/close/query/error behavior tests.
 
 Suggested commands:
 
 ```text
-packages/databases/native/duckdb/scripts/test.sh
-packages/databases/duckdb/scripts/test.sh
+cmake -S packages/db/native/duckdb -B out/duckdb-msvc \
+  -DETA_ETA_EXECUTABLE=<path-to-eta> \
+  -DETA_ETAI_EXECUTABLE=<path-to-etai> \
+  -DETA_STDLIB_DIR=<path-to-stdlib>
+ctest --test-dir out/duckdb-msvc -C Release --output-on-failure
 ```
 
 No requirement to touch `eta/qa/*`.
@@ -314,7 +303,7 @@ Total:
 ## 10) Risks and mitigations
 
 1. ABI drift vs Eta runtime headers:
-   - pin Eta compatibility range in both manifests.
+   - pin Eta compatibility range in package manifest.
 2. SQL DSL overreach:
    - keep macro DSL thin; push logic to functions.
 3. Platform artifact churn:
@@ -326,10 +315,8 @@ Total:
 
 ## 11) Open decisions
 
-1. Single package vs split packages (recommended split).
-2. Whether v1 includes prepared statements or only `query(conn, sql, params)`.
-3. Initial result representation:
+1. Whether v1 includes prepared statements or only `query(conn, sql, params)`.
+2. Initial result representation:
    - list-of-alists,
    - fact-table conversion helper,
    - both.
-

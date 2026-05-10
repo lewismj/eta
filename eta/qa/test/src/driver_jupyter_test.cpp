@@ -546,7 +546,7 @@ BOOST_AUTO_TEST_CASE(log_primitives_available_without_package_sidecar) {
     BOOST_TEST(!ok);
     bool has_expected_diag = false;
     for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-log-sidecar'") != std::string::npos) {
+        if (diag.message.find("requires package dependency 'eta-log'") != std::string::npos) {
             has_expected_diag = true;
             break;
         }
@@ -567,7 +567,7 @@ BOOST_AUTO_TEST_CASE(native_builtin_fallback_env_var_is_ignored) {
     BOOST_TEST(!ok);
     bool has_expected_diag = false;
     for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-log-sidecar'") != std::string::npos) {
+        if (diag.message.find("requires package dependency 'eta-log'") != std::string::npos) {
             has_expected_diag = true;
             break;
         }
@@ -589,7 +589,7 @@ BOOST_AUTO_TEST_CASE(log_sidecar_activates_std_log_wrappers) {
         temp.path,
         fixture,
         *fixture_sha,
-        "eta-log-sidecar",
+        "eta-log",
         "eta.log.sidecar",
         "eta_register_log_extension_v1");
 
@@ -629,7 +629,7 @@ BOOST_AUTO_TEST_CASE(stats_primitives_available_without_package_sidecar) {
     BOOST_TEST(!ok);
     bool has_expected_diag = false;
     for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-stats-sidecar'") != std::string::npos) {
+        if (diag.message.find("requires package dependency 'eta-stats'") != std::string::npos) {
             has_expected_diag = true;
             break;
         }
@@ -651,7 +651,7 @@ BOOST_AUTO_TEST_CASE(stats_sidecar_activates_std_stats_wrappers) {
         temp.path,
         fixture,
         *fixture_sha,
-        "eta-stats-sidecar",
+        "eta-stats",
         "eta.stats.sidecar",
         "eta_register_stats_extension_v1");
 
@@ -694,7 +694,7 @@ BOOST_AUTO_TEST_CASE(nng_primitives_available_without_package_sidecar) {
     BOOST_TEST(!ok);
     bool has_expected_diag = false;
     for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-nng-sidecar'") != std::string::npos) {
+        if (diag.message.find("requires package dependency 'eta-nng'") != std::string::npos) {
             has_expected_diag = true;
             break;
         }
@@ -716,7 +716,7 @@ BOOST_AUTO_TEST_CASE(nng_sidecar_activates_network_primitives) {
         temp.path,
         fixture,
         *fixture_sha,
-        "eta-nng-sidecar",
+        "eta-nng",
         "eta.nng.sidecar",
         "eta_register_nng_extension_v1");
 
@@ -750,7 +750,7 @@ BOOST_AUTO_TEST_CASE(torch_primitives_available_without_package_sidecar) {
     BOOST_TEST(!ok);
     bool has_expected_diag = false;
     for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-torch-sidecar'") != std::string::npos) {
+        if (diag.message.find("requires package dependency 'eta-torch'") != std::string::npos) {
             has_expected_diag = true;
             break;
         }
@@ -775,7 +775,7 @@ BOOST_AUTO_TEST_CASE(torch_sidecar_activates_std_torch_wrappers) {
         temp.path,
         fixture,
         *fixture_sha,
-        "eta-torch-sidecar",
+        "eta-torch",
         "eta.torch.sidecar",
         "eta_register_torch_extension_v1");
 
@@ -1027,7 +1027,7 @@ BOOST_AUTO_TEST_CASE(eval_to_display_tags_tensor_values) {
         temp.path,
         fixture,
         *fixture_sha,
-        "eta-torch-sidecar",
+        "eta-torch",
         "eta.torch.sidecar",
         "eta_register_torch_extension_v1");
 
@@ -1121,7 +1121,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_routes_stdout_to_spawning_stream_sink) {
         temp.path,
         fixture,
         *fixture_sha,
-        "eta-nng-sidecar",
+        "eta-nng",
         "eta.nng.sidecar",
         "eta_register_nng_extension_v1");
 

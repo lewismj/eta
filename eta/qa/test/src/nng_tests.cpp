@@ -101,7 +101,7 @@ namespace {
         ScopedTempDir() {
             const auto stamp =
                 std::chrono::steady_clock::now().time_since_epoch().count();
-            path = fs::temp_directory_path() / ("eta_nng_sidecar_" + std::to_string(stamp));
+            path = fs::temp_directory_path() / ("eta_nng_" + std::to_string(stamp));
             fs::create_directories(path);
         }
 
@@ -273,8 +273,8 @@ namespace {
 
         ScopedTempDir temp;
         const SidecarSpec specs[] = {
-            {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
-            {"eta-torch-sidecar", "eta.torch.sidecar", "eta_register_torch_extension_v1"},
+            {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+            {"eta-torch", "eta.torch.sidecar", "eta_register_torch_extension_v1"},
         };
         const auto fixture = create_sidecar_workspace_fixture(
             temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -2261,7 +2261,7 @@ BOOST_AUTO_TEST_CASE(spawn_send_recv_round_trip) {
     namespace fs = std::filesystem;
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -2377,7 +2377,7 @@ BOOST_AUTO_TEST_CASE(spawn_kill_terminates_child) {
     namespace fs = std::filesystem;
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -2432,7 +2432,7 @@ BOOST_AUTO_TEST_CASE(spawn_multiple_children) {
     namespace fs = std::filesystem;
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -2893,7 +2893,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_full_driver_round_trip) {
 
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -2963,7 +2963,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_multiple_with_upvalues) {
 
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -3041,7 +3041,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_list_payload_and_quoted_constant_regression) {
 
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -3094,7 +3094,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_portfolio_worker_shape_regression) {
 
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -3170,7 +3170,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_upvalue_closure_direct_captured) {
 
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
@@ -3221,7 +3221,7 @@ BOOST_AUTO_TEST_CASE(spawn_thread_module_global_definition_capture) {
 
     ScopedTempDir temp;
     const SidecarSpec specs[] = {
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
     const auto sidecar_fixture = create_sidecar_workspace_fixture(
         temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));

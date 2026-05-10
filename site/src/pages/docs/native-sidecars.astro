@@ -15,7 +15,7 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
   <p>
     This page walks through building one end-to-end, using the
     <a href="https://github.com/lewismj/eta/tree/main/packages/ml/native/lightgbm">
-      <code>eta-lightgbm-sidecar</code>
+      <code>eta-lightgbm</code>
     </a> package as a concrete example.
   </p>
 
@@ -72,7 +72,7 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
   </p>
 
   <pre><code>[package]
-name    = "eta-lightgbm-sidecar"
+name    = "eta-lightgbm"
 version = "0.1.0"
 license = "MIT"
 
@@ -87,22 +87,22 @@ entry = "eta_register_lgbm_extension_v1"
 
 [[native.targets]]
 triple   = "x86_64-pc-windows-msvc"
-artifact = "native/windows-x64/eta_lightgbm_sidecar.dll"
+artifact = "native/windows-x64/eta_lightgbm.dll"
 sha256   = "0000..."
 
 [[native.targets]]
 triple   = "x86_64-unknown-linux-gnu"
-artifact = "native/linux-x64/libeta_lightgbm_sidecar.so"
+artifact = "native/linux-x64/libeta_lightgbm.so"
 sha256   = "0000..."
 
 [[native.targets]]
 triple   = "x86_64-apple-darwin"
-artifact = "native/macos-x64/libeta_lightgbm_sidecar.dylib"
+artifact = "native/macos-x64/libeta_lightgbm.dylib"
 sha256   = "0000..."
 
 [[native.targets]]
 triple   = "aarch64-apple-darwin"
-artifact = "native/macos-arm64/libeta_lightgbm_sidecar.dylib"
+artifact = "native/macos-arm64/libeta_lightgbm.dylib"
 sha256   = "0000..."</code></pre>
 
   <p>Key fields:</p>
@@ -124,7 +124,7 @@ sha256   = "0000..."</code></pre>
   </p>
 
   <pre><code>cmake_minimum_required(VERSION 3.28)
-project(eta_lightgbm_sidecar LANGUAGES CXX)
+project(eta_lightgbm LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 
 # Point at Eta core headers — no CMake target dependency on core build system.
@@ -138,18 +138,18 @@ if(ETA_LIGHTGBM_FETCH_UPSTREAM)
     eta_lightgbm_fetch()
 endif()
 
-add_library(eta_lightgbm_sidecar MODULE
+add_library(eta_lightgbm MODULE
     src/eta/lightgbm/lightgbm_extension.cpp
     src/eta/lightgbm/lightgbm_primitives.cpp
     src/eta/lightgbm/lightgbm_model.cpp
 )
-target_compile_definitions(eta_lightgbm_sidecar PRIVATE ETA_NATIVE_EXPORT_SYMBOLS=1)
-target_include_directories(eta_lightgbm_sidecar PRIVATE
+target_compile_definitions(eta_lightgbm PRIVATE ETA_NATIVE_EXPORT_SYMBOLS=1)
+target_include_directories(eta_lightgbm PRIVATE
     $&#123;ETA_CORE_SRC_DIR&#125;
     $&#123;ETA_LIGHTGBM_INCLUDE_DIR&#125;
     $&#123;CMAKE_CURRENT_SOURCE_DIR&#125;/src
 )
-target_link_libraries(eta_lightgbm_sidecar PRIVATE $&#123;ETA_LIGHTGBM_LIBRARY_TARGET&#125;)</code></pre>
+target_link_libraries(eta_lightgbm PRIVATE $&#123;ETA_LIGHTGBM_LIBRARY_TARGET&#125;)</code></pre>
 
   <p>
     The optional fetch helper (<code>cmake/FetchLightGBM.cmake</code>) pins a specific upstream

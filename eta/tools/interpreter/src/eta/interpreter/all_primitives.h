@@ -91,15 +91,15 @@ inline void register_sidecar_placeholders(runtime::BuiltinEnvironment& env,
 }
 
 inline void register_torch_sidecar_placeholders(runtime::BuiltinEnvironment& env) {
-    register_sidecar_placeholders(env, is_torch_primitive_name, "eta-torch-sidecar");
+    register_sidecar_placeholders(env, is_torch_primitive_name, "eta-torch");
 }
 
 inline void register_stats_sidecar_placeholders(runtime::BuiltinEnvironment& env) {
-    register_sidecar_placeholders(env, is_stats_primitive_name, "eta-stats-sidecar");
+    register_sidecar_placeholders(env, is_stats_primitive_name, "eta-stats");
 }
 
 inline void register_log_sidecar_placeholders(runtime::BuiltinEnvironment& env) {
-    register_sidecar_placeholders(env, is_log_primitive_name, "eta-log-sidecar");
+    register_sidecar_placeholders(env, is_log_primitive_name, "eta-log");
 }
 
 } // namespace detail

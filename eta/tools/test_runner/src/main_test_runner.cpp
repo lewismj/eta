@@ -117,10 +117,10 @@ struct SidecarSpec {
     }
 
     const SidecarSpec specs[] = {
-        {"eta-log-sidecar", "eta.log.sidecar", "eta_register_log_extension_v1"},
-        {"eta-stats-sidecar", "eta.stats.sidecar", "eta_register_stats_extension_v1"},
-        {"eta-torch-sidecar", "eta.torch.sidecar", "eta_register_torch_extension_v1"},
-        {"eta-nng-sidecar", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+        {"eta-log", "eta.log.sidecar", "eta_register_log_extension_v1"},
+        {"eta-stats", "eta.stats.sidecar", "eta_register_stats_extension_v1"},
+        {"eta-torch", "eta.torch.sidecar", "eta_register_torch_extension_v1"},
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
     };
 
     const fs::path app_root = root / "app";

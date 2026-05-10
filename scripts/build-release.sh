@@ -116,6 +116,15 @@ cmake --install "$BUILD_DIR"
 echo "  Running bundle checker..."
 bash "${PROJECT_ROOT}/scripts/check-unix-bundle.sh" --prefix "$PREFIX"
 
+# Copy source package trees into the bundle so package manifests/modules are
+# available out of the box (not only stdlib-native metadata from install()).
+if [ -d "${PROJECT_ROOT}/packages" ]; then
+    echo "  Copying packages/ tree..."
+    mkdir -p "${PREFIX}/packages"
+    cp -a "${PROJECT_ROOT}/packages/." "${PREFIX}/packages/"
+    find "${PREFIX}/packages" -type d \( -name __pycache__ -o -name .ipynb_checkpoints -o -name .git \) -prune -exec rm -rf {} +
+fi
+
 # Keep Jupyter kernelspec logos next to eta_jupyter so `eta_jupyter --install`
 # can copy them on target machines (without source-tree paths).
 JUPYTER_RES_SRC="${PROJECT_ROOT}/eta/tools/jupyter/resources"

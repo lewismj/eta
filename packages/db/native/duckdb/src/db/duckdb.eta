@@ -1,0 +1,14 @@
+;;; db/duckdb.eta
+;;; Sidecar-backed DuckDB package scaffold.
+
+(module db.duckdb
+  (export duckdb-upstream-version)
+  (begin
+    ;;@doc (duckdb-upstream-version)
+    ;;@category DB
+    ;;@module db.duckdb
+    ;; Return the pinned upstream DuckDB release tag for this package.
+    ;;@example
+    ;; (duckdb-upstream-version)
+    (define (duckdb-upstream-version)
+      "v1.5.1")))

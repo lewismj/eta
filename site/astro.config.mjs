@@ -12,9 +12,9 @@ const base = process.env.BASE_PATH ?? "";
  *
  *  - Targets inside `docs/` (and ending in `.md` or having no extension)
  *    become clean `/<base>/docs/<path>/` site URLs. `language_guide` is
- *    normalised to `language-guide` and `README` collapses to a folder
- *    index. `docs/plan/` and `docs/old/` are excluded — those folders
- *    are not built into pages, so links into them go to GitHub instead.
+ *    are normalised to `language-guide` and `README` collapses to a folder
+ *    index. `docs/old/` is excluded — that folder is not built into pages,
+ *    so links into it go to GitHub instead.
  *  - Targets escaping `docs/` (e.g. `../README.md`, `../cookbook/foo.eta`,
  *    `../eta/core/.../foo.cpp`) are rewritten to the GitHub repo at
  *    `https://github.com/lewismj/eta/{blob,tree}/main/<path>` so the
@@ -25,7 +25,7 @@ function remarkRewriteMdLinks() {
   const docsBase = `${base}/docs/`;
   const repoBlob = "https://github.com/lewismj/eta/blob/main/";
   const repoTree = "https://github.com/lewismj/eta/tree/main/";
-  const skipFolders = ["docs/plan/", "docs/old/"];
+  const skipFolders = ["docs/old/"];
 
   return (tree, file) => {
     const filePath = (file?.history?.[0] ?? file?.path ?? "").replace(/\\/g, "/");

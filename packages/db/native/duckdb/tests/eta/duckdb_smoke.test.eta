@@ -1,0 +1,12 @@
+(module db.duckdb.tests.smoke
+  (import std.test)
+  (import db.duckdb)
+  (begin
+    (define suite
+      (make-group "db.duckdb"
+        (list
+          (make-test "duckdb-upstream-version"
+            (lambda ()
+              (assert-equal "v1.5.1" (duckdb-upstream-version)))))))
+
+    (print-tap (run suite))))

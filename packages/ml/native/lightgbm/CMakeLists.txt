@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(eta_lightgbm_sidecar LANGUAGES CXX)
+project(eta_lightgbm LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -66,24 +66,25 @@ if("${ETA_LIGHTGBM_INCLUDE_DIR}" STREQUAL "")
         "Could not find LightGBM headers (LightGBM/c_api.h).")
 endif()
 
-add_library(eta_lightgbm_sidecar MODULE
+add_library(eta_lightgbm MODULE
     src/eta/lightgbm/lightgbm_extension.cpp
     src/eta/lightgbm/lightgbm_primitives.cpp
     src/eta/lightgbm/lightgbm_model.cpp
 )
-set_target_properties(eta_lightgbm_sidecar PROPERTIES
+set_target_properties(eta_lightgbm PROPERTIES
+    OUTPUT_NAME eta_lightgbm
     CXX_SCAN_FOR_MODULES OFF
 )
-target_compile_definitions(eta_lightgbm_sidecar PRIVATE
+target_compile_definitions(eta_lightgbm PRIVATE
     ETA_NATIVE_EXPORT_SYMBOLS=1
 )
-target_include_directories(eta_lightgbm_sidecar PRIVATE
+target_include_directories(eta_lightgbm PRIVATE
     ${ETA_CORE_SRC_DIR}
     ${ETA_LIGHTGBM_INCLUDE_DIR}
     ${Boost_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_link_libraries(eta_lightgbm_sidecar PRIVATE
+target_link_libraries(eta_lightgbm PRIVATE
     ${ETA_LIGHTGBM_LIBRARY_TARGET}
 )
 
@@ -144,7 +145,7 @@ if(ETA_LIGHTGBM_ENABLE_TESTS)
             COMMAND ${CMAKE_COMMAND}
                 -DPACKAGE_SOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
                 -DFIXTURE_ROOT=${CMAKE_CURRENT_BINARY_DIR}/eta_fixture
-                -DSIDECAR_BINARY=$<TARGET_FILE:eta_lightgbm_sidecar>
+                -DSIDECAR_BINARY=$<TARGET_FILE:eta_lightgbm>
                 -DETA_ETAI_EXECUTABLE=${ETA_ETAI_EXECUTABLE}
                 -DETA_STDLIB_DIR=${ETA_STDLIB_DIR}
                 -DHOST_TARGET_TRIPLE=${ETA_LIGHTGBM_HOST_TRIPLE}

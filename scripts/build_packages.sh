@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_root="$(cd "${script_dir}/.." && pwd)"
+
+build_root="${BUILD_ROOT:-${project_root}/out/package-build}"
+config="${CONFIG:-Release}"
+eta_executable="${ETA_EXECUTABLE:-}"
+fetch_upstream="${FETCH_UPSTREAM:-ON}"
+skip_native="${SKIP_NATIVE:-OFF}"
+cmake_prefix_path="${CMAKE_PREFIX_PATH:-}"
+boost_dir="${BOOST_DIR:-}"
+boost_include_dir="${BOOST_INCLUDE_DIR:-}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --build-root)
+      build_root="$2"
+      shift 2
+      ;;
+    --config)
+      config="$2"
+      shift 2
+      ;;
+    --eta-exe)
+      eta_executable="$2"
+      shift 2
+      ;;
+    --fetch-upstream)
+      fetch_upstream="ON"
+      shift
+      ;;
+    --no-fetch-upstream)
+      fetch_upstream="OFF"
+      shift
+      ;;
+    --skip-native)
+      skip_native="ON"
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      echo "Usage: $0 [--build-root DIR] [--config Release|Debug] [--eta-exe PATH] [--fetch-upstream] [--skip-native]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "${eta_executable}" ]; then
+  eta_executable="${project_root}/out/release/eta/cli/eta"
+fi
+if [ ! -x "${eta_executable}" ]; then
+  echo "eta executable not found or not executable: ${eta_executable}" >&2
+  exit 1
+fi
+
+host_triple() {
+  local os arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "${os}" in
+    Linux)
+      case "${arch}" in
+        x86_64) echo "x86_64-unknown-linux-gnu" ;;
+        aarch64|arm64) echo "aarch64-unknown-linux-gnu" ;;
+        *) echo "unsupported-linux-arch:${arch}" ;;
+      esac
+      ;;
+    Darwin)
+      case "${arch}" in
+        x86_64) echo "x86_64-apple-darwin" ;;
+        arm64|aarch64) echo "aarch64-apple-darwin" ;;
+        *) echo "unsupported-macos-arch:${arch}" ;;
+      esac
+      ;;
+    *)
+      echo "unsupported-os:${os}"
+      ;;
+  esac
+}
+
+resolve_sidecar_binary() {
+  local build_dir="$1"
+  local base_name="$2"
+  local file_name=""
+  case "$(uname -s)" in
+    Linux) file_name="lib${base_name}.so" ;;
+    Darwin) file_name="lib${base_name}.dylib" ;;
+    *) echo "Unsupported host OS for sidecar resolution: $(uname -s)" >&2; exit 1 ;;
+  esac
+
+  if [ -f "${build_dir}/${config}/${file_name}" ]; then
+    echo "${build_dir}/${config}/${file_name}"
+    return
+  fi
+  if [ -f "${build_dir}/${file_name}" ]; then
+    echo "${build_dir}/${file_name}"
+    return
+  fi
+
+  local found
+  found="$(find "${build_dir}" -type f -name "${file_name}" | head -n 1 || true)"
+  if [ -n "${found}" ]; then
+    echo "${found}"
+    return
+  fi
+  echo "Could not locate sidecar binary ${file_name} under ${build_dir}" >&2
+  exit 1
+}
+
+invoke_native_build() {
+  local name="$1"
+  local package_root="$2"
+  local native_build_dir="$3"
+  local target_name="$4"
+  local base_name="$5"
+  local stage_script="$6"
+  local fetch_arg_name="$7"
+  local tests_arg_name="$8"
+  local cmake_prefix_arg="${9:-}"
+  local boost_dir_arg="${10:-}"
+  local boost_include_arg="${11:-}"
+
+  echo "> Building native package: ${name}"
+
+  local configure_args=(
+    -S "${package_root}"
+    -B "${native_build_dir}"
+    "-D${fetch_arg_name}=${fetch_upstream}"
+    "-D${tests_arg_name}=OFF"
+  )
+  if [ -n "${cmake_prefix_arg}" ]; then
+    configure_args+=("-DCMAKE_PREFIX_PATH=${cmake_prefix_arg}")
+  fi
+  if [ -n "${boost_dir_arg}" ]; then
+    configure_args+=("-DBoost_DIR=${boost_dir_arg}")
+  fi
+  if [ -n "${boost_include_arg}" ]; then
+    configure_args+=("-DBoost_INCLUDE_DIR=${boost_include_arg}")
+  fi
+
+  cmake "${configure_args[@]}"
+
+  cmake --build "${native_build_dir}" --config "${config}" --target "${target_name}"
+
+  local sidecar_binary
+  sidecar_binary="$(resolve_sidecar_binary "${native_build_dir}" "${base_name}")"
+
+  local triple
+  triple="$(host_triple)"
+  case "${triple}" in
+    unsupported-*)
+      echo "Unsupported host target: ${triple}" >&2
+      exit 1
+      ;;
+  esac
+
+  cmake \
+    -DPACKAGE_ROOT="${package_root}" \
+    -DSIDECAR_BINARY="${sidecar_binary}" \
+    -DHOST_TARGET_TRIPLE="${triple}" \
+    -P "${stage_script}"
+}
+
+if [ "${skip_native}" != "ON" ]; then
+  invoke_native_build \
+    "duckdb" \
+    "${project_root}/packages/db/native/duckdb" \
+    "${build_root}/duckdb" \
+    "eta_duckdb" \
+    "eta_duckdb" \
+    "${project_root}/packages/db/native/duckdb/cmake/StageDuckDBSidecar.cmake" \
+    "ETA_DUCKDB_FETCH_UPSTREAM" \
+    "ETA_DUCKDB_ENABLE_TESTS" \
+    "" \
+    "" \
+    ""
+
+  invoke_native_build \
+    "lightgbm" \
+    "${project_root}/packages/ml/native/lightgbm" \
+    "${build_root}/lightgbm" \
+    "eta_lightgbm" \
+    "eta_lightgbm" \
+    "${project_root}/packages/ml/native/lightgbm/cmake/StageLightGBMSidecar.cmake" \
+    "ETA_LIGHTGBM_FETCH_UPSTREAM" \
+    "ETA_LIGHTGBM_ENABLE_TESTS" \
+    "${cmake_prefix_path}" \
+    "${boost_dir}" \
+    "${boost_include_dir}"
+fi
+
+echo "> Building Eta package artifacts (.etac) for non-stdlib packages"
+while IFS= read -r manifest; do
+  echo "  - ${manifest}"
+  "${eta_executable}" build --manifest-path "${manifest}"
+done < <(find "${project_root}/packages" -type f -name "eta.toml" \
+          ! -path "*/packages/stdlib/*" | sort)
+
+echo
+echo "[OK] Package rebuild complete."

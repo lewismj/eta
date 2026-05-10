@@ -11,6 +11,13 @@ It provides:
 - LightGBM C API hooks behind registered `lgbm/*` primitives
 - package-local C++ unit tests and Eta smoke tests
 
+Host sidecar artifacts are staged under `native/<arch>/libs/`:
+
+- `native/amd64/libs/eta_lightgbm.dll` (Windows x86_64)
+- `native/amd64/libs/libeta_lightgbm.so` (Linux x86_64)
+- `native/amd64/libs/libeta_lightgbm.dylib` (macOS x86_64)
+- `native/arm64/libs/libeta_lightgbm.dylib` (macOS arm64)
+
 The CMake fetch helper is pinned to LightGBM tag `v4.6.0`:
 `cmake/FetchLightGBM.cmake`.
 
@@ -112,3 +119,14 @@ ctest --test-dir out/lightgbm-msvc --output-on-failure
 `ETA_ETAI_EXECUTABLE` should point to a built `etai` binary.
 Depending on your local setup, you may also need to provide Boost paths
 (`Boost_DIR` / `Boost_INCLUDE_DIR`) at configure time.
+
+To stage the host-built sidecar into `native/<arch>/libs/` and update the host
+`sha256` entry in `eta.toml`:
+
+```powershell
+cmake `
+  -DPACKAGE_ROOT="C:/Users/lewis/develop/eta/packages/ml/native/lightgbm" `
+  -DSIDECAR_BINARY="C:/Users/lewis/develop/eta/out/lightgbm-msvc/Release/eta_lightgbm.dll" `
+  -DHOST_TARGET_TRIPLE="x86_64-pc-windows-msvc" `
+  -P "C:/Users/lewis/develop/eta/packages/ml/native/lightgbm/cmake/StageLightGBMSidecar.cmake"
+```

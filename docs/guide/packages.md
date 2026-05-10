@@ -14,6 +14,21 @@ eta vendor
 eta clean --all
 ```
 
+## Repository build helper
+
+For repo-local package rebuilds (excluding `packages/stdlib`), use:
+
+```console
+scripts/build_packages.ps1    # Windows (PowerShell)
+scripts/build_packages.sh     # Linux/macOS
+```
+
+These helpers:
+
+- rebuild non-stdlib native sidecar packages and stage host artifacts,
+- update host `sha256` entries in native package manifests,
+- run `eta build --manifest-path` for each non-stdlib package to produce `.etac`.
+
 ## Workspace selection flags
 
 These flags are supported by workspace-aware commands (`tree`, `build`, `test`,
@@ -71,7 +86,7 @@ entry = "eta_register_extension_v1"
 
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
-artifact = "native/windows-x64/eta_example_native.dll"
+artifact = "native/amd64/libs/eta_example_native.dll"
 sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 ```
 

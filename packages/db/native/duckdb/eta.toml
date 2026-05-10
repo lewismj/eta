@@ -1,5 +1,5 @@
 [package]
-name = "eta-lightgbm"
+name = "eta-duckdb"
 version = "0.1.0"
 license = "MIT"
 
@@ -9,25 +9,25 @@ eta = ">=0.6, <0.8"
 [native]
 kind = "sidecar"
 abi = "eta-native-v1"
-id = "eta.lgbm.sidecar"
-entry = "eta_register_lgbm_extension_v1"
+id = "eta.duckdb.sidecar"
+entry = "eta_register_duckdb_extension_v1"
 
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
-artifact = "native/amd64/libs/eta_lightgbm.dll"
-sha256 = "59307c28bf5904d0232feeea293425d6f5045137ae7e3704aefe70a5e92f323d"
+artifact = "native/amd64/libs/eta_duckdb.dll"
+sha256 = "adcaef5b8e9c72d56ba1308142eac0a916cf97a070d4f94e56933ab26f39a7db"
 
 [[native.targets]]
 triple = "x86_64-unknown-linux-gnu"
-artifact = "native/amd64/libs/libeta_lightgbm.so"
+artifact = "native/amd64/libs/libeta_duckdb.so"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "x86_64-apple-darwin"
-artifact = "native/amd64/libs/libeta_lightgbm.dylib"
+artifact = "native/amd64/libs/libeta_duckdb.dylib"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "aarch64-apple-darwin"
-artifact = "native/arm64/libs/libeta_lightgbm.dylib"
+artifact = "native/arm64/libs/libeta_duckdb.dylib"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

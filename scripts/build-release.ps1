@@ -206,6 +206,22 @@ Write-Host "> [3/6] Installing to $Prefix..."
 & cmake --install $BuildDir --config Release
 if ($LASTEXITCODE -ne 0) { throw "CMake install failed" }
 
+# Copy source package trees into the bundle so package manifests/modules are
+# available out of the box (not only stdlib-native metadata from install()).
+Write-Host "  Copying packages/ tree..."
+$PackagesSrc = Join-Path $ProjectRoot "packages"
+$PackagesDest = Join-Path $Prefix "packages"
+if (Test-Path $PackagesSrc) {
+    New-Item -ItemType Directory -Force -Path $PackagesDest | Out-Null
+    & robocopy $PackagesSrc $PackagesDest * `
+        /E /NFL /NDL /NJH /NJS /NP `
+        /XD __pycache__ .ipynb_checkpoints .git | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy failed copying packages (exit $LASTEXITCODE)"
+    }
+    $global:LASTEXITCODE = 0
+}
+
 # Verify required runtime binaries are present in the bundle.
 Write-Host "  Verifying runtime binaries..."
 foreach ($bin in @("eta.exe", "etac.exe", "etai.exe", "eta_test.exe", "eta_repl.exe", "eta_lsp.exe", "eta_dap.exe", "eta_jupyter.exe")) {

@@ -1563,7 +1563,7 @@ private:
     }
 
     void register_nng_sidecar_placeholders() {
-        register_builtin_sidecar_placeholders(is_nng_primitive_name, "eta-nng-sidecar");
+        register_builtin_sidecar_placeholders(is_nng_primitive_name, "eta-nng");
     }
 
     [[nodiscard]] static runtime::types::PrimitiveFunc make_registered_sidecar_primitive(
