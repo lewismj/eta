@@ -59,7 +59,13 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/dist/${{ env.BUNDLE }}
 
       - name: Build
-        run: cmake --build build
+        run: cmake --build build --target eta_all
+
+      - name: Build package artifacts
+        run: |
+          bash scripts/build_packages.sh \
+            --skip-native \
+            --eta-exe "${{ github.workspace }}/build/eta/cli/eta"
 
       - name: Install
         run: cmake --install build
@@ -91,8 +97,17 @@ jobs:
         run: |
           PREFIX=${{ github.workspace }}/dist/${{ env.BUNDLE }}
 
-          # Validate required binaries + stdlib artifacts.
-          bash scripts/check-unix-bundle.sh --prefix "$PREFIX"
+          # Copy package tree so all package manifests, sources, and .eta build
+          # outputs are bundled (including non-stdlib packages).
+          mkdir -p "$PREFIX/packages"
+          cp -a "${{ github.workspace }}/packages/." "$PREFIX/packages/"
+          find "$PREFIX/packages" -type d \( -name __pycache__ -o -name .ipynb_checkpoints -o -name .git \) -prune -exec rm -rf {} +
+
+          # Validate required binaries, package manifests, and package builds.
+          bash scripts/check-unix-bundle.sh \
+            --prefix "$PREFIX" \
+            --source-packages-dir "${{ github.workspace }}/packages" \
+            --require-package-builds
 
           # Keep kernel logos next to eta_jupyter for runtime --install.
           mkdir -p "$PREFIX/bin/resources"
@@ -154,7 +169,15 @@ jobs:
           -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}\dist\${{ env.BUNDLE }}
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release --target eta_all
+
+      - name: Build package artifacts
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}\scripts\build_packages.ps1" `
+              -SkipNative `
+              -EtaExecutable "${{ github.workspace }}\build\eta\cli\Release\eta.exe"
+          if ($LASTEXITCODE -ne 0) { throw "build_packages.ps1 failed (exit $LASTEXITCODE)" }
 
       - name: Install
         run: cmake --install build --config Release
@@ -218,13 +241,28 @@ jobs:
         run: |
           $prefix = "${{ github.workspace }}\dist\${{ env.BUNDLE }}"
 
-          # Validate required binaries + hydrate/verify runtime DLLs.
+          # Copy package tree so all package manifests, sources, and .eta build
+          # outputs are bundled (including non-stdlib packages).
+          $packagesSrc = "${{ github.workspace }}\packages"
+          $packagesDest = Join-Path $prefix "packages"
+          if (Test-Path $packagesSrc) {
+            New-Item -ItemType Directory -Force -Path $packagesDest | Out-Null
+            & robocopy $packagesSrc $packagesDest * `
+                /E /NFL /NDL /NJH /NJS /NP `
+                /XD __pycache__ .ipynb_checkpoints .git | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "robocopy failed copying packages (exit $LASTEXITCODE)" }
+            $global:LASTEXITCODE = 0
+          }
+
+          # Validate required binaries + package builds + hydrate/verify runtime DLLs.
           # Logic lives in scripts/check-windows-bundle.ps1 so it can be
           # reproduced 1:1 locally against an existing install prefix.
           & "${{ github.workspace }}\scripts\check-windows-bundle.ps1" `
               -Prefix  $prefix `
               -VcpkgDir "${{ env.VCPKG_DIR }}" `
-              -DepsDir  "${{ github.workspace }}\build\_deps"
+              -DepsDir  "${{ github.workspace }}\build\_deps" `
+              -SourcePackagesDir "${{ github.workspace }}\packages" `
+              -RequirePackageBuilds
           if ($LASTEXITCODE -ne 0) { throw "check-windows-bundle.ps1 failed (exit $LASTEXITCODE)" }
 
           $binDir = Join-Path $prefix "bin"

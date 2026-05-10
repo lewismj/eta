@@ -16,9 +16,7 @@
 
 <p align="center">
   <strong>Featured Examples</strong><br>
-  <a href="https://lewismj.github.io/eta/docs/featured/portfolio/">Causal Decision Engine for Portfolio Optimisation</a> ·
-  <a href="cookbook/notebooks/Portfolio.ipynb">notebook</a><br>
-  <a href="https://lewismj.github.io/eta/docs/featured/xva-wwr/">Wrong-Way Risk via do-interventions</a>
+  <a href="https://lewismj.github.io/eta/docs/featured/">lewismj.github.io/eta/docs/featured/</a>
 </p>
 
 ---

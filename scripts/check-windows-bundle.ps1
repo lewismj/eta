@@ -44,6 +44,17 @@
 .PARAMETER NoCopy
     If supplied, only validate; do not attempt to copy missing DLLs in.
 
+.PARAMETER SourcePackagesDir
+    Optional source `packages\` directory. When provided, every package
+    manifest found under this directory must exist under the bundle prefix.
+
+.PARAMETER RequirePackageBuilds
+    When set (and when SourcePackagesDir is provided), validate package build
+    artifacts:
+      - packages with src\*.eta must include .eta\target\release\*.etac
+      - sidecar packages must include the host native artifact referenced by
+        the manifest's [[native.targets]] entry
+
 .EXAMPLE
     pwsh -File scripts/check-windows-bundle.ps1 `
         -Prefix C:\Users\lewis\develop\eta\dist\eta-v0.5.1-win-x64
@@ -64,13 +75,21 @@ param(
 
     [string] $DepsDir,
 
-    [switch] $NoCopy
+    [switch] $NoCopy,
+
+    [string] $SourcePackagesDir,
+
+    [switch] $RequirePackageBuilds
 )
 
 $ErrorActionPreference = 'Stop'
 
 if (-not (Test-Path $Prefix)) {
     Write-Error "Install prefix does not exist: $Prefix"
+    exit 2
+}
+if ($SourcePackagesDir -and -not (Test-Path $SourcePackagesDir)) {
+    Write-Error "Source packages directory does not exist: $SourcePackagesDir"
     exit 2
 }
 
@@ -112,6 +131,107 @@ $missingSidecarManifests = @()
 foreach ($manifest in $requiredSidecarManifests) {
     $p = Join-Path $packagesDir $manifest
     if (-not (Test-Path $p)) { $missingSidecarManifests += "packages\$manifest" }
+}
+
+function Get-HostTargetTriple {
+    if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") {
+        return "aarch64-pc-windows-msvc"
+    }
+    return "x86_64-pc-windows-msvc"
+}
+
+function Get-NativeArtifactForTriple {
+    param(
+        [Parameter(Mandatory = $true)] [string] $ManifestPath,
+        [Parameter(Mandatory = $true)] [string] $HostTriple
+    )
+
+    $inTarget = $false
+    $triple = ""
+    $artifact = ""
+    $lines = Get-Content -LiteralPath $ManifestPath
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[\[native\.targets\]\]\s*$') {
+            if ($inTarget -and $triple -eq $HostTriple -and $artifact) {
+                return $artifact
+            }
+            $inTarget = $true
+            $triple = ""
+            $artifact = ""
+            continue
+        }
+        if ($inTarget -and $line -match '^\s*triple\s*=\s*"([^"]+)"\s*$') {
+            $triple = $Matches[1]
+            continue
+        }
+        if ($inTarget -and $line -match '^\s*artifact\s*=\s*"([^"]+)"\s*$') {
+            $artifact = $Matches[1]
+            continue
+        }
+        if ($inTarget -and $line -match '^\s*\[') {
+            if ($triple -eq $HostTriple -and $artifact) {
+                return $artifact
+            }
+            $inTarget = $false
+            $triple = ""
+            $artifact = ""
+        }
+    }
+    if ($inTarget -and $triple -eq $HostTriple -and $artifact) {
+        return $artifact
+    }
+    return ""
+}
+
+$missingPackageManifests = @()
+$missingPackageBuilds = @()
+$missingPackageSidecars = @()
+if ($SourcePackagesDir) {
+    $SourcePackagesDir = (Resolve-Path $SourcePackagesDir).Path
+    $hostTriple = Get-HostTargetTriple
+    $expectedPackageManifests = Get-ChildItem -Path $SourcePackagesDir -Recurse -File -Filter "eta.toml" |
+        Sort-Object FullName
+    foreach ($sourceManifest in $expectedPackageManifests) {
+        $relPath = $sourceManifest.FullName.Substring($SourcePackagesDir.Length).TrimStart('\', '/')
+        $bundleManifest = Join-Path $packagesDir $relPath
+        if (-not (Test-Path $bundleManifest)) {
+            $missingPackageManifests += "packages\$($relPath -replace '/', '\')"
+            continue
+        }
+
+        if ($RequirePackageBuilds) {
+            $pkgDir = Split-Path -Parent $bundleManifest
+            $srcDir = Join-Path $pkgDir "src"
+            if (Test-Path $srcDir) {
+                $etaSources = Get-ChildItem -Path $srcDir -Recurse -File -Filter "*.eta" -ErrorAction SilentlyContinue
+                if ($etaSources.Count -gt 0) {
+                    $buildOutputDir = Join-Path $pkgDir ".eta\target\release"
+                    $etacs = if (Test-Path $buildOutputDir) {
+                        Get-ChildItem -Path $buildOutputDir -Recurse -File -Filter "*.etac" -ErrorAction SilentlyContinue
+                    } else {
+                        @()
+                    }
+                    if ($etacs.Count -eq 0) {
+                        $missingPackageBuilds += "packages\$($relPath -replace '/', '\') -> .eta\target\release\*.etac"
+                    }
+                }
+            }
+
+            $isSidecar = ($relPath -notmatch '^(stdlib[\\/])') -and
+                (Select-String -Path $bundleManifest -Pattern '^\s*kind\s*=\s*"sidecar"\s*$' -Quiet)
+            if ($isSidecar) {
+                $artifactRel = Get-NativeArtifactForTriple -ManifestPath $bundleManifest -HostTriple $hostTriple
+                if (-not $artifactRel) {
+                    $missingPackageSidecars += "packages\$($relPath -replace '/', '\') -> missing native target for $hostTriple"
+                } else {
+                    $artifactPath = Join-Path $pkgDir ($artifactRel -replace '/', '\')
+                    if (-not (Test-Path $artifactPath)) {
+                        $missingPackageSidecars += "packages\$($relPath -replace '/', '\') -> $($artifactRel -replace '/', '\')"
+                    }
+                }
+            }
+        }
+    }
 }
 
 $cookbookDir = Join-Path $Prefix 'cookbook'
@@ -237,6 +357,18 @@ if ($missingSidecarManifests.Count -gt 0) {
     $ok = $false
     Write-Host "[FAIL] Missing native sidecar package manifests: $($missingSidecarManifests -join ', ')"
 }
+if ($missingPackageManifests.Count -gt 0) {
+    $ok = $false
+    Write-Host "[FAIL] Missing package manifests from bundle: $($missingPackageManifests -join ', ')"
+}
+if ($missingPackageBuilds.Count -gt 0) {
+    $ok = $false
+    Write-Host "[FAIL] Missing package build artifacts: $($missingPackageBuilds -join ', ')"
+}
+if ($missingPackageSidecars.Count -gt 0) {
+    $ok = $false
+    Write-Host "[FAIL] Missing package sidecar artifacts: $($missingPackageSidecars -join ', ')"
+}
 if ($missingNotebooks.Count -gt 0) {
     $ok = $false
     Write-Host "[FAIL] Missing cookbook notebooks: $($missingNotebooks -join ', ')"
@@ -251,7 +383,7 @@ if ($missingMsvc.Count -gt 0) {
 }
 
 if ($ok) {
-    Write-Host "[OK] Bundle has required executables, stdlib artifacts, sidecar manifests, and runtime DLLs."
+    Write-Host "[OK] Bundle has required executables, stdlib artifacts, package manifests, sidecar artifacts, and runtime DLLs."
     exit 0
 }
 
