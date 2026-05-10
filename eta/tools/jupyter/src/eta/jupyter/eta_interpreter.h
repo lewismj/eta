@@ -68,12 +68,16 @@ private:
     /**
      * @brief Handle kernel shutdown.
      */
+#if defined(XEUS_VERSION_MAJOR) && XEUS_VERSION_MAJOR >= 6
     nl::json shutdown_request_impl(bool restart) override;
 
     /**
      * @brief Handle interrupt requests from the frontend.
      */
     nl::json interrupt_request_impl() override;
+#else
+    void shutdown_request_impl() override;
+#endif
 
     /**
      * @brief Format the driver's diagnostics as plain text.

@@ -991,20 +991,37 @@ nl::json EtaInterpreter::is_complete_request_impl(const std::string& code) {
 }
 
 nl::json EtaInterpreter::kernel_info_request_impl() {
+#if defined(XEUS_VERSION_MAJOR) && XEUS_VERSION_MAJOR >= 6
     return xeus::create_info_reply(
-        "eta",                 // implementation
-        "0.1.0",               // implementation_version
-        "eta",                 // language_name
-        "0.1.0",               // language_version
-        "text/x-eta",          // language_mimetype
-        ".eta",                // language_file_extension
-        "scheme",              // pygments_lexer
+        "eta",                                   // implementation
+        "0.1.0",                                 // implementation_version
+        "eta",                                   // language_name
+        "0.1.0",                                 // language_version
+        "text/x-eta",                            // language_mimetype
+        ".eta",                                  // language_file_extension
+        "scheme",                                // pygments_lexer
         xeus::codemirror_mode_t{std::string("scheme")}, // codemirror_mode
-        "",                    // nbconvert_exporter
-        "Eta Jupyter kernel"   // banner
+        "",                                      // nbconvert_exporter
+        "Eta Jupyter kernel"                     // banner
     );
+#else
+    return xeus::create_info_reply(
+        XEUS_KERNEL_PROTOCOL_VERSION, // protocol_version
+        "eta",                        // implementation
+        "0.1.0",                      // implementation_version
+        "eta",                        // language_name
+        "0.1.0",                      // language_version
+        "text/x-eta",                 // language_mimetype
+        ".eta",                       // language_file_extension
+        "scheme",                     // pygments_lexer
+        "scheme",                     // codemirror_mode
+        "",                           // nbconvert_exporter
+        "Eta Jupyter kernel"          // banner
+    );
+#endif
 }
 
+#if defined(XEUS_VERSION_MAJOR) && XEUS_VERSION_MAJOR >= 6
 nl::json EtaInterpreter::shutdown_request_impl(const bool restart) {
     request_interrupt();
     return xeus::create_shutdown_reply(restart);
@@ -1014,6 +1031,11 @@ nl::json EtaInterpreter::interrupt_request_impl() {
     request_interrupt();
     return xeus::create_interrupt_reply();
 }
+#else
+void EtaInterpreter::shutdown_request_impl() {
+    request_interrupt();
+}
+#endif
 
 void EtaInterpreter::register_comm_targets() {
     if (comm_targets_registered_) return;

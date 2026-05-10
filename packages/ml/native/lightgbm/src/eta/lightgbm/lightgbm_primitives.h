@@ -10,7 +10,7 @@
 namespace eta::lightgbm_sidecar {
 
 /**
- * @brief Register `lgbm/*` primitives through the Eta sidecar C ABI.
+ * @brief Register `lgbm/`-prefixed primitives through the Eta sidecar C ABI.
  */
 int register_lightgbm_primitives(const EtaNativeApiV1* api);
 

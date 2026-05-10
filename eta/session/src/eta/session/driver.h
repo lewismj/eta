@@ -573,7 +573,7 @@ public:
             }
         };
 
-        TemporaryExecutedModuleGuard executed_guard{executed_modules_};
+        TemporaryExecutedModuleGuard executed_guard{executed_modules_, {}};
         executed_guard.inserted_modules.reserve(active_module_init_stack_.size());
         for (const auto& active_module_name : active_module_init_stack_) {
             if (executed_modules_.insert(active_module_name).second) {
