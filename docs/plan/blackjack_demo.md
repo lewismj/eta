@@ -1,11 +1,11 @@
-# Blackjack Demo Plan — Multi-Paradigm Showcase (Library + App)
+# Blackjack Demo Plan — Multi-Paradigm Showcase (Standalone App)
 
 [Back to README](../../README.md) ·
 [Packaging System](../packaging.md) ·
 [Package Commands](../guide/packages.md) ·
 [How to Build Your First App](../app/first_app.md) ·
 [End-to-End Packaging Example](../../cookbook/packaging/end-to-end/README.md) ·
-[Workspace Plan](./workspace_plan.md)
+[Featured Examples Plan](./featured_examples_plan.md)
 
 ---
 
@@ -171,7 +171,8 @@ is the operationally useful statement.
 
 ### 0.2 What runs end-to-end
 
-`eta run -p blackjack_demo -- all --seed 42` executes, in order:
+`eta run --manifest-path packages/example/blackjack/eta.toml -- all --seed 42`
+executes, in order:
 
 1. **Generate** a deterministic trace under a baseline (rule-following but
    non-counting) dealer/player.
@@ -259,10 +260,16 @@ Ship a runnable demo that uses Eta's four flagship paradigms —
 4. **emit** a basic-strategy chart conditioned on the count,
 5. **distill** that chart into human-readable strategy maxims.
 
-Primary outcome: a packaged `library + app` pair under
-`demo/blackjack/` that builds and runs end-to-end with
-`eta build --workspace && eta run -p blackjack_demo -- all`,
-and is referenced from the README/TLDR as a flagship example.
+Primary outcome: a standalone app package under
+`packages/example/blackjack/` (multi-file app modules), with:
+
+1. a package `README.md` that gives a tight, package-first run path, and
+2. a notebook (`cookbook/notebooks/blackjack-app.ipynb`) that calls
+   high-level app functions and serves as the guided tour.
+
+The app should run end-to-end via
+`eta run --manifest-path packages/example/blackjack/eta.toml -- all --seed 42`,
+and be referenced from README/TLDR/featured docs as a flagship example.
 
 ---
 
@@ -287,8 +294,12 @@ and is referenced from the README/TLDR as a flagship example.
 5. Torch-based EV / residual model and joint optimization of count weights,
 6. CLP enumeration to produce the strategy chart,
 7. **basic-strategy maxim induction** (ILP over the chart, §5.8),
-8. CLI app `blackjack-demo` that runs each phase and prints results,
-9. unit tests per phase + an integration smoke test.
+8. standalone app package at `packages/example/blackjack/` that runs each phase
+   and prints results,
+9. package README with copy-paste run commands and expected outputs,
+10. notebook (`cookbook/notebooks/blackjack-app.ipynb`) with high-level app
+    calls and a tight-sell narrative,
+11. unit tests per phase + an integration smoke test.
 
 ### 3.2 Out of scope (v1 core; included in v1.5)
 
@@ -297,76 +308,69 @@ and is referenced from the README/TLDR as a flagship example.
 2. insurance and surrender remain out of scope,
 3. multi-deck composition-dependent strategy,
 4. betting strategy / Kelly sizing,
-5. GUI / notebook polish (a follow-up notebook can wrap the library),
+5. GUI/TUI polish beyond plain CLI output,
 6. registry publication.
 
 ### 3.3 Implementation constraints
 
-1. **Output location**: all deliverables for this plan live under `demo/blackjack/`
-   (library, app, fixtures, and docs for the demo itself).
+1. **Output location**: app deliverables live under
+   `packages/example/blackjack/`; notebook lives under
+   `cookbook/notebooks/blackjack-app.ipynb`.
 2. **Stdlib-first policy**: implementation must use `std.*` modules first; do not
    depend on ad hoc cookbook scripts as runtime/code dependencies.
 3. **Missing functionality rule**: if required functionality is not in `std.*`,
-   implement it inside the demo package (`demo/blackjack/blackjack/src/`) with
+   implement it inside the app package (`packages/example/blackjack/src/`) with
    accompanying tests.
 4. **Readable source requirement**: where it improves clarity, use
    `define-syntax` (`syntax-rules`) for declarative table/rule declarations.
 5. **Structured data requirement**: use `define-record-type` (defstruct-style
    records) for state/config/result payloads instead of loose alists where that
    improves readability.
+6. **Native sidecars (optional)**: using new sidecars is allowed when it improves
+   runtime or ergonomics; keep a package-first run path and document sidecar
+   prerequisites clearly in `README.md`.
 
 ---
 
 ## 4) Package layout
 
-One workspace root plus two member packages under `demo/blackjack/`, mirroring
-[end-to-end packaging](../../cookbook/packaging/end-to-end/README.md):
+Single standalone app package under `packages/example/blackjack/`:
 
 ```
-demo/blackjack/
+packages/example/blackjack/
+  eta.toml
   README.md
-  eta.toml                    # workspace root manifest
-  blackjack/                 # library package
-    eta.toml
-    src/
-      blackjack.eta          # public re-exports
-      shoe.eta               # cards, deck, deterministic shuffle
-      rules.eta              # rule predicates (sum, bust, dealer_hits, ...)
-      induction.eta          # ILP-lite hypothesis search
-      causal.eta             # DAG + do() queries
-      mc.eta                 # parallel rollout harness
-      learn.eta              # torch model + weight optimization
-      strategy.eta           # CLP enumeration -> chart
-      maxims.eta             # ILP over chart -> human-readable rules
-    tests/
-      shoe_test.eta
-      rules_test.eta
-      induction_test.eta
-      causal_test.eta
-      learn_test.eta
-      strategy_test.eta
-      maxims_test.eta
-  blackjack-demo/            # app package
-    eta.toml
-    src/
-      blackjack_demo.eta     # CLI: subcommands induce|causal|learn|chart|all
-    tests/
-      smoke_test.eta
+  src/
+    blackjack_app.eta        # CLI entry + top-level orchestration
+    blackjack_pipeline.eta   # run-pipeline / run-blackjack-app
+    blackjack_report.eta     # human-readable reporting/printing
+    shoe.eta                 # cards, deck, deterministic shuffle
+    rules.eta                # rule predicates (sum, bust, dealer_hits, ...)
+    induction.eta            # ILP-lite hypothesis search
+    causal.eta               # DAG + do() queries
+    mc.eta                   # parallel rollout harness
+    learn.eta                # torch model + weight optimization
+    strategy.eta             # CLP enumeration -> chart
+    maxims.eta               # ILP over chart -> human-readable rules
+  tests/
+    smoke_test.eta
+    shoe_test.eta
+    rules_test.eta
+    induction_test.eta
+    causal_test.eta
+    learn_test.eta
+    strategy_test.eta
+    maxims_test.eta
+
+cookbook/notebooks/
+  blackjack-app.ipynb
 ```
 
-### 4.1 Workspace root `eta.toml`
-
-```toml
-[workspace]
-members = ["blackjack", "blackjack-demo"]
-default-members = ["blackjack-demo"]
-```
-
-### 4.2 Library `eta.toml`
+### 4.1 App `eta.toml`
 
 ```toml
 [package]
-name = "blackjack"
+name = "blackjack_app"
 version = "0.1.0"
 license = "MIT"
 
@@ -376,30 +380,38 @@ eta = ">=0.6, <0.8"
 [dependencies]
 ```
 
-### 4.3 App `eta.toml`
+### 4.2 README + notebook contract
 
-```toml
-[package]
-name = "blackjack_demo"
-version = "0.1.0"
-license = "MIT"
+`packages/example/blackjack/README.md` must be package-first and include:
 
-[compatibility]
-eta = ">=0.6, <0.8"
+1. one-line description,
+2. prerequisites,
+3. run commands,
+4. expected output summary,
+5. package layout,
+6. notebook link (`cookbook/notebooks/blackjack-app.ipynb`),
+7. featured-doc link.
 
-[dependencies]
-blackjack = { path = "../blackjack" }
-```
+Notebook posture:
 
-Created with the standard flow:
+> "This notebook is the guided tour of `blackjack-app`."
+
+Suggested sections:
+
+1. What the app does
+2. Run the app and inspect results
+3. Rules from traces
+4. Causal count / intervention story
+5. Learned count representation
+6. Strategy table generation
+7. Compression back into human rules
+8. Why Eta is a good fit for this workflow
+
+### 4.3 Bootstrap flow
 
 ```console
-cd demo/blackjack
-eta new blackjack --lib
-eta new blackjack-demo --bin
-# add demo/blackjack/eta.toml workspace manifest (see §4.1)
-cd blackjack-demo
-eta add blackjack --path ../blackjack
+eta new packages/example/blackjack --bin
+# then split into app/pipeline/report modules and add tests/ + README + notebook
 ```
 
 ---
@@ -919,21 +931,21 @@ noisy clauses, while keeping the ILP path as the headline result.
 
 ---
 
-## 6) App: `blackjack-demo`
+## 6) App: `packages/example/blackjack`
 
-Single binary with subcommands (workspace-root invocation shown):
+Single binary with subcommands (manifest-path invocation shown):
 
 ```console
-eta run -p blackjack_demo -- induce      # §5.3 — print discovered rules
-eta run -p blackjack_demo -- causal      # §5.4 — print do() EV sweeps + flip threshold
-eta run -p blackjack_demo -- learn [N]   # §5.6 — train, print discovered weight vector
+eta run --manifest-path packages/example/blackjack/eta.toml -- induce      # §5.3 — print discovered rules
+eta run --manifest-path packages/example/blackjack/eta.toml -- causal      # §5.4 — print do() EV sweeps + flip threshold
+eta run --manifest-path packages/example/blackjack/eta.toml -- learn [N]   # §5.6 — train, print discovered weight vector
                                           #   --learn=joint        (default; headline)
                                           #   --learn=supervised   (CI/debug baseline; §5.6.2)
-eta run -p blackjack_demo -- chart       # §5.7 — print strategy chart per count bucket
-eta run -p blackjack_demo -- maxims      # §5.8 — print induced basic-strategy rules
+eta run --manifest-path packages/example/blackjack/eta.toml -- chart       # §5.7 — print strategy chart per count bucket
+eta run --manifest-path packages/example/blackjack/eta.toml -- maxims      # §5.8 — print induced basic-strategy rules
                                           #   --maxims=ilp         (default)
                                           #   --maxims=templates   (fallback; §5.8.3)
-eta run -p blackjack_demo -- all         # runs the full pipeline in order
+eta run --manifest-path packages/example/blackjack/eta.toml -- all         # runs the full pipeline in order
 ```
 
 Common flags: `--seed <n>`, `--debug-trace <path>` (writes the
@@ -944,7 +956,7 @@ acceptance test regresses).
 
 ## 7) Testing strategy
 
-1. **Unit (library)**:
+1. **Unit (app modules)**:
    - `shoe`: deal determinism per seed; soft-ace totals.
    - `rules`: bust/blackjack/dealer-policy edge cases.
    - `induction`: induced rules equivalent to hand-written over fixed trace.
@@ -954,7 +966,7 @@ acceptance test regresses).
    - `strategy`: snapshot of chart at `count=0` matches a checked-in fixture.
    - `maxims`: induced top-N rule list contains the §5.8 acceptance
      clauses; snapshot of the printed list is stable.
-2. **App smoke**: `eta run -p blackjack_demo -- all --seed 42` exits 0
+2. **App smoke**: `eta run --manifest-path packages/example/blackjack/eta.toml -- all --seed 42` exits 0
    and prints the expected section headers.
 3. **CI stability**: default path is deterministic (fixed seeds/config),
    and tolerance thresholds are explicit in tests.
@@ -966,16 +978,15 @@ acceptance test regresses).
 Mirrors [Package Commands](../guide/packages.md):
 
 ```console
-cd demo/blackjack
-eta test --workspace
-eta build --workspace
-eta run -p blackjack_demo -- all --seed 42
-eta tree --workspace
+cd packages/example/blackjack
+eta test
+eta build
+eta run --manifest-path packages/example/blackjack/eta.toml -- all --seed 42
+eta tree
 ```
 
-Artifacts land under the shared workspace layout
-`.eta/target/<profile>/<member-name>/`.
-No registry, no native sidecars. The demo is workspace-native (see §11).
+Artifacts land under the package layout `.eta/target/<profile>/`.
+No registry publication is required. Sidecars are optional and may be used when they materially improve this app's workflow.
 
 ---
 
@@ -983,13 +994,14 @@ No registry, no native sidecars. The demo is workspace-native (see §11).
 
 ### B0 — Skeleton and packaging
 
-1. add workspace root manifest at `demo/blackjack/eta.toml`,
-2. `eta new` both packages, wire `eta add blackjack --path ../blackjack`,
-3. `hello world` end-to-end build/run/test passes,
-4. README stub linking to this plan.
+1. scaffold `packages/example/blackjack/` as a standalone app package,
+2. split app into `blackjack_app.eta`, `blackjack_pipeline.eta`,
+   and `blackjack_report.eta`,
+3. wire `tests/`, `README.md`, and notebook placeholder,
+4. verify package-local build/run/test path.
 
-Gate: workspace-root commands (`eta test --workspace`,
-`eta run -p blackjack_demo -- all --seed 42`) work.
+Gate: package commands (`eta test`, `eta build`,
+`eta run --manifest-path packages/example/blackjack/eta.toml -- all --seed 42`) work.
 
 ### B1 — Shoe + rules (hand-written)
 
@@ -1054,9 +1066,10 @@ Gate: maxim list contains the documented clauses; snapshot stable.
 1. subcommand UX, `--seed`,
 2. demo README with copy-paste run instructions,
 3. README/TLDR/next-steps cross-links,
-4. optional notebook wrapper under `demo/blackjack/notebooks/`.
+4. required notebook `cookbook/notebooks/blackjack-app.ipynb` with the
+   guided-tour posture and high-level function calls.
 
-Gate: `eta run -p blackjack_demo -- all --seed 42` produces the documented output.
+Gate: `eta run --manifest-path packages/example/blackjack/eta.toml -- all --seed 42` produces the documented output.
 
 ### B8 — v1.5: extend action set to `{double, split}`
 
@@ -1147,23 +1160,18 @@ its minimal form.
 
 ---
 
-## 11) Workspace mode (current)
+## 11) Packaging mode (current)
 
-This demo is expected to use [workspace mode](./workspace_plan.md) from day one.
-The root manifest is part of the planned layout:
-
-```toml
-# demo/blackjack/eta.toml
-[workspace]
-members = ["blackjack", "blackjack-demo"]
-default-members = ["blackjack-demo"]
-```
+This plan targets a standalone package app at
+`packages/example/blackjack/`.
 
 Command selection contract:
 
-1. use `--workspace` for aggregate commands (`build`, `test`, `tree`),
-2. use `-p/--package` for single-target commands (`run`, `add`, `remove`,
-   `install`) when targeting a non-default member.
+1. package-local default: run commands from `packages/example/blackjack/`,
+2. repo-root explicit: use `--manifest-path packages/example/blackjack/eta.toml`
+   for `run`, `build`, `test`, and `tree`,
+3. optional sidecars are permitted, but README prerequisites and run path must
+   remain explicit and reproducible.
 
 ---
 
@@ -1175,16 +1183,20 @@ The plan has two explicit completion levels:
 
 v1 (action set `{hit, stand}`) is complete when:
 
-1. workspace-root `eta test --workspace` is green,
-2. workspace-root `eta build --workspace` succeeds and
-   `eta run -p blackjack_demo -- all --seed 42` exits 0,
+1. package-local `eta test` is green,
+2. package-local `eta build` succeeds and
+   `eta run --manifest-path packages/example/blackjack/eta.toml -- all --seed 42` exits 0,
 3. induced rules are equivalent to hand-written rules on the trace fixture,
 4. causal `do()` sweep shows the documented action flip,
 5. learned weight vector matches Hi-Lo within cosine ≥ 0.95,
 6. strategy chart snapshot is stable,
 7. maxim induction satisfies the **v1 subset** in §5.8.2
    (hard-total H/S rows + count-conditional deviation),
-8. README, TLDR, and next-steps reference the demo.
+8. README, TLDR, and next-steps reference the demo,
+9. `packages/example/blackjack/README.md` satisfies the README contract in
+   section 4.2,
+10. `cookbook/notebooks/blackjack-app.ipynb` exists and follows the posture and
+    section outline in section 4.2.
 
 ### 12.2 v1.5 extension complete
 

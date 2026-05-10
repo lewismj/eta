@@ -1,0 +1,155 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import "../../styles/global.css";
+import fs from "node:fs";
+import path from "node:path";
+
+// ── Glob every README.md under packages/ at build time ───────────────────────
+// Path is relative from this file: site/src/pages/packages/ → ../../../../ → repo root
+export async function getStaticPaths() {
+  // helpers defined inline so they are available in the compiled getStaticPaths bundle
+  function tomlField(src: string, key: string): string | null {
+    const m = src.match(new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, "m"));
+    return m ? m[1] : null;
+  }
+  function parseMeta(src: string) {
+    let kind: string | null = null;
+    const nativeIdx = src.search(/^\[native\]/m);
+    if (nativeIdx !== -1) {
+      const k = src.slice(nativeIdx).match(/^kind\s*=\s*"([^"]*)"/m);
+      kind = k ? k[1] : null;
+    }
+    return {
+      name:    tomlField(src, "name"),
+      version: tomlField(src, "version"),
+      license: tomlField(src, "license"),
+      kind:    kind === "sidecar" ? "Native sidecar" : (kind ?? "Pure Eta"),
+      abi:     tomlField(src, "abi"),
+    };
+  }
+  function findTomls(dir: string, depth = 0): string[] {
+    if (depth > 6) return [];
+    const out: string[] = [];
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fp = path.join(dir, e.name);
+      if (e.isDirectory()) out.push(...findTomls(fp, depth + 1));
+      else if (e.name === "eta.toml") out.push(fp);
+    }
+    return out;
+  }
+
+  const repoRoot = path.resolve(process.cwd(), "..");
+  const packagesDir = path.join(repoRoot, "packages");
+
+  const readmeGlobs = import.meta.glob("../../../../packages/**/README.md");
+
+  const paths = [];
+  for (const tomlPath of findTomls(packagesDir)) {
+    const pkgDir = path.dirname(tomlPath);
+    const readmePath = path.join(pkgDir, "README.md");
+    if (!fs.existsSync(readmePath)) continue;
+
+    const tomlSrc = fs.readFileSync(tomlPath, "utf8");
+    const meta = parseMeta(tomlSrc);
+    if (!meta.name) continue;
+
+    // Compute the glob key: relative from this file (site/src/pages/packages/) to the README
+    const relFromRoot = path.relative(repoRoot, readmePath).replace(/\\/g, "/");
+    const globKey = `../../../../${relFromRoot}`;
+    const importer = readmeGlobs[globKey];
+    if (!importer) continue;
+
+    const relPath = path.relative(repoRoot, pkgDir).replace(/\\/g, "/");
+    const isStdlib = relPath.startsWith("packages/stdlib");
+
+    paths.push({
+      params: { pkg: meta.name },
+      props: { importer, meta, relPath, isStdlib },
+    });
+  }
+
+  return paths;
+}
+
+const { importer, meta, relPath, isStdlib } = Astro.props as any;
+const mod = await (importer as () => Promise<any>)();
+const { Content, getHeadings } = mod;
+const headings = getHeadings ? getHeadings() : [];
+
+const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
+
+const githubHref = `https://github.com/lewismj/eta/tree/main/${relPath}`;
+const kindLabel  = meta.kind ?? "Pure Eta";
+---
+
+<BaseLayout title={meta.name} description={`${meta.name} — Eta package`}>
+  <Header />
+
+  <div style="max-width: 860px; margin: 0 auto; padding: 48px 24px 0;">
+    <!-- Breadcrumb -->
+    <p style="font-size:0.85rem; color:var(--muted); margin-bottom:24px;">
+      <a href={`${base}packages/`} style="color:var(--muted); text-decoration:underline; text-decoration-color:var(--line);">
+        Packages
+      </a>
+      {" "}/{" "}
+      <span>{meta.name}</span>
+    </p>
+
+    <!-- Package header -->
+    <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
+      <span style="font-family:var(--font-mono); font-size:1.3rem; font-weight:700; color:var(--fg);">
+        {meta.name}
+      </span>
+      <span style="font-family:var(--font-mono); font-size:0.85rem; color:var(--muted);">
+        v{meta.version}
+      </span>
+      <span style="font-family:var(--font-display); font-size:0.72rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:2px 10px;">
+        {kindLabel}
+      </span>
+      {isStdlib && (
+        <span style="font-family:var(--font-display); font-size:0.72rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent-3); border:1px solid var(--accent-3); border-radius:999px; padding:2px 10px;">
+          stdlib
+        </span>
+      )}
+      {meta.abi && (
+        <span style="font-family:var(--font-mono); font-size:0.75rem; color:var(--muted);">
+          {meta.abi}
+        </span>
+      )}
+      {meta.license && (
+        <span style="font-family:var(--font-mono); font-size:0.75rem; color:var(--muted);">
+          {meta.license}
+        </span>
+      )}
+    </div>
+
+    <div style="border-bottom:1px solid var(--line); margin: 24px 0 32px;"></div>
+  </div>
+
+  <!-- README content -->
+  <div style="max-width: 860px; margin: 0 auto; padding: 0 24px 24px;">
+    <article class="docs-article">
+      <Content />
+    </article>
+  </div>
+
+  <!-- Footer links -->
+  <div style="max-width: 860px; margin: 0 auto; padding: 24px 24px 80px; border-top: 1px solid var(--line);">
+    <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
+      <a href={`${base}packages/`}
+         style="font-size:0.875rem; font-weight:600; color:var(--muted); text-decoration:underline; text-decoration-color:var(--line);">
+        ← All packages
+      </a>
+      <a href={githubHref} target="_blank" rel="noopener noreferrer"
+         style="font-size:0.875rem; font-weight:600; color:var(--fg); text-decoration:underline; text-decoration-color:var(--line);">
+        View source on GitHub →
+      </a>
+    </div>
+  </div>
+
+  <Footer />
+</BaseLayout>
+
+

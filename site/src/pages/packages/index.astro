@@ -113,7 +113,8 @@ const allPackages = findTomls(packagesDir).map((tomlPath) => {
     title:       title ?? meta.name ?? relPath,
     description: description ?? "",
     module:      findModule(pkgDir),
-    href:        `https://github.com/lewismj/eta/tree/main/${relPath}`,
+    href:        `${base}packages/${meta.name}/`,
+    githubHref:  `https://github.com/lewismj/eta/tree/main/${relPath}`,
     isStdlib,
   };
 });
@@ -168,9 +169,9 @@ const communityPkgs = allPackages.filter((p) => !p.isStdlib);
         <p style="color:var(--muted); font-size:0.95rem; margin-bottom:16px; max-width:700px;">
           {pkg.description || pkg.title}
         </p>
-        <a href={pkg.href} target="_blank" rel="noopener noreferrer"
+        <a href={pkg.href}
            style="font-size:0.875rem; font-weight:600; color:var(--fg); text-decoration:underline; text-decoration-color:var(--line);">
-          View on GitHub →
+          View package →
         </a>
       </div>
     ))}
@@ -202,9 +203,9 @@ const communityPkgs = allPackages.filter((p) => !p.isStdlib);
         <p style="color:var(--muted); font-size:0.95rem; margin-bottom:16px; max-width:700px;">
           {pkg.description || pkg.title}
         </p>
-        <a href={pkg.href} target="_blank" rel="noopener noreferrer"
+        <a href={pkg.href}
            style="font-size:0.875rem; font-weight:600; color:var(--fg); text-decoration:underline; text-decoration-color:var(--line);">
-          View on GitHub →
+          View package →
         </a>
       </div>
     ))}
