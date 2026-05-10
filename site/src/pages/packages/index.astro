@@ -1,72 +1,215 @@
-b---
+---
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import Header from "../../components/Header.astro";
 import Footer from "../../components/Footer.astro";
-import Card from "../../components/Card.astro";
-import CardGrid from "../../components/CardGrid.astro";
 import "../../styles/global.css";
+import fs from "node:fs";
+import path from "node:path";
 
 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
 
-const packages = [
-  {
-    title: "LibTorch — Neural Networks",
-    body: "LibTorch tensor operations and autograd. ABI: eta-native-v1.",
-    href: "https://github.com/lewismj/eta/tree/main/packages/stdlib/native/torch",
-    linkLabel: "std.torch",
-  },
-  {
-    title: "NNG — Actor Messaging",
-    body: "nanomsg-next-gen messaging — pub/sub, push/pull, request/reply.",
-    href: "https://github.com/lewismj/eta/tree/main/packages/stdlib/native/nng",
-    linkLabel: "std.net",
-  },
-  {
-    title: "Eigen — Statistics & Linear Algebra",
-    body: "Eigen-backed statistics and linear algebra primitives.",
-    href: "https://github.com/lewismj/eta/tree/main/packages/stdlib/native/stats",
-    linkLabel: "std.stats",
-  },
-  {
-    title: "spdlog — Structured Logging",
-    body: "spdlog-backed structured logging. Reference migration example.",
-    href: "https://github.com/lewismj/eta/tree/main/packages/stdlib/native/log",
-    linkLabel: "std.log",
-  },
-];
+// process.cwd() is the site/ directory during `astro build` / `astro dev`.
+// The repo root is one level up.
+const repoRoot = path.resolve(process.cwd(), "..");
+const packagesDir = path.join(repoRoot, "packages");
 
-const community = [
-  {
-    title: "LightGBM — Gradient Boosted Trees",
-    body: "LightGBM gradient-boosted trees via the ml.lightgbm module. Supports dataset-from-list, dataset-from-facttable, train!, predict, eval, save/load, and feature-importance. Pinned to LightGBM v4.6.0.",
-    href: "https://github.com/lewismj/eta/tree/main/packages/ml/native/lightgbm",
-    linkLabel: "ml.lightgbm",
-  },
-];
+// ── TOML helpers (handles only the simple key = "value" patterns we need) ──
+function tomlField(src, key) {
+  const m = src.match(new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, "m"));
+  return m ? m[1] : null;
+}
+
+function parseMeta(src) {
+  let kind = null;
+  const nativeIdx = src.search(/^\[native\]/m);
+  if (nativeIdx !== -1) {
+    const k = src.slice(nativeIdx).match(/^kind\s*=\s*"([^"]*)"/m);
+    kind = k ? k[1] : null;
+  }
+  return {
+    name:    tomlField(src, "name"),
+    version: tomlField(src, "version"),
+    license: tomlField(src, "license"),
+    kind,
+    abi:     tomlField(src, "abi"),
+  };
+}
+
+// ── README helpers ──────────────────────────────────────────────────────────
+function parseReadme(md) {
+  const lines = md.split("\n");
+  let title = null;
+  const descLines = [];
+  let pastTitle = false;
+  let inDesc = false;
+  for (const line of lines) {
+    if (!title && line.startsWith("# ")) {
+      title = line.slice(2).trim();
+      pastTitle = true;
+      continue;
+    }
+    if (!pastTitle) continue;
+    if (!inDesc) {
+      if (line.trim() === "") continue;
+      if (line.startsWith("#") || line.match(/^\s*[-*]|\d+\./)) break;
+      inDesc = true;
+    } else {
+      if (line.trim() === "" || line.startsWith("#")) break;
+    }
+    descLines.push(line.trim());
+  }
+  return { title, description: descLines.join(" ") };
+}
+
+// ── Find the primary module name from .eta sources ──────────────────────────
+function findModule(pkgDir) {
+  const srcDir = path.join(pkgDir, "src");
+  if (!fs.existsSync(srcDir)) return null;
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fp = path.join(dir, e.name);
+      if (e.isDirectory()) { const r = walk(fp); if (r) return r; }
+      else if (e.name.endsWith(".eta")) {
+        const m = fs.readFileSync(fp, "utf8").match(/\(module\s+([\w.]+)/);
+        if (m) return m[1];
+      }
+    }
+    return null;
+  };
+  return walk(srcDir);
+}
+
+// ── Recursively locate all eta.toml files ───────────────────────────────────
+function findTomls(dir, depth = 0) {
+  if (depth > 6) return [];
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fp = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...findTomls(fp, depth + 1));
+    else if (e.name === "eta.toml") out.push(fp);
+  }
+  return out;
+}
+
+// ── Build package list ───────────────────────────────────────────────────────
+const allPackages = findTomls(packagesDir).map((tomlPath) => {
+  const pkgDir  = path.dirname(tomlPath);
+  const relPath = path.relative(repoRoot, pkgDir).replace(/\\/g, "/");
+  const isStdlib = relPath.startsWith("packages/stdlib");
+
+  const meta = parseMeta(fs.readFileSync(tomlPath, "utf8"));
+
+  const readmePath = path.join(pkgDir, "README.md");
+  const { title, description } = fs.existsSync(readmePath)
+    ? parseReadme(fs.readFileSync(readmePath, "utf8"))
+    : { title: meta.name ?? relPath, description: "" };
+
+  return {
+    name:        meta.name ?? relPath,
+    version:     meta.version ?? "?",
+    license:     meta.license ?? "MIT",
+    kind:        meta.kind === "sidecar" ? "Native sidecar" : (meta.kind ?? "Pure Eta"),
+    abi:         meta.abi,
+    title:       title ?? meta.name ?? relPath,
+    description: description ?? "",
+    module:      findModule(pkgDir),
+    href:        `https://github.com/lewismj/eta/tree/main/${relPath}`,
+    isStdlib,
+  };
+});
+
+const stdlibPkgs    = allPackages.filter((p) =>  p.isStdlib);
+const communityPkgs = allPackages.filter((p) => !p.isStdlib);
 ---
 
 <BaseLayout title="Packages" description="Eta packages and native sidecar registry.">
   <Header />
+
   <div style="max-width: 1120px; margin: 0 auto; padding: 56px 24px 0;">
     <p class="section-label">Packages</p>
     <h1 style="font-family: var(--font-display); font-size: clamp(2.5rem,6vw,4.5rem); font-weight:800; letter-spacing:-0.04em; line-height:1; margin-bottom:16px;">
       Native sidecars &amp; packages.
     </h1>
-    <p style="color: var(--muted); font-size:1.1rem; max-width:600px; margin-bottom:0;">
+    <p style="color: var(--muted); font-size:1.1rem; max-width:640px; margin-bottom:48px;">
       Package-managed native extensions for Eta — checksummed, triple-selected,
       and loaded through the <code>eta-native-v1</code> ABI.
+      Discovered automatically from <code>packages/</code> in the repository.
     </p>
   </div>
-  <CardGrid label="Packages used by the Standard Library.">
-    {packages.map((p) => (
-      <Card title={p.title} body={p.body} href={p.href} linkLabel={p.linkLabel} />
+
+  <!-- Standard Library Sidecars -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 24px 16px;">
+    <p class="section-label">Standard Library</p>
+  </div>
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 24px 48px;">
+    {stdlibPkgs.map((pkg) => (
+      <div style="border:1px solid var(--line); border-radius:18px; padding:28px 32px; margin-bottom:20px; background:var(--card);">
+        <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
+          <span style="font-family:var(--font-mono); font-size:1.05rem; font-weight:700; color:var(--fg);">
+            {pkg.name}
+          </span>
+          <span style="font-family:var(--font-mono); font-size:0.8rem; color:var(--muted);">
+            v{pkg.version}
+          </span>
+          <span style="font-family:var(--font-display); font-size:0.72rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:2px 10px;">
+            {pkg.kind}
+          </span>
+          {pkg.module && (
+            <span style="font-family:var(--font-mono); font-size:0.8rem; color:var(--accent-2);">
+              {pkg.module}
+            </span>
+          )}
+          {pkg.abi && (
+            <span style="font-family:var(--font-mono); font-size:0.75rem; color:var(--muted);">
+              {pkg.abi}
+            </span>
+          )}
+        </div>
+        <p style="color:var(--muted); font-size:0.95rem; margin-bottom:16px; max-width:700px;">
+          {pkg.description || pkg.title}
+        </p>
+        <a href={pkg.href} target="_blank" rel="noopener noreferrer"
+           style="font-size:0.875rem; font-weight:600; color:var(--fg); text-decoration:underline; text-decoration-color:var(--line);">
+          View on GitHub →
+        </a>
+      </div>
     ))}
-  </CardGrid>
-  <CardGrid label="Available Packages">
-    {community.map((p) => (
-      <Card title={p.title} body={p.body} href={p.href} linkLabel={p.linkLabel} />
+  </div>
+
+  <!-- Community / External Packages -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 24px 16px;">
+    <p class="section-label">Available Packages</p>
+  </div>
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 24px 80px;">
+    {communityPkgs.map((pkg) => (
+      <div style="border:1px solid var(--line); border-radius:18px; padding:28px 32px; margin-bottom:20px; background:var(--card);">
+        <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
+          <span style="font-family:var(--font-mono); font-size:1.05rem; font-weight:700; color:var(--fg);">
+            {pkg.name}
+          </span>
+          <span style="font-family:var(--font-mono); font-size:0.8rem; color:var(--muted);">
+            v{pkg.version}
+          </span>
+          <span style="font-family:var(--font-display); font-size:0.72rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent); border:1px solid var(--accent); border-radius:999px; padding:2px 10px;">
+            {pkg.kind}
+          </span>
+          {pkg.module && (
+            <span style="font-family:var(--font-mono); font-size:0.8rem; color:var(--accent-2);">
+              {pkg.module}
+            </span>
+          )}
+        </div>
+        <p style="color:var(--muted); font-size:0.95rem; margin-bottom:16px; max-width:700px;">
+          {pkg.description || pkg.title}
+        </p>
+        <a href={pkg.href} target="_blank" rel="noopener noreferrer"
+           style="font-size:0.875rem; font-weight:600; color:var(--fg); text-decoration:underline; text-decoration-color:var(--line);">
+          View on GitHub →
+        </a>
+      </div>
     ))}
-  </CardGrid>
+  </div>
+
   <Footer />
 </BaseLayout>
 

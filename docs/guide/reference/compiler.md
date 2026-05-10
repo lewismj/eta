@@ -81,16 +81,6 @@ flowchart LR
     SEM --> OPT["Optimization\nPasses  (-O)"]
     OPT --> EMT["Emitter"]
     EMT --> SER["Serialize\n(.etac)"]
-
-    style SRC fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style LEX fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style PAR fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style EXP fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style LNK fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style SEM fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style OPT fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style EMT fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style SER fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
 When `etai` is given a `.etac` file it takes the **fast-load path** —
@@ -100,10 +90,6 @@ deserializing the function registry directly into the VM:
 flowchart LR
     ETAC[".etac file"] --> DES["Deserialize"]
     DES --> VM["VM\nExecution"]
-
-    style ETAC fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style DES  fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style VM   fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
 ---

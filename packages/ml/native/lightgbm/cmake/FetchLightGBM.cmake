@@ -16,7 +16,18 @@ function(eta_lightgbm_fetch)
         GIT_SHALLOW    ON
     )
 
+    # Upstream LightGBM hard-codes install destinations using
+    # `${CMAKE_INSTALL_PREFIX}` in install() DESTINATION paths, so `cmake --install --prefix`
+    # cannot relocate those entries. Route those upstream install destinations into
+    # the build tree to avoid polluting system prefixes in Eta super-build installs.
+    set(_eta_lightgbm_install_prefix "${CMAKE_INSTALL_PREFIX}")
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/_deps/lightgbm-install" CACHE PATH
+        "Install path prefix, prepended onto install directories."
+        FORCE)
     FetchContent_MakeAvailable(lightgbm)
+    set(CMAKE_INSTALL_PREFIX "${_eta_lightgbm_install_prefix}" CACHE PATH
+        "Install path prefix, prepended onto install directories."
+        FORCE)
 
     set(ETA_LIGHTGBM_SOURCE_DIR "${lightgbm_SOURCE_DIR}" PARENT_SCOPE)
     set(ETA_LIGHTGBM_BINARY_DIR "${lightgbm_BINARY_DIR}" PARENT_SCOPE)

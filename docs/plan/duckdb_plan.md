@@ -51,11 +51,11 @@ packages/
         src/
           db/duckdb.eta             # Eta module surface
           eta/duckdb/...            # native extension entry + primitives
-        native/
-          amd64/libs/eta_duckdb.dll
-          amd64/libs/libeta_duckdb.so
-          amd64/libs/libeta_duckdb.dylib
-          arm64/libs/libeta_duckdb.dylib
+        libs/
+          amd64/eta_duckdb.dll
+          amd64/libeta_duckdb.so
+          amd64/libeta_duckdb.dylib
+          arm64/libeta_duckdb.dylib
         tests/
           unit/...
           eta/...
@@ -206,7 +206,7 @@ Gate:
 ## D1 - Standalone sidecar build
 
 1. Add package-local `CMakeLists.txt` and host staging helpers.
-2. Build per host platform into `native/<arch>/libs/...`.
+2. Build per host platform into `libs/<arch>/...`.
 3. Compute and write target checksums for `[[native.targets]]`.
 
 Implemented in this repo snapshot:

@@ -46,12 +46,6 @@ flowchart TD
     HEAP["GC Heap\n(mark_sweep_gc.h)"]
 
     ETA --> STD --> PRIM --> TYPE --> HEAP
-
-    style ETA  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style STD  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style PRIM fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style TYPE fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style HEAP fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
 ```
 
 ---

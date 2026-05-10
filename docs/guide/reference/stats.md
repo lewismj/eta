@@ -292,14 +292,6 @@ flowchart TD
     EX --> EG
     SM --> EG
     EX -.->|"polymorphic:\nlists, vectors,\nfact-table cols"| FT
-
-    style SL  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style CP  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style SP  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style EX  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style SM  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style EG  fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style FT  fill:#0f3460,stroke:#56d364,color:#c9d1d9
 ```
 
 All statistics are exposed through the single **`std.stats`** Eta module,

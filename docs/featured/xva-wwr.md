@@ -224,17 +224,6 @@ flowchart TD
     S6 --> S7
     S5 -. "same tape" .-> S8
     S7 --> S9
-
-    style S1  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style S2  fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style S2A fill:#1a1a2e,stroke:#bc8cff,color:#c9d1d9
-    style S3  fill:#1a1a2e,stroke:#79c0ff,color:#c9d1d9
-    style S4  fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style S5  fill:#0f3460,stroke:#f78166,color:#c9d1d9
-    style S6  fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style S7  fill:#533483,stroke:#f0e68c,color:#c9d1d9
-    style S8  fill:#1a1a2e,stroke:#f78166,color:#c9d1d9
-    style S9  fill:#16213e,stroke:#f0e68c,color:#c9d1d9
 ```
 
 The pipeline is acyclic at the stage level. Each layer is correct in

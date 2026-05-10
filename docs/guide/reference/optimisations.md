@@ -273,12 +273,6 @@ flowchart LR
     end
 
     OPT -.-> CF
-
-    style SEM fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style OPT fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style EMT fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style CF  fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style DCE fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
 ```
 
 ```console

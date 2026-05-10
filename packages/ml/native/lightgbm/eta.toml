@@ -14,20 +14,20 @@ entry = "eta_register_lgbm_extension_v1"
 
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
-artifact = "native/amd64/libs/eta_lightgbm.dll"
-sha256 = "59307c28bf5904d0232feeea293425d6f5045137ae7e3704aefe70a5e92f323d"
+artifact = "libs/amd64/eta_lightgbm.dll"
+sha256 = "3676167ad86b5d63d0b8e46f45d6d42d672f6c29ca25cb7ae91ca89d52a8ca9d"
 
 [[native.targets]]
 triple = "x86_64-unknown-linux-gnu"
-artifact = "native/amd64/libs/libeta_lightgbm.so"
+artifact = "libs/amd64/libeta_lightgbm.so"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "x86_64-apple-darwin"
-artifact = "native/amd64/libs/libeta_lightgbm.dylib"
+artifact = "libs/amd64/libeta_lightgbm.dylib"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "aarch64-apple-darwin"
-artifact = "native/arm64/libs/libeta_lightgbm.dylib"
+artifact = "libs/arm64/libeta_lightgbm.dylib"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

@@ -152,17 +152,6 @@ flowchart TD
     S6 -->|"baseline strategy"| S8
     S7 -->|"scenarios"| S9
     S8 -->|"robustness report"| S9
-
-    style S0 fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style S1 fill:#2d2d2d,stroke:#58a6ff,color:#c9d1d9
-    style S2 fill:#1a1a2e,stroke:#58a6ff,color:#c9d1d9
-    style S3 fill:#16213e,stroke:#79c0ff,color:#c9d1d9
-    style S4 fill:#0f3460,stroke:#56d364,color:#c9d1d9
-    style S5 fill:#0f3460,stroke:#f78166,color:#c9d1d9
-    style S6 fill:#533483,stroke:#f0e68c,color:#c9d1d9
-    style S7 fill:#1a1a2e,stroke:#79c0ff,color:#c9d1d9
-    style S8 fill:#16213e,stroke:#f78166,color:#c9d1d9
-    style S9 fill:#533483,stroke:#56d364,color:#c9d1d9
 ```
 
 The pipeline is acyclic at the stage level. Each layer is correct in

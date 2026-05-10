@@ -19,7 +19,7 @@ Host sidecar staging helper is in `cmake/StageDuckDBSidecar.cmake`.
 
 - D1 standalone package build/test wiring is implemented.
 - Runtime primitive registration is intentionally empty in this scaffold.
-- Host sidecar artifacts are staged under `native/<arch>/libs/...` and host
+- Host sidecar artifacts are staged under `libs/<arch>/...` and host
   `sha256` is updated in `eta.toml`.
 
 ## Eta API
@@ -39,7 +39,13 @@ cmake --build out/duckdb-msvc --config Release
 ctest --test-dir out/duckdb-msvc -C Release --output-on-failure
 ```
 
-To stage the host-built sidecar into `native/<arch>/libs/` and update the host
+Top-level `eta_all` integration:
+
+- `cmake --build <repo-build-dir> --target eta_all` builds `eta_duckdb`.
+- It also stages the host sidecar into `libs/<arch>/...` and refreshes the host
+  `sha256` in `eta.toml`.
+
+To stage the host-built sidecar into `libs/<arch>/` and update the host
 `sha256` row in `eta.toml`:
 
 ```powershell

@@ -14,20 +14,20 @@ entry = "eta_register_duckdb_extension_v1"
 
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
-artifact = "native/amd64/libs/eta_duckdb.dll"
-sha256 = "adcaef5b8e9c72d56ba1308142eac0a916cf97a070d4f94e56933ab26f39a7db"
+artifact = "libs/amd64/eta_duckdb.dll"
+sha256 = "bb6a7d3b1eef07a8b26fe7e795584347c1b1eeacebfac7e386a42d45a41b681a"
 
 [[native.targets]]
 triple = "x86_64-unknown-linux-gnu"
-artifact = "native/amd64/libs/libeta_duckdb.so"
+artifact = "libs/amd64/libeta_duckdb.so"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "x86_64-apple-darwin"
-artifact = "native/amd64/libs/libeta_duckdb.dylib"
+artifact = "libs/amd64/libeta_duckdb.dylib"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
 [[native.targets]]
 triple = "aarch64-apple-darwin"
-artifact = "native/arm64/libs/libeta_duckdb.dylib"
+artifact = "libs/arm64/libeta_duckdb.dylib"
 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

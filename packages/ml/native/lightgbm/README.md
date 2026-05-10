@@ -11,12 +11,12 @@ It provides:
 - LightGBM C API hooks behind registered `lgbm/*` primitives
 - package-local C++ unit tests and Eta smoke tests
 
-Host sidecar artifacts are staged under `native/<arch>/libs/`:
+Host sidecar artifacts are staged under `libs/<arch>/`:
 
-- `native/amd64/libs/eta_lightgbm.dll` (Windows x86_64)
-- `native/amd64/libs/libeta_lightgbm.so` (Linux x86_64)
-- `native/amd64/libs/libeta_lightgbm.dylib` (macOS x86_64)
-- `native/arm64/libs/libeta_lightgbm.dylib` (macOS arm64)
+- `libs/amd64/eta_lightgbm.dll` (Windows x86_64)
+- `libs/amd64/libeta_lightgbm.so` (Linux x86_64)
+- `libs/amd64/libeta_lightgbm.dylib` (macOS x86_64)
+- `libs/arm64/libeta_lightgbm.dylib` (macOS arm64)
 
 The CMake fetch helper is pinned to LightGBM tag `v4.6.0`:
 `cmake/FetchLightGBM.cmake`.
@@ -116,11 +116,17 @@ cmake --build out/lightgbm-msvc --config Release
 ctest --test-dir out/lightgbm-msvc --output-on-failure
 ```
 
+Top-level `eta_all` integration:
+
+- `cmake --build <repo-build-dir> --target eta_all` builds `eta_lightgbm`.
+- It also stages the host sidecar into `libs/<arch>/...` and refreshes the host
+  `sha256` in `eta.toml`.
+
 `ETA_ETAI_EXECUTABLE` should point to a built `etai` binary.
 Depending on your local setup, you may also need to provide Boost paths
 (`Boost_DIR` / `Boost_INCLUDE_DIR`) at configure time.
 
-To stage the host-built sidecar into `native/<arch>/libs/` and update the host
+To stage the host-built sidecar into `libs/<arch>/` and update the host
 `sha256` entry in `eta.toml`:
 
 ```powershell

@@ -40,7 +40,7 @@ else()
         "Unsupported HOST_TARGET_TRIPLE architecture for test fixture: ${HOST_TARGET_TRIPLE}")
 endif()
 
-set(duckdb_libs_root "${duckdb_root}/native/${host_arch}/libs")
+set(duckdb_libs_root "${duckdb_root}/libs/${host_arch}")
 
 file(REMOVE_RECURSE "${FIXTURE_ROOT}")
 file(MAKE_DIRECTORY
@@ -75,7 +75,7 @@ entry = \"eta_register_duckdb_extension_v1\"
 
 [[native.targets]]
 triple = \"${HOST_TARGET_TRIPLE}\"
-artifact = \"native/${host_arch}/libs/${sidecar_name}\"
+artifact = \"libs/${host_arch}/${sidecar_name}\"
 sha256 = \"${sidecar_sha256}\"
 ")
 
@@ -128,7 +128,7 @@ native_id = \"eta.duckdb.sidecar\"
 native_abi = \"eta-native-v1\"
 native_entry = \"eta_register_duckdb_extension_v1\"
 native_target_triple = \"${HOST_TARGET_TRIPLE}\"
-native_artifact_relpath = \"native/${host_arch}/libs/${sidecar_name}\"
+native_artifact_relpath = \"libs/${host_arch}/${sidecar_name}\"
 native_sha256 = \"${sidecar_sha256}\"
 dependencies = []
 ")
