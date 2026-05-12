@@ -202,6 +202,13 @@ Stage 12.4 implementation notes (2026-05-12):
    - cross-platform path normalization cases,
    - stale `std.prelude` diagnostics absent.
 
+Docs + QA follow-up notes (2026-05-12):
+
+1. Added native sidecar conflict diagnostics coverage in
+   `eta/qa/test/src/native_sidecar_loader_tests.cpp` (registry conflict codes/messages)
+   and `eta/qa/test/src/native_sidecar_manager_tests.cpp`
+   (package-sidecar duplicate-extension diagnostics surfaced through manager host errors).
+
 ---
 
 ## 8. Acceptance criteria

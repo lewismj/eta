@@ -333,6 +333,65 @@ BOOST_AUTO_TEST_CASE(sidecar_loader_registers_extension_metadata_and_symbols) {
     BOOST_TEST(*owner == "eta.test.sidecar");
 }
 
+BOOST_AUTO_TEST_CASE(sidecar_loader_reports_registry_conflict_for_duplicate_extension_id) {
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(fs::is_regular_file(fixture),
+                          "missing sidecar fixture binary: " + fixture.string());
+
+    eta::native::ExtensionRegistry registry;
+    auto register_existing_extension = registry.register_extension(
+        "eta.test.sidecar", "existing", "eta-native-v1");
+    BOOST_REQUIRE(register_existing_extension.has_value());
+
+    eta::native::SidecarLoader loader(registry);
+
+    eta::native::ResolvedNativeSidecar sidecar;
+    sidecar.spec.package_name = "pkg";
+    sidecar.spec.artifact_relpath = fixture.filename();
+    sidecar.package_root = fixture.parent_path();
+    sidecar.artifact_path = fixture;
+
+    const auto loaded = loader.load(sidecar);
+    BOOST_REQUIRE(!loaded.has_value());
+    BOOST_TEST(static_cast<int>(loaded.error().code)
+               == static_cast<int>(eta::native::SidecarLoaderError::Code::RegistryConflict));
+    BOOST_TEST(loaded.error().message.find("duplicate extension id 'eta.test.sidecar'")
+               != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(sidecar_loader_reports_registry_conflict_for_duplicate_symbol_owner) {
+    const auto fixture = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(fs::is_regular_file(fixture),
+                          "missing sidecar fixture binary: " + fixture.string());
+
+    eta::native::ExtensionRegistry registry;
+    auto register_existing_extension = registry.register_extension(
+        "existing.sidecar", "existing", "eta-native-v1");
+    BOOST_REQUIRE(register_existing_extension.has_value());
+
+    eta::native::ExtensionSymbolDescriptor occupied_symbol;
+    occupied_symbol.name = "native.test.add";
+    auto register_occupied_symbol = registry.register_symbol(
+        "existing.sidecar", std::move(occupied_symbol));
+    BOOST_REQUIRE(register_occupied_symbol.has_value());
+
+    eta::native::SidecarLoader loader(registry);
+
+    eta::native::ResolvedNativeSidecar sidecar;
+    sidecar.spec.package_name = "pkg";
+    sidecar.spec.artifact_relpath = fixture.filename();
+    sidecar.package_root = fixture.parent_path();
+    sidecar.artifact_path = fixture;
+
+    const auto loaded = loader.load(sidecar);
+    BOOST_REQUIRE(!loaded.has_value());
+    BOOST_TEST(static_cast<int>(loaded.error().code)
+               == static_cast<int>(eta::native::SidecarLoaderError::Code::RegistryConflict));
+    BOOST_TEST(
+        loaded.error().message.find("duplicate symbol 'native.test.add' already owned by 'existing.sidecar'")
+        != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(sidecar_loader_registers_builtin_sidecar_entrypoints) {
     const auto fixture = sidecar_fixture_path();
     BOOST_REQUIRE_MESSAGE(fs::is_regular_file(fixture),
