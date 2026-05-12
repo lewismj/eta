@@ -8,6 +8,29 @@
 namespace eta::runtime {
 namespace {
 
+[[nodiscard]] bool is_torch_builtin(std::string_view name) {
+    return name.starts_with("torch/")
+        || name.starts_with("nn/")
+        || name.starts_with("optim/");
+}
+
+[[nodiscard]] bool is_stats_builtin(std::string_view name) {
+    return name.starts_with("%stats-");
+}
+
+[[nodiscard]] bool is_stats_sidecar_builtin(std::string_view name) {
+    return name == "%stats-mean-vec"
+        || name == "%stats-var-vec"
+        || name == "%stats-cov-matrix"
+        || name == "%stats-cor-matrix"
+        || name == "%stats-quantile-vec"
+        || name == "%stats-ols-multi";
+}
+
+[[nodiscard]] bool is_log_builtin(std::string_view name) {
+    return name.starts_with("%log-");
+}
+
 [[nodiscard]] bool is_nng_builtin(std::string_view name) {
     return name.starts_with("nng-")
         || name == "send!"
@@ -26,9 +49,7 @@ namespace {
 }
 
 [[nodiscard]] std::string category_for_builtin(std::string_view name) {
-    if (name.starts_with("torch/")
-        || name.starts_with("nn/")
-        || name.starts_with("optim/")) {
+    if (is_torch_builtin(name)) {
         return "Torch";
     }
     if (name.starts_with("%clp-")
@@ -36,8 +57,8 @@ namespace {
         || name == "%clp-prop-queue-size") {
         return "CLP";
     }
-    if (name.starts_with("%stats-")) return "Stats";
-    if (name.starts_with("%log-")) return "Log";
+    if (is_stats_builtin(name)) return "Stats";
+    if (is_log_builtin(name)) return "Log";
     if (name.starts_with("%regex-")) return "Regex";
     if (name.starts_with("%json-")) return "JSON";
     if (name.starts_with("%time-")) return "Time";
@@ -155,6 +176,14 @@ namespace {
 std::span<const BuiltinMetadata> builtin_metadata() {
     const auto& metadata = builtin_metadata_storage();
     return std::span<const BuiltinMetadata>(metadata.data(), metadata.size());
+}
+
+std::optional<std::string_view> builtin_native_sidecar_package(std::string_view name) {
+    if (is_torch_builtin(name)) return std::string_view{"eta-torch"};
+    if (is_stats_sidecar_builtin(name)) return std::string_view{"eta-stats"};
+    if (is_log_builtin(name)) return std::string_view{"eta-log"};
+    if (is_nng_builtin(name)) return std::string_view{"eta-nng"};
+    return std::nullopt;
 }
 
 std::optional<BuiltinMetadata> lookup_builtin_metadata(std::string_view name) {

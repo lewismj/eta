@@ -78,6 +78,44 @@ public:
     [[nodiscard]] const std::vector<ExtensionSpec>& specs() const { return specs_; }
     [[nodiscard]] std::size_t size() const { return specs_.size(); }
 
+    /**
+     * @brief Compute a deterministic hash over extension primitive descriptors.
+     *
+     * The hash includes each descriptor's symbol name, arity, and variadic flag
+     * in registration order. Primitive function pointers are intentionally not
+     * included so equal extension surfaces produce the same fingerprint.
+     *
+     * @return 0 when no extension primitives are registered.
+     */
+    [[nodiscard]] std::uint64_t fingerprint() const noexcept {
+        if (specs_.empty()) return 0;
+
+        constexpr std::uint64_t kFNVOffsetBasis = 14695981039346656037ull;
+        constexpr std::uint64_t kFNVPrime = 1099511628211ull;
+
+        auto mix_byte = [](std::uint64_t hash, std::uint8_t byte) noexcept {
+            hash ^= static_cast<std::uint64_t>(byte);
+            hash *= kFNVPrime;
+            return hash;
+        };
+
+        std::uint64_t hash = kFNVOffsetBasis;
+        for (const auto& spec : specs_) {
+            for (const unsigned char ch : spec.name) {
+                hash = mix_byte(hash, static_cast<std::uint8_t>(ch));
+            }
+            hash = mix_byte(hash, 0xFFu);
+            for (std::uint32_t i = 0; i < 4u; ++i) {
+                hash = mix_byte(
+                    hash,
+                    static_cast<std::uint8_t>((spec.arity >> (i * 8u)) & 0xFFu));
+            }
+            hash = mix_byte(hash, static_cast<std::uint8_t>(spec.has_rest ? 1u : 0u));
+            hash = mix_byte(hash, 0x00u);
+        }
+        return hash;
+    }
+
     /// Look up an extension primitive by name. Returns slot offset or nullopt.
     [[nodiscard]] std::optional<std::size_t> lookup(std::string_view name) const {
         for (std::size_t i = 0; i < specs_.size(); ++i) {

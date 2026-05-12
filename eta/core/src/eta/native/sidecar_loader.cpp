@@ -15,6 +15,7 @@
 #include "eta/package/lockfile.h"
 #include "eta/package/resolver.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/util/path.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -29,13 +30,6 @@ namespace eta::native {
 
 namespace {
 
-[[nodiscard]] fs::path canonicalize_path(const fs::path& path) {
-    std::error_code ec;
-    const auto canonical = fs::weakly_canonical(path, ec);
-    if (!ec) return canonical;
-    return path.lexically_normal();
-}
-
 [[nodiscard]] std::string lower_ascii(std::string value) {
     std::transform(value.begin(),
                    value.end(),
@@ -44,14 +38,6 @@ namespace {
                        return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                    });
     return value;
-}
-
-[[nodiscard]] std::string path_key(const fs::path& path) {
-    auto normalized = canonicalize_path(path).generic_string();
-#if defined(_WIN32)
-    normalized = lower_ascii(std::move(normalized));
-#endif
-    return normalized;
 }
 
 [[nodiscard]] std::expected<void, SidecarLoaderError> unexpected_with(
@@ -409,13 +395,14 @@ std::expected<std::string, SidecarLoaderError> compute_sidecar_sha256(
 }
 
 bool is_path_within(const fs::path& root, const fs::path& candidate) {
-    const auto root_key = path_key(root);
-    const auto candidate_key = path_key(candidate);
+    const auto root_key = util::canonical_path_key(root);
+    const auto candidate_key = util::canonical_path_key(candidate);
     if (candidate_key == root_key) return true;
     if (candidate_key.size() <= root_key.size()) return false;
     if (candidate_key.compare(0u, root_key.size(), root_key) != 0) return false;
-    if (!root_key.empty() && root_key.back() == '/') return true;
-    return candidate_key[root_key.size()] == '/';
+    if (!root_key.empty() && (root_key.back() == '/' || root_key.back() == '\\')) return true;
+    const char boundary = candidate_key[root_key.size()];
+    return boundary == '/' || boundary == '\\';
 }
 
 NativeLoadContextResult build_native_load_context(const fs::path& start_dir) {
@@ -435,15 +422,15 @@ NativeLoadContextResult build_native_load_context(const fs::path& start_dir) {
 
     NativeLoadContext context;
     context.context_kind = *discovery->context;
-    context.active_manifest_path = canonicalize_path(*discovery->active_manifest_path);
+    context.active_manifest_path = util::canonicalize_path(*discovery->active_manifest_path);
     context.workspace_manifest_path = discovery->workspace_manifest_path;
     if (context.workspace_manifest_path.has_value()) {
-        *context.workspace_manifest_path = canonicalize_path(*context.workspace_manifest_path);
+        *context.workspace_manifest_path = util::canonicalize_path(*context.workspace_manifest_path);
         context.lockfile_root = context.workspace_manifest_path->parent_path();
     } else {
         context.lockfile_root = context.active_manifest_path.parent_path();
     }
-    context.lockfile_root = canonicalize_path(context.lockfile_root);
+    context.lockfile_root = util::canonicalize_path(context.lockfile_root);
     context.modules_root = context.lockfile_root / ".eta" / "modules";
 
     std::optional<package::Lockfile> lockfile;
@@ -466,7 +453,7 @@ NativeLoadContextResult build_native_load_context(const fs::path& start_dir) {
 
     auto add_packages = [&](const package::ResolvedGraph& graph) {
         for (const auto& pkg : graph.packages) {
-            context.package_root_by_name[pkg.name] = canonicalize_path(pkg.package_root);
+            context.package_root_by_name[pkg.name] = util::canonicalize_path(pkg.package_root);
         }
     };
 
@@ -536,8 +523,8 @@ NativeSidecarResolutionResult resolve_native_sidecars(
             });
         }
 
-        const auto package_root = canonicalize_path(package_root_it->second);
-        const auto artifact_path = canonicalize_path(package_root / sidecar.artifact_relpath);
+        const auto package_root = util::canonicalize_path(package_root_it->second);
+        const auto artifact_path = util::canonicalize_path(package_root / sidecar.artifact_relpath);
         if (!is_path_within(package_root, artifact_path)) {
             return std::unexpected(SidecarLoaderError{
                 SidecarLoaderError::Code::ArtifactPathEscapesPackageRoot,

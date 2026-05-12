@@ -2,29 +2,20 @@
 
 #include <system_error>
 
+#include "eta/util/path.h"
+
 namespace eta::package {
-
-namespace {
-
-[[nodiscard]] fs::path canonicalize_path(const fs::path& path) {
-    std::error_code ec;
-    auto canonical = fs::weakly_canonical(path, ec);
-    if (!ec) return canonical;
-    return path.lexically_normal();
-}
-
-} // namespace
 
 ManifestDiscoveryResult discover_manifest_context(const fs::path& start_dir) {
     ManifestDiscovery discovery;
-    discovery.start_dir = canonicalize_path(start_dir);
+    discovery.start_dir = util::canonicalize_path(start_dir);
 
     fs::path cursor = discovery.start_dir;
     while (true) {
         const auto candidate = cursor / "eta.toml";
         std::error_code ec;
         if (fs::is_regular_file(candidate, ec) && !ec) {
-            const auto manifest_path = canonicalize_path(candidate);
+            const auto manifest_path = util::canonicalize_path(candidate);
             auto document = read_manifest_document(manifest_path);
             if (!document) return std::unexpected(document.error());
 
@@ -64,6 +55,34 @@ ManifestDiscoveryResult discover_manifest_context(const fs::path& start_dir) {
     }
 
     return discovery;
+}
+
+std::optional<fs::path> find_nearest_manifest_path(const fs::path& start_dir) {
+    if (auto discovered = discover_manifest_context(start_dir); discovered.has_value()) {
+        if (discovered->workspace_manifest_path.has_value()) {
+            return *discovered->workspace_manifest_path;
+        }
+        if (discovered->package_manifest_path.has_value()) {
+            return *discovered->package_manifest_path;
+        }
+        if (discovered->active_manifest_path.has_value()) {
+            return *discovered->active_manifest_path;
+        }
+    }
+
+    fs::path cursor = util::canonicalize_path(start_dir);
+    while (true) {
+        const auto candidate = cursor / "eta.toml";
+        std::error_code ec;
+        if (fs::is_regular_file(candidate, ec) && !ec) {
+            return util::canonicalize_path(candidate);
+        }
+
+        const auto parent = cursor.parent_path();
+        if (parent.empty() || parent == cursor) break;
+        cursor = parent;
+    }
+    return std::nullopt;
 }
 
 } // namespace eta::package

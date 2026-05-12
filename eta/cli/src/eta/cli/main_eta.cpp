@@ -34,6 +34,7 @@
 #include "eta/package/discovery.h"
 #include "eta/package/manifest.h"
 #include "eta/package/resolver.h"
+#include "eta/util/path.h"
 
 namespace fs = std::filesystem;
 
@@ -167,19 +168,11 @@ using CliResult = std::expected<T, std::string>;
 }
 
 [[nodiscard]] fs::path canonicalize_path(const fs::path& path) {
-    std::error_code ec;
-    auto canonical = fs::weakly_canonical(path, ec);
-    if (!ec) return canonical;
-    return path.lexically_normal();
+    return eta::util::canonicalize_path(path);
 }
 
 [[nodiscard]] std::string path_key(const fs::path& path) {
-    auto normalized = canonicalize_path(path).generic_string();
-#ifdef _WIN32
-    return lower_ascii(normalized);
-#else
-    return normalized;
-#endif
+    return eta::util::canonical_path_key(path);
 }
 
 [[nodiscard]] bool is_path_within(const fs::path& root, const fs::path& candidate) {
@@ -188,8 +181,9 @@ using CliResult = std::expected<T, std::string>;
     if (candidate_key == root_key) return true;
     if (candidate_key.size() <= root_key.size()) return false;
     if (candidate_key.compare(0u, root_key.size(), root_key) != 0) return false;
-    if (!root_key.empty() && root_key.back() == '/') return true;
-    return candidate_key[root_key.size()] == '/';
+    if (!root_key.empty() && (root_key.back() == '/' || root_key.back() == '\\')) return true;
+    const char boundary = candidate_key[root_key.size()];
+    return boundary == '/' || boundary == '\\';
 }
 
 [[nodiscard]] uint64_t fnv1a_64(std::string_view data) {
@@ -1915,18 +1909,7 @@ std::vector<fs::path> module_entries_from_graph(const ResolvedProjectState& stat
 }
 
 [[nodiscard]] fs::path resolve_self_path(const char* argv0) {
-#ifdef _WIN32
-    wchar_t buffer[4096];
-    DWORD len = GetModuleFileNameW(nullptr, buffer, static_cast<DWORD>(std::size(buffer)));
-    if (len > 0 && len < std::size(buffer)) {
-        return canonicalize_path(fs::path(buffer));
-    }
-#endif
-#if defined(__linux__)
-    std::error_code ec;
-    auto proc_self = fs::read_symlink("/proc/self/exe", ec);
-    if (!ec) return canonicalize_path(proc_self);
-#endif
+    if (auto self = eta::util::current_executable_path(); self.has_value()) return *self;
     if (argv0 != nullptr && argv0[0] != '\0') {
         return canonicalize_path(fs::absolute(fs::path(argv0)));
     }

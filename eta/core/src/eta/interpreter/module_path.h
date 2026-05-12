@@ -11,13 +11,10 @@
 #include <unordered_set>
 #include <vector>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 #include "eta/package/discovery.h"
 #include "eta/package/lockfile.h"
 #include "eta/package/resolver.h"
+#include "eta/util/path.h"
 
 namespace eta::interpreter {
 
@@ -98,8 +95,8 @@ public:
             if (raw_dir.empty()) return;
             std::error_code ec;
             if (!fs::is_directory(raw_dir, ec) || ec) return;
-            auto normalized = canonicalize_path(raw_dir);
-            if (seen.insert(canonical_key(normalized)).second) {
+            auto normalized = util::canonicalize_path(raw_dir);
+            if (seen.insert(util::canonical_path_key(normalized)).second) {
                 resolver.add_dir(std::move(normalized));
             }
         };
@@ -212,7 +209,7 @@ public:
             }
 
             if (!configured_from_context) {
-                if (auto manifest_path = find_manifest_path(discovery_start)) {
+                if (auto manifest_path = eta::package::find_nearest_manifest_path(discovery_start)) {
                     const auto project_root = manifest_path->parent_path();
                     add_package_source_root(project_root);
                     add_modules_from_lockfile(project_root);
@@ -249,19 +246,9 @@ public:
      */
     static std::optional<fs::path> bundled_stdlib_dir() {
         std::error_code ec;
-#ifdef _WIN32
-        /// Windows: use GetModuleFileName
-        wchar_t buf[4096];
-        DWORD len = GetModuleFileNameW(nullptr, buf, sizeof(buf) / sizeof(buf[0]));
-        if (len == 0 || len >= sizeof(buf) / sizeof(buf[0])) return std::nullopt;
-        fs::path exe_path(buf);
-#else
-        /// POSIX: /proc/self/exe (Linux), or argv[0] fallback
-        fs::path exe_path = fs::read_symlink("/proc/self/exe", ec);
-        if (ec) return std::nullopt;
-#endif
-        auto prefix = exe_path.parent_path().parent_path();
-        auto stdlib = prefix / "stdlib";
+        auto exe_path = util::current_executable_path();
+        if (!exe_path.has_value()) return std::nullopt;
+        auto stdlib = exe_path->parent_path().parent_path() / "stdlib";
         if (fs::is_directory(stdlib, ec)) {
             return stdlib;
         }
@@ -299,7 +286,7 @@ public:
                 : std::array<fs::path, 2>{dir / rel_etac, dir / rel_eta};
             for (const auto& candidate : candidates) {
                 if (fs::is_regular_file(candidate, ec) && !ec) {
-                    matches.push_back(canonicalize_path(candidate));
+                    matches.push_back(util::canonicalize_path(candidate));
                     break;
                 }
                 ec.clear();
@@ -325,7 +312,9 @@ public:
         for (const auto& dir : dirs_) {
             auto candidate = dir / filename;
             std::error_code ec;
-            if (fs::is_regular_file(candidate, ec) && !ec) return canonicalize_path(candidate);
+            if (fs::is_regular_file(candidate, ec) && !ec) {
+                return util::canonicalize_path(candidate);
+            }
         }
         return std::nullopt;
     }
@@ -340,39 +329,6 @@ public:
     void set_prefer_source(bool enabled) noexcept { prefer_source_ = enabled; }
 
 private:
-    [[nodiscard]] static fs::path canonicalize_path(const fs::path& path) {
-        std::error_code ec;
-        const auto canonical = fs::weakly_canonical(path, ec);
-        if (!ec) return canonical;
-        return path.lexically_normal();
-    }
-
-    [[nodiscard]] static std::string canonical_key(const fs::path& path) {
-        auto normalized = canonicalize_path(path).generic_string();
-#ifdef _WIN32
-        std::transform(normalized.begin(),
-                       normalized.end(),
-                       normalized.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-#endif
-        return normalized;
-    }
-
-    [[nodiscard]] static std::optional<fs::path> find_manifest_path(fs::path start_dir) {
-        start_dir = canonicalize_path(start_dir);
-        while (true) {
-            const auto candidate = start_dir / "eta.toml";
-            std::error_code ec;
-            if (fs::is_regular_file(candidate, ec) && !ec) {
-                return canonicalize_path(candidate);
-            }
-            const auto parent = start_dir.parent_path();
-            if (parent.empty() || parent == start_dir) break;
-            start_dir = parent;
-        }
-        return std::nullopt;
-    }
-
     std::vector<fs::path> dirs_;
     bool strict_shadow_scan_{false};
     bool prefer_source_{false};

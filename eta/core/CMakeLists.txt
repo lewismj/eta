@@ -12,6 +12,16 @@ target_include_directories(${PROJECT_NAME}
         PRIVATE ${PROJECT_SOURCE_DIR}
 )
 
+if(DEFINED ETA_SESSION_SRC_DIR)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${ETA_SESSION_SRC_DIR})
+endif()
+if(DEFINED ETA_INTERPRETER_SRC_DIR)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${ETA_INTERPRETER_SRC_DIR})
+endif()
+if(DEFINED ETA_STDLIB_NATIVE_NNG_SRC_DIR)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${ETA_STDLIB_NATIVE_NNG_SRC_DIR})
+endif()
+
 if(DEFINED ETA_GENERATED_INCLUDE_DIR)
     target_include_directories(${PROJECT_NAME} PRIVATE ${ETA_GENERATED_INCLUDE_DIR})
 endif()
@@ -20,6 +30,7 @@ endif()
 # inherit the include paths automatically.
 target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen)
 target_link_libraries(${PROJECT_NAME} PRIVATE csv::parser)
+target_link_libraries(${PROJECT_NAME} PRIVATE nng)
 
 target_sources(${PROJECT_NAME}
         PRIVATE
@@ -63,7 +74,38 @@ target_sources(${PROJECT_NAME}
         src/eta/package/resolver.cpp
         src/eta/native/extension_registry.cpp
         src/eta/native/sidecar_loader.cpp
+        src/eta/native/sidecar_manager.cpp
+        src/eta/util/path.cpp
 )
+
+if(DEFINED ETA_SESSION_SRC_DIR)
+    target_sources(${PROJECT_NAME}
+            PRIVATE
+            ${ETA_SESSION_SRC_DIR}/eta/session/driver.cpp
+            ${ETA_SESSION_SRC_DIR}/eta/session/compilation_session.cpp
+            ${ETA_SESSION_SRC_DIR}/eta/session/display_classifier.cpp
+            ${ETA_SESSION_SRC_DIR}/eta/session/eval_engine.cpp
+            ${ETA_SESSION_SRC_DIR}/eta/session/etac_loader.cpp
+            ${ETA_SESSION_SRC_DIR}/eta/session/repl_controller.cpp
+            ${ETA_SESSION_SRC_DIR}/eta/session/repl_input.cpp
+            ${ETA_SESSION_SRC_DIR}/eta/session/runtime_primitives.cpp
+            ${ETA_SESSION_SRC_DIR}/eta/session/source_file_registry.cpp
+    )
+endif()
+
+if(DEFINED ETA_INTERPRETER_SRC_DIR)
+    target_sources(${PROJECT_NAME}
+            PRIVATE
+            ${ETA_INTERPRETER_SRC_DIR}/eta/interpreter/repl_wrap.cpp
+    )
+endif()
+
+if(DEFINED ETA_STDLIB_NATIVE_NNG_SRC_DIR)
+    target_sources(${PROJECT_NAME}
+            PRIVATE
+            ${ETA_STDLIB_NATIVE_NNG_SRC_DIR}/eta/nng/session_actor_runtime.cpp
+    )
+endif()
 
 # Convex QP support is part of the required core runtime surface.
 target_compile_definitions(${PROJECT_NAME} PRIVATE ETA_CLP_QP_BACKEND=1)

@@ -161,7 +161,7 @@ private:
     /**
      * Per-thread registry.  Always contains the main thread (id == 1) once
      * the VM has been launched; gains entries for actor threads as they
-     * publish themselves through ProcessManager::ThreadDebugListener.
+     * publish themselves through the actor runtime debug listener.
      *
      * Guarded by vm_mutex_ (already serialises driver_ access).
      */

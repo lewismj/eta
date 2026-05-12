@@ -5,8 +5,10 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -22,6 +24,7 @@
 #include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/native/sidecar_loader.h"
+#include "eta/runtime/embedded_prelude.h"
 
 namespace fs = std::filesystem;
 
@@ -833,6 +836,8 @@ BOOST_AUTO_TEST_CASE(is_complete_expression_representative_inputs) {
 
     const std::vector<Probe> probes = {
         {"", true, ""},
+        {"answer", true, ""},
+        {"42", true, ""},
         {"(+ 1", false, "  "},
         {"(+ 1 2)", true, ""},
         {"\"unterminated", false, ""},
@@ -845,7 +850,7 @@ BOOST_AUTO_TEST_CASE(is_complete_expression_representative_inputs) {
         {"(+ 1 2)\n.continue", false, "  "},
         {"(+ 1 2)\n  ; trailing comment", true, ""},
     };
-    BOOST_REQUIRE_EQUAL(probes.size(), 12u);
+    BOOST_REQUIRE_EQUAL(probes.size(), 14u);
 
     for (const auto& probe : probes) {
         std::string indent;
@@ -854,6 +859,95 @@ BOOST_AUTO_TEST_CASE(is_complete_expression_representative_inputs) {
         if (!probe.complete) {
             BOOST_CHECK_MESSAGE(indent == probe.indent, "input: " << probe.input);
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(file_id_for_path_normalizes_windows_case_and_separator_variants) {
+#if defined(_WIN32)
+    ScopedTempDir temp;
+    const auto source_path = temp.path / "MiXeD" / "CaseFile.eta";
+    fs::create_directories(source_path.parent_path());
+    {
+        std::ofstream out(source_path, std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module case.file)\n";
+    }
+
+    eta::session::Driver driver(make_resolver());
+    const auto file_id = driver.ensure_file_id(source_path);
+    BOOST_REQUIRE(file_id != 0u);
+
+    const auto alias_path =
+        source_path.parent_path() / "." / ".." / source_path.parent_path().filename()
+        / source_path.filename();
+    BOOST_TEST(driver.ensure_file_id(alias_path) == file_id);
+
+    const auto forward = source_path.generic_string();
+    auto backward = forward;
+    std::replace(backward.begin(), backward.end(), '/', '\\');
+    auto upper = backward;
+    std::transform(
+        upper.begin(),
+        upper.end(),
+        upper.begin(),
+        [](unsigned char c) {
+            return static_cast<char>(std::toupper(c));
+        });
+
+    BOOST_TEST(driver.file_id_for_path(forward) == file_id);
+    BOOST_TEST(driver.file_id_for_path(backward) == file_id);
+    BOOST_TEST(driver.file_id_for_path(upper) == file_id);
+#else
+    BOOST_TEST_MESSAGE("windows-only file-id canonicalization behavior");
+#endif
+}
+
+BOOST_AUTO_TEST_CASE(eval_string_splits_top_level_forms_with_comments_and_bare_atoms) {
+    eta::session::Driver driver(make_resolver());
+
+    std::string out;
+    const bool ok = driver.eval_string(
+        "(define seed 40)\n"
+        "(define marker \"semi;inside\")\n"
+        "; comment between forms\n"
+        "seed\n"
+        "(+ seed 2)\n",
+        out);
+    BOOST_REQUIRE_MESSAGE(ok, "eval_string failed for multi-form input");
+    BOOST_TEST(out == "42");
+
+    std::string marker_out;
+    BOOST_REQUIRE(driver.eval_string("marker", marker_out));
+    BOOST_TEST(marker_out == "\"semi;inside\"");
+}
+
+BOOST_AUTO_TEST_CASE(load_prelude_uses_embedded_blob_or_module_path_fallback) {
+    ScopedTempDir temp;
+    const auto prelude_path = temp.path / "std" / "prelude.eta";
+    fs::create_directories(prelude_path.parent_path());
+    {
+        std::ofstream out(prelude_path, std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module std.prelude\n"
+               "  (begin\n"
+               "    (define prelude-stage0-sentinel 1)))\n";
+    }
+
+    eta::interpreter::ModulePathResolver resolver({temp.path});
+    eta::session::Driver driver(std::move(resolver));
+
+    const auto result = driver.load_prelude();
+    BOOST_REQUIRE(result.found);
+    BOOST_REQUIRE(result.loaded);
+    BOOST_TEST(driver.has_module("std.prelude"));
+
+    if (eta::runtime::embedded_prelude_blob().empty()) {
+        std::error_code ec;
+        auto expected = fs::weakly_canonical(prelude_path, ec);
+        if (ec) expected = prelude_path.lexically_normal();
+        BOOST_TEST(result.path == expected);
+    } else {
+        BOOST_TEST(result.path == fs::path("<embedded:prelude.etac>"));
     }
 }
 

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "eta/session/driver.h"
+#include "eta/session/repl_input.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/interpreter/repl_wrap.h"
 #include "eta/runtime/nanbox.h"
@@ -32,94 +33,6 @@ static void print_usage(const char* prog) {
               << "                  Falls back to ETA_MODULE_PATH environment variable.\n"
               << "  --strict-shadows Fail when a module resolves to multiple files.\n"
               << "  --help          Show this help message.\n";
-}
-
-/**
- * Check whether a line of input has balanced parentheses.
- * Returns true when the expression is complete (or on empty input).
- */
-static bool is_balanced(const std::string& input) {
-    int depth = 0;
-    bool in_string = false;
-    bool escape = false;
-
-    for (char c : input) {
-        if (escape) {
-            escape = false;
-            continue;
-        }
-        if (c == '\\' && in_string) {
-            escape = true;
-            continue;
-        }
-        if (c == '"') {
-            in_string = !in_string;
-            continue;
-        }
-        if (in_string) continue;
-        if (c == '(') ++depth;
-        else if (c == ')') --depth;
-    }
-    return depth <= 0 && !in_string;
-}
-
-/**
- * Split input into top-level forms (simple paren-balanced splitting).
- * Each returned string is one complete top-level form or bare atom.
- */
-static std::vector<std::string> split_toplevel_forms(const std::string& input) {
-    std::vector<std::string> forms;
-    int depth = 0;
-    bool in_string = false;
-    bool escape = false;
-    std::size_t form_start = std::string::npos;
-
-    for (std::size_t i = 0; i < input.size(); ++i) {
-        char c = input[i];
-
-        if (escape) { escape = false; continue; }
-        if (c == '\\' && in_string) { escape = true; continue; }
-        if (c == '"') { in_string = !in_string; if (form_start == std::string::npos) form_start = i; continue; }
-        if (in_string) continue;
-
-        if (std::isspace(static_cast<unsigned char>(c))) {
-            /// If we're outside parens and have accumulated a bare token, finish it
-            if (depth == 0 && form_start != std::string::npos) {
-                forms.push_back(input.substr(form_start, i - form_start));
-                form_start = std::string::npos;
-            }
-            continue;
-        }
-
-        if (c == ';') {
-            if (depth == 0 && form_start != std::string::npos) {
-                forms.push_back(input.substr(form_start, i - form_start));
-                form_start = std::string::npos;
-            }
-            while (i < input.size() && input[i] != '\n') ++i;
-            continue;
-        }
-
-        if (form_start == std::string::npos) form_start = i;
-
-        if (c == '(') {
-            ++depth;
-        } else if (c == ')') {
-            --depth;
-            if (depth == 0) {
-                forms.push_back(input.substr(form_start, i + 1 - form_start));
-                form_start = std::string::npos;
-            }
-        }
-    }
-    /// Trailing bare token
-    if (form_start != std::string::npos) {
-        auto trailing = input.substr(form_start);
-        if (trailing.find_first_not_of(" \t\n\r") != std::string::npos) {
-            forms.push_back(trailing);
-        }
-    }
-    return forms;
 }
 
 [[nodiscard]] std::string trim_copy(std::string_view text) {
@@ -377,8 +290,8 @@ int main(int argc, char* argv[]) {
             buffer = line;
         }
 
-        /// Check for balanced parentheses before submitting
-        if (!is_balanced(buffer)) {
+        /// Require a complete REPL submission before compiling/evaluating.
+        if (!eta::session::is_complete_repl_input(buffer)) {
             continuation = true;
             continue;
         }
@@ -432,7 +345,7 @@ int main(int argc, char* argv[]) {
          * Split input into individual top-level forms (supports multiple
          * forms per input, e.g. "(define x 10) x")
          */
-        auto forms = split_toplevel_forms(buffer);
+        auto forms = eta::session::split_toplevel_forms(buffer);
         if (forms.empty()) continue;
 
         static int repl_counter = 0;

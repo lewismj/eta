@@ -2,6 +2,7 @@
 
 #include <array>
 #include <span>
+#include <string>
 #include <string_view>
 #include <unordered_set>
 
@@ -12,7 +13,6 @@
 #include <eta/runtime/builtin_names.h>
 #include <eta/reader/special_form_docs.h>
 #include <eta/interpreter/all_primitives.h>
-#include <eta/nng/nng_primitives.h>
 #include <eta/runtime/os_primitives.h>
 #include <eta/runtime/process_primitives.h>
 #include <eta/runtime/time_primitives.h>
@@ -162,7 +162,6 @@ BOOST_AUTO_TEST_CASE(runtime_builtin_registration_matches_metadata_exhaustive) {
 
     env.begin_patching();
     eta::interpreter::register_all_primitives(env, heap, intern, vm);
-    eta::nng::register_nng_primitives(env, heap, intern);
     env.verify_all_patched();
 
     BOOST_REQUIRE_EQUAL(env.size(), metadata.size());
@@ -176,6 +175,32 @@ BOOST_AUTO_TEST_CASE(runtime_builtin_registration_matches_metadata_exhaustive) {
             BOOST_TEST(static_cast<bool>(spec.func));
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(register_all_primitives_installs_nng_sidecar_placeholders) {
+    BuiltinEnvironment env;
+    register_builtin_names(env);
+
+    Heap heap(1ull << 22);
+    InternTable intern;
+    vm::VM vm(heap, intern);
+
+    env.begin_patching();
+    eta::interpreter::register_all_primitives(env, heap, intern, vm);
+    env.verify_all_patched();
+
+    const auto send_idx = env.lookup("send!");
+    BOOST_REQUIRE(send_idx.has_value());
+    BOOST_REQUIRE(static_cast<bool>(env.specs()[*send_idx].func));
+
+    const auto send_result = env.specs()[*send_idx].func({});
+    BOOST_REQUIRE(!send_result.has_value());
+
+    const auto* vm_error = std::get_if<error::VMError>(&send_result.error());
+    BOOST_REQUIRE(vm_error != nullptr);
+    BOOST_TEST(
+        vm_error->message.find("requires package dependency 'eta-nng'")
+        != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(builtin_metadata_is_consistent_across_consumers) {

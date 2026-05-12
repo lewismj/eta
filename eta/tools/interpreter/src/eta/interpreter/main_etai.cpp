@@ -13,6 +13,7 @@
 #include "eta/runtime/prof/archive.h"
 #include "eta/runtime/prof/pprof.h"
 #include "eta/runtime/prof/profiler.h"
+#include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/disassembler.h"
 
 namespace fs = std::filesystem;

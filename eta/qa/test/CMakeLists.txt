@@ -14,6 +14,7 @@ set(SOURCES
         src/semantics_tests.cpp
         src/vm_tests.cpp
         src/eval_tests.cpp
+        src/eval_engine_tests.cpp
         src/eta_test.cpp
         src/emitter_tests.cpp
         src/port_tests.cpp
@@ -24,7 +25,15 @@ set(SOURCES
         src/dap_tests.cpp
         src/lsp_tests.cpp
         src/module_path_tests.cpp
+        src/path_util_tests.cpp
+        src/compilation_session_tests.cpp
+        src/display_classifier_tests.cpp
+        src/etac_loader_tests.cpp
+        src/repl_input_tests.cpp
+        src/runtime_primitives_tests.cpp
+        src/source_file_registry_tests.cpp
         src/native_sidecar_loader_tests.cpp
+        src/native_sidecar_manager_tests.cpp
         src/packaging_contract_tests.cpp
         src/repl_redefine_tests.cpp
         src/higher_order_tests.cpp
@@ -47,6 +56,7 @@ set(SOURCES
         src/json_tests.cpp
         src/log_tests.cpp
         src/nng_tests.cpp
+        src/nng_session_runtime_tests.cpp
         src/clp_linear_tests.cpp
         src/clp_qp_linearize_tests.cpp
         src/clp_qp_matrix_tests.cpp
@@ -54,6 +64,7 @@ set(SOURCES
         src/clp_fm_tests.cpp
         src/clp_simplex_tests.cpp
         src/builtin_sync_tests.cpp
+        src/driver_facade_tests.cpp
         src/stdlib_doc_tests.cpp
         src/driver_jupyter_test.cpp
         src/jupyter_kernel_config_test.cpp

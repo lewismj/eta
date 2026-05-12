@@ -27,6 +27,12 @@ struct BuiltinMetadata {
 [[nodiscard]] std::span<const BuiltinMetadata> builtin_metadata();
 
 /**
+ * @brief Return the native sidecar package that provides @p name, if any.
+ */
+[[nodiscard]] std::optional<std::string_view> builtin_native_sidecar_package(
+    std::string_view name);
+
+/**
  * @brief Lookup builtin metadata by exact symbol name.
  */
 [[nodiscard]] std::optional<BuiltinMetadata> lookup_builtin_metadata(std::string_view name);

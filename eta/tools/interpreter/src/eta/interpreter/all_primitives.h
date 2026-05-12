@@ -6,7 +6,7 @@
  *
  * Every executable that runs Eta code must call register_all_primitives()
  * (which handles core + port + io + os + process + time and sidecar placeholders
- * for torch + stats + log).
+ * for torch + stats + log + nng).
  *
  * Canonical registration order  (MUST match builtin_names.h exactly):
  *   1. core_primitives.h
@@ -18,7 +18,7 @@
  *   7. torch_primitives.h
  *   8. stats_primitives.h
  *   9. log_primitives.h
- *  10. nng_primitives.h  (registered separately by the Driver)
+ *  10. nng_primitives.h  (placeholder registration only)
  *
  * For analysis-only tools (LSP), builtin_names.h provides null-func
  */
@@ -34,32 +34,13 @@
 #include <string>
 #include <string_view>
 /**
- * driver-specific arguments (ProcessManager, etai path, mailbox, etc.)
- * and must be called by the Driver after register_all_primitives().
+ * Driver/sidecar-specific wiring (mailbox + actor runtime hooks) is bound later
+ * when sidecars are loaded and overwrite these placeholder slots.
  */
 
 namespace eta::interpreter {
 
 namespace detail {
-
-[[nodiscard]] inline bool is_log_primitive_name(const std::string_view name) {
-    return name.rfind("%log-", 0u) == 0u;
-}
-
-[[nodiscard]] inline bool is_stats_primitive_name(const std::string_view name) {
-    return name == "%stats-mean-vec"
-        || name == "%stats-var-vec"
-        || name == "%stats-cov-matrix"
-        || name == "%stats-cor-matrix"
-        || name == "%stats-quantile-vec"
-        || name == "%stats-ols-multi";
-}
-
-[[nodiscard]] inline bool is_torch_primitive_name(const std::string_view name) {
-    return name.rfind("torch/", 0u) == 0u
-        || name.rfind("nn/", 0u) == 0u
-        || name.rfind("optim/", 0u) == 0u;
-}
 
 [[nodiscard]] inline runtime::types::PrimitiveFunc make_missing_sidecar_primitive(
     std::string symbol_name,
@@ -75,12 +56,12 @@ namespace detail {
     };
 }
 
-template <typename Predicate>
 inline void register_sidecar_placeholders(runtime::BuiltinEnvironment& env,
-                                          Predicate&& predicate,
                                           const std::string_view package_name) {
     for (const auto& builtin : runtime::builtin_metadata()) {
-        if (!predicate(builtin.name)) continue;
+        const auto owner = runtime::builtin_native_sidecar_package(builtin.name);
+        if (!owner.has_value()) continue;
+        if (*owner != package_name) continue;
         env.register_builtin(
             builtin.name,
             builtin.arity,
@@ -91,24 +72,26 @@ inline void register_sidecar_placeholders(runtime::BuiltinEnvironment& env,
 }
 
 inline void register_torch_sidecar_placeholders(runtime::BuiltinEnvironment& env) {
-    register_sidecar_placeholders(env, is_torch_primitive_name, "eta-torch");
+    register_sidecar_placeholders(env, "eta-torch");
 }
 
 inline void register_stats_sidecar_placeholders(runtime::BuiltinEnvironment& env) {
-    register_sidecar_placeholders(env, is_stats_primitive_name, "eta-stats");
+    register_sidecar_placeholders(env, "eta-stats");
 }
 
 inline void register_log_sidecar_placeholders(runtime::BuiltinEnvironment& env) {
-    register_sidecar_placeholders(env, is_log_primitive_name, "eta-log");
+    register_sidecar_placeholders(env, "eta-log");
+}
+
+inline void register_nng_sidecar_placeholders(runtime::BuiltinEnvironment& env) {
+    register_sidecar_placeholders(env, "eta-nng");
 }
 
 } // namespace detail
 
 /**
  * Register core primitive implementations and sidecar placeholders for
- * torch/stats/log.
- *
- * NNG placeholders are installed by the Driver to complete the full builtin set.
+ * torch/stats/log/nng.
  */
 inline void register_all_primitives(
     runtime::BuiltinEnvironment& env,
@@ -127,6 +110,7 @@ inline void register_all_primitives(
     detail::register_torch_sidecar_placeholders(env);
     detail::register_stats_sidecar_placeholders(env);
     detail::register_log_sidecar_placeholders(env);
+    detail::register_nng_sidecar_placeholders(env);
 }
 
 } ///< namespace eta::interpreter

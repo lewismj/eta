@@ -46,4 +46,13 @@ using ManifestDiscoveryResult = std::expected<ManifestDiscovery, ManifestError>;
  */
 ManifestDiscoveryResult discover_manifest_context(const fs::path& start_dir);
 
+/**
+ * @brief Resolve the nearest manifest path for a directory walk.
+ *
+ * Prefers workspace manifest, then package manifest, then active manifest
+ * reported by @ref discover_manifest_context. Falls back to raw parent walking
+ * if manifest parsing fails.
+ */
+std::optional<fs::path> find_nearest_manifest_path(const fs::path& start_dir);
+
 } // namespace eta::package

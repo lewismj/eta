@@ -33,7 +33,6 @@
 #ifdef ETA_HAS_NNG
 #include "eta/nng/nng_socket_ptr.h"
 #include "eta/nng/nng_primitives.h"
-#include "eta/nng/process_mgr.h"
 #endif
 
 namespace eta::dap {
@@ -664,8 +663,8 @@ void DapServer::start_vm_from_current_launch() {
      * each child VM as it comes up.  See class DapThread / register_actor_thread.
      */
     if (auto* pm = driver_->process_manager()) {
-        pm->set_debug_listener([this](const eta::nng::ProcessManager::ThreadDebugEvent& ev) {
-            using Kind = eta::nng::ProcessManager::ThreadDebugEvent::Kind;
+        pm->set_debug_listener([this](const eta::native::ActorThreadDebugEvent& ev) {
+            using Kind = eta::native::ActorThreadDebugEvent::Kind;
             if (ev.kind == Kind::Started) {
                 register_actor_thread(
                     static_cast<session::Driver*>(ev.driver),
@@ -1328,7 +1327,7 @@ void DapServer::handle_terminate_threads(const Value& id, const Value& args) {
     if (!args.has("threadIds") || !args["threadIds"].is_array()) {
         const auto threads = pm->list_threads();
         for (std::size_t i = 0; i < threads.size(); ++i) {
-            pm->terminate_thread_by_index(static_cast<int>(i));
+            (void) pm->terminate_thread_by_index(static_cast<int>(i));
         }
         return;
     }
@@ -1339,7 +1338,7 @@ void DapServer::handle_terminate_threads(const Value& id, const Value& args) {
         if (tid == MAIN_THREAD_ID) continue;
         DapThread* th = find_thread_locked(tid);
         if (!th || th->pm_index < 0) continue;
-        pm->terminate_thread_by_index(th->pm_index);
+        (void) pm->terminate_thread_by_index(th->pm_index);
     }
 #else
     (void) args;

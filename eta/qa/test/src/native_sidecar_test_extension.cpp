@@ -269,7 +269,13 @@ int register_torch_bound_symbols(const EtaNativeApiV1* api,
 
 int register_nng_bound_symbols(const EtaNativeApiV1* api,
                                const eta::native::SidecarRuntimeBindingV1& binding) {
-    auto* process_manager = static_cast<eta::nng::ProcessManager*>(binding.process_manager);
+    eta::nng::ProcessManager* process_manager = nullptr;
+    if (binding.actor_process_manager != nullptr) {
+        process_manager = static_cast<eta::nng::ProcessManager*>(
+            binding.actor_process_manager->native_handle());
+    } else {
+        process_manager = static_cast<eta::nng::ProcessManager*>(binding.process_manager);
+    }
     const std::string etai_path = binding.etai_path ? *binding.etai_path : std::string{};
     const std::string module_search_path =
         binding.module_search_path ? *binding.module_search_path : std::string{};
