@@ -226,6 +226,8 @@ struct SpawnCaptureWriter {
         }
 
         switch (ops::tag(v)) {
+            case Tag::Nil:
+                return fail(root_label, "unsupported nil-like immediate tag payload");
             case Tag::Fixnum: {
                 write_u8(out, SCT_Fixnum);
                 write_i64(out, ops::decode<int64_t>(v).value_or(0));
@@ -255,6 +257,8 @@ struct SpawnCaptureWriter {
                 write_f64(out, std::numeric_limits<double>::quiet_NaN());
                 return true;
             }
+            case Tag::TapeRef:
+                return fail(root_label, "TapeRef values are not serializable in spawn captures");
             default:
                 return fail(root_label, "unsupported boxed tag");
         }

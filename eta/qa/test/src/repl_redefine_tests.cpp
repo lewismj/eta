@@ -40,7 +40,6 @@ static fs::path stdlib_dir() {
 
 struct ReplHarness {
     eta::session::Driver driver;
-    bool auto_std_import_enabled{false};
     int repl_counter{0};
     std::vector<eta::interpreter::PriorModule> prior_modules;
 
@@ -61,7 +60,7 @@ struct ReplHarness {
     bool submit(const std::vector<std::string>& forms,
                 eta::runtime::nanbox::LispVal* out_result = nullptr) {
         auto wrapped = eta::interpreter::wrap_repl_submission(
-            forms, repl_counter++, auto_std_import_enabled, prior_modules);
+            forms, repl_counter++, prior_modules);
 
         if (wrapped.source.empty()) return true;
 

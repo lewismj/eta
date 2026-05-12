@@ -36,7 +36,6 @@ struct ReplWrapResult {
 ReplWrapResult wrap_repl_submission(
     const std::vector<std::string>& forms,
     int repl_id,
-    bool prelude_available,
     const std::vector<PriorModule>& prior_modules);
 
 } ///< namespace eta::interpreter

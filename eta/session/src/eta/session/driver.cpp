@@ -144,42 +144,6 @@ Driver::PreludeResult Driver::load_prelude() {
     if (!ensure_package_sidecars_loaded(std::nullopt)) {
         return result;
     }
-
-    if (compilation_.has_module("std.prelude")) {
-        result.found = true;
-        if (compilation_.prelude_origin_path()) {
-            result.path = *compilation_.prelude_origin_path();
-        }
-        return result;
-    }
-
-    if (etac_loader_.try_load_embedded_prelude()) {
-        result.found = true;
-        result.loaded = true;
-        result.path = EtacLoader::embedded_prelude_marker_path();
-        compilation_.set_prelude_origin_path(result.path);
-        return result;
-    }
-
-    for (const auto& prelude_path : resolver_.resolve_all("std.prelude")) {
-        result.found = true;
-        result.path = prelude_path;
-
-        const auto ext = prelude_path.extension();
-        bool loaded = false;
-        if (ext == ".etac") {
-            loaded = etac_loader_.run_etac_file(prelude_path);
-        } else if (ext == ".eta") {
-            loaded = run_file(prelude_path);
-        }
-
-        if (loaded) {
-            result.loaded = true;
-            compilation_.set_prelude_origin_path(result.path);
-            return result;
-        }
-    }
-
     return result;
 }
 

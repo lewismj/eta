@@ -50,7 +50,7 @@ namespace eta::reader::linker {
 
         /**
          * NOTE: Export validation is deferred to link() so that re-exports
-         * of imported names (e.g. std.prelude re-exporting std.collections)
+         * of imported names
          * are checked against the fully-resolved visible set.
          */
 

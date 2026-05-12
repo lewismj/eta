@@ -376,6 +376,10 @@ inline Diagnostic to_diagnostic<eta::reader::parser::ParseError>(const eta::read
             code = DiagnosticCode::InvalidVector;
             msg = "invalid byte literal";
             break;
+        case PK::InvalidNumericLiteral:
+            code = DiagnosticCode::InvalidNumeric;
+            msg = "invalid numeric literal";
+            break;
         case PK::UnquoteOutsideQuasiquote:
             code = DiagnosticCode::UnquoteOutsideQuasiquote;
             msg = "unquote outside quasiquote";
@@ -528,6 +532,8 @@ inline Diagnostic to_diagnostic<eta::runtime::error::VMError>(const eta::runtime
         case EC::TypeError:          code = DiagnosticCode::TypeError; break;
         case EC::UndefinedGlobal:    code = DiagnosticCode::UndefinedGlobal; break;
         case EC::UserError:          code = DiagnosticCode::UserError; break;
+        case EC::UserThrow:          code = DiagnosticCode::UserError; break;
+        case EC::SandboxViolation:   code = DiagnosticCode::InternalError; break;
         default:                     code = DiagnosticCode::NotImplemented; break;
     }
     return Diagnostic{code, Severity::Error, {}, e.message};

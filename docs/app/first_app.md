@@ -12,7 +12,6 @@ This guide covers two flows:
 
 ```console
 eta --version
-etai --version
 ```
 
 ## 1) Build your first app

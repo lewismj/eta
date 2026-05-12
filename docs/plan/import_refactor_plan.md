@@ -118,8 +118,14 @@ Ownership:
 
 1. Audit user-facing diagnostics, fallback messages, and module-name checks.
 2. Remove stale instructions telling users to load/import `std.prelude`.
-3. Keep compatibility behavior where required, but use neutral bootstrap wording.
+3. Remove runtime/module-path compatibility hooks that still target `std.prelude`.
 4. Add focused diagnostic tests.
+
+Stage 12.1 implementation notes (2026-05-12):
+
+1. User-facing REPL/DAP/compiler messaging uses neutral "stdlib modules" wording.
+2. Runtime no longer auto-loads or resolves `std.prelude`.
+3. Focused wording tests live in `eta/qa/test/src/diagnostic_tests.cpp`.
 
 ### 6.2 Stage 12.2: module-path semantics and package-root entries
 
@@ -128,6 +134,14 @@ Ownership:
 3. Add tests for precedence, ambiguity, duplicate names, and path normalization across Windows/POSIX style input.
 4. Ensure all tools listed in section 2 share the same resolver entrypoint behavior.
 
+Stage 12.2 implementation notes (2026-05-12):
+
+1. `ModulePathResolver::from_args_or_env_at` now supports typed entries: `dir+`, `pkg+`, and `pkgs+`.
+2. Auto entries now classify each path as package root, package collection, or plain directory using bounded depth-3 manifest discovery.
+3. Package collection expansion is deterministic, branch-pruned at discovered `eta.toml`, and cached per resolver build using root mtime.
+4. Added resolver coverage in `eta/qa/test/src/module_path_tests.cpp` for top-level package collection imports, precedence/ambiguity, duplicate-module first-hit behavior, and normalized-path dedupe.
+5. User docs now describe typed module-path entries and package-collection usage in `docs/quickstart.md`.
+
 ### 6.3 Stage 12.3: layout-token cleanup (`release`/`target`)
 
 1. Audit executable/artifact discovery and module-root expansion for hardcoded layout literals.
@@ -135,11 +149,24 @@ Ownership:
 3. Route import and sidecar path composition through this utility.
 4. Keep compatibility defaults so current installs/builds continue to work.
 
+Stage 12.3 implementation notes (2026-05-12):
+
+1. Added `eta::util::RuntimeLayoutConfig` in `eta/core/src/eta/util/runtime_layout.h` with default tokens for package build/source roots, workspace module roots, stdlib roots, and bundled native roots.
+2. `ModulePathResolver` now composes package build/source roots, lockfile module roots, and bundled stdlib probing through the shared layout utility instead of inlined `target`/`release` literals.
+3. `NativeSidecarManager` bundled sidecar discovery now composes `packages/stdlib/native` roots through the shared layout utility.
+4. Added coverage in `eta/qa/test/src/path_util_tests.cpp` for default layout compatibility and explicit token overrides via `RuntimeLayoutConfig`.
+
 ### 6.4 Stage 12.4: `eta --version` contract
 
 1. Implement `eta --version` behavior as documented.
 2. Add CLI contract tests for output presence and format.
 3. Ensure behavior is stable across default and packaged runtime layouts.
+
+Stage 12.4 implementation notes (2026-05-12):
+
+1. The `eta` CLI now handles `--version`/`-V` before command dispatch and prints `eta <version>`.
+2. Version text is embedded at build time from `git describe --tags --dirty`, with fallback to the top-level CMake project version when Git metadata is unavailable.
+3. Added CLI contract coverage in `eta/qa/cli_test/src/eta_cli_test.cpp` for output presence, version-token format, and cross-layout stability.
 
 ---
 
@@ -196,4 +223,3 @@ Ownership:
 4. Land diagnostics wording cleanup (`std.prelude`) and tests.
 5. Land `eta --version` plus CLI contract tests.
 6. Update docs and examples last, after behavior is verified.
-

@@ -40,6 +40,10 @@ namespace fs = std::filesystem;
 
 namespace {
 
+#ifndef ETA_CLI_VERSION
+#error ETA_CLI_VERSION must be defined by CMake
+#endif
+
 enum class ProjectKind {
     Bin,
     Lib,
@@ -545,6 +549,10 @@ CliResult<ExternalResult> run_external_capture(
     return run_external_impl(program, args, cwd, true);
 }
 
+void print_version() {
+    std::cout << "eta " << ETA_CLI_VERSION << "\n";
+}
+
 void print_usage(const char* program) {
     std::cerr
         << "Usage: " << program << " <command> [options]\n"
@@ -573,6 +581,10 @@ void print_usage(const char* program) {
         << "  -p, --package <name>   Select one or more workspace members\n"
         << "  --exclude <name>       Exclude package(s) when using --workspace\n"
         << "  --manifest-path <path> Explicit workspace/package eta.toml\n"
+        << "\n"
+        << "Global options:\n"
+        << "  -h, --help             Show top-level help\n"
+        << "  -V, --version          Show eta CLI version\n"
         << "\n"
         << "Use `eta <command> --help` for command-specific options.\n";
 }
@@ -3275,6 +3287,14 @@ int main(int argc, char* argv[]) {
     }
 
     const std::string command = argv[1];
+    if (command == "--version" || command == "-V") {
+        if (argc != 2) {
+            std::cerr << "error: --version does not accept additional arguments\n";
+            return 1;
+        }
+        print_version();
+        return 0;
+    }
     if (command == "--help" || command == "-h" || command == "help") {
         print_usage(argv[0]);
         return 0;

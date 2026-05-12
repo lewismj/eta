@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "eta/session/driver.h"
+#include "eta/session/bootstrap_module.h"
 #include "eta/session/repl_input.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/interpreter/repl_wrap.h"
@@ -216,10 +217,7 @@ int main(int argc, char* argv[]) {
         if (!env || env[0] == '\0') {
             auto bundled = eta::interpreter::ModulePathResolver::bundled_stdlib_dir();
             if (!bundled) {
-                std::cerr << "warning: ETA_MODULE_PATH is not set and no "
-                             "bundled stdlib found next to the executable.\n"
-                             "         Use --path or set ETA_MODULE_PATH to "
-                             "the directory containing std/prelude.eta.\n";
+                std::cerr << eta::session::repl_missing_module_path_warning();
             }
         }
     }
@@ -229,33 +227,6 @@ int main(int argc, char* argv[]) {
         eta::session::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
     eta::session::Driver driver(std::move(resolver), heap_bytes);
     auto resolve = driver.file_resolver();
-
-    /// Load prelude (if available in module path)
-    bool prelude_available = false;
-    {
-        auto pr = driver.load_prelude();
-        if (pr.found) {
-            if (pr.loaded) {
-                prelude_available = driver.has_module("std.prelude");
-                std::cerr << "Loaded " << pr.path.string() << "\n";
-            } else {
-                std::cerr << "error: failed to load prelude from "
-                          << pr.path.string() << "\n";
-                driver.diagnostics().print_all(std::cerr, /*use_color=*/true, resolve);
-            }
-        } else {
-            std::cerr << "warning: std.prelude not found in module search path.\n";
-            const auto& dirs = driver.resolver().dirs();
-            if (dirs.empty()) {
-                std::cerr << "         (search path is empty)\n";
-            } else {
-                std::cerr << "         searched:\n";
-                for (const auto& d : dirs) {
-                    std::cerr << "           " << d.string() << "\n";
-                }
-            }
-        }
-    }
 
     /// REPL loop
     std::cout << BANNER;
@@ -351,7 +322,7 @@ int main(int argc, char* argv[]) {
         static int repl_counter = 0;
         int this_id = repl_counter++;
         auto wrapped = eta::interpreter::wrap_repl_submission(
-            forms, this_id, prelude_available, prior_modules);
+            forms, this_id, prior_modules);
 
         auto active_profile = pending_profile;
         pending_profile.reset();

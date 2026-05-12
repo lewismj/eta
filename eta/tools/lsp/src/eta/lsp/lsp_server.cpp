@@ -385,84 +385,6 @@ std::optional<std::string> LspServer::resolve_module_source(const std::string& m
                        std::istreambuf_iterator<char>());
 }
 
-void LspServer::preload_prelude(
-        std::vector<eta::reader::parser::SExprPtr>& all_forms,
-        std::unordered_set<std::string>& seen_modules) {
-    using namespace reader::utils;
-
-    /**
-     * std.* modules inline (std.core, std.math, std.io, std.collections,
-     * std.test, std.prelude).  We must load it before preload_module_deps so
-     * that (import std.prelude) in user code resolves to a known module.
-     */
-    static const std::string prelude_uri = "eta://stdlib/std/prelude.eta";
-
-    auto prelude_path = resolver_.resolve("std.prelude");
-    if (!prelude_path) return;
-    auto src_opt = resolve_module_source("std.prelude");
-    if (!src_opt) return;
-
-    std::string src = std::move(*src_opt);
-
-    reader::lexer::Lexer lex(0, src);
-    reader::parser::Parser parser(lex);
-    auto parsed = parser.parse_toplevel();
-    if (!parsed) {
-        /// Report parse error via publishDiagnostics so the user knows the stdlib is broken.
-        std::vector<LspDiagnostic> diags;
-        std::visit([&](auto&& e) {
-            using T = std::decay_t<decltype(e)>;
-            LspDiagnostic d;
-            d.severity = 1;
-            d.source   = "eta-prelude";
-            if constexpr (std::is_same_v<T, reader::lexer::LexError>) {
-                d.range   = span_to_range(e.span.start.line, e.span.start.column,
-                                          e.span.end.line,   e.span.end.column);
-                d.message = "[std/prelude.eta] lex error: " + (e.message.empty()
-                    ? std::string(reader::lexer::to_string(e.kind)) : e.message);
-            } else {
-                d.range   = span_to_range(e.span.start.line, e.span.start.column,
-                                          e.span.end.line,   e.span.end.column);
-                d.message = "[std/prelude.eta] parse error: "
-                    + std::string(reader::parser::to_string(e.kind));
-            }
-            diags.push_back(std::move(d));
-        }, parsed.error());
-        publish_diagnostics(prelude_uri, diags);
-        return;
-    }
-
-    reader::expander::Expander expander;
-    auto expanded = expander.expand_many(*parsed);
-    if (!expanded) {
-        /// Report expansion error.
-        const auto& err = expanded.error();
-        LspDiagnostic d;
-        d.severity = 1;
-        d.source   = "eta-prelude";
-        d.range    = span_to_range(err.span.start.line, err.span.start.column,
-                                   err.span.end.line,   err.span.end.column);
-        d.message  = "[std/prelude.eta] expand error: " + (err.message.empty()
-            ? reader::expander::to_string(err.kind)
-            : err.message);
-        publish_diagnostics(prelude_uri, {d});
-        return;
-    }
-
-    for (auto& form : *expanded) {
-        /// Track module names so preload_module_deps won't try to re-load them
-        const auto* mod = as_list(form);
-        if (mod && mod->elems.size() >= 2 &&
-            is_symbol_named(mod->elems[0], "module")) {
-            if (const auto* name_sym = as_symbol(mod->elems[1])) {
-                if (seen_modules.count(name_sym->name)) continue; ///< already present
-                seen_modules.insert(name_sym->name);
-            }
-        }
-        all_forms.push_back(std::move(form));
-    }
-}
-
 void LspServer::preload_module_deps(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules,
@@ -1021,7 +943,6 @@ void LspServer::validate_document(const std::string& uri) {
             if (const auto* name_sym = as_symbol(mod->elems[1]))
                 seen_modules.insert(name_sym->name);
         }
-        preload_prelude(all_forms, seen_modules);
         preload_module_deps(all_forms, seen_modules, compiled_module_exports);
     }
 
@@ -1591,53 +1512,6 @@ void LspServer::load_completion_cache() {
     prelude_symbols_.clear();
     module_path_symbols_.clear();
 
-    /// Scan prelude
-    auto prelude_path = resolver_.resolve("std.prelude");
-    auto prelude_source = resolve_module_source("std.prelude");
-    if (prelude_path && prelude_source) {
-        auto prelude_source_path = *prelude_path;
-        if (prelude_source_path.extension() == ".etac") {
-            prelude_source_path.replace_extension(".eta");
-        }
-        std::string src = std::move(*prelude_source);
-        auto syms = collect_symbols(src, /*capture_signature=*/true);
-
-        /**
-         * Determine which module each symbol belongs to by tracking
-         * (module <name> ...) boundaries in the source.
-         */
-        std::istringstream lines(src);
-        std::string line;
-        int64_t line_num = 0;
-        std::vector<std::pair<int64_t, std::string>> module_starts;
-        while (std::getline(lines, line)) {
-            auto pos = line.find("(module ");
-            if (pos != std::string::npos) {
-                auto name_start = pos + 8;
-                while (name_start < line.size() && line[name_start] == ' ') ++name_start;
-                auto name_end = name_start;
-                while (name_end < line.size() && line[name_end] != ' ' && line[name_end] != ')' && line[name_end] != '\n')
-                    ++name_end;
-                if (name_end > name_start)
-                    module_starts.push_back({line_num, line.substr(name_start, name_end - name_start)});
-            }
-            ++line_num;
-        }
-
-        for (auto& sym : syms) {
-            if (sym.kind == "module") continue; ///< skip module declarations
-            sym.file_path = prelude_source_path.string();
-            /// Find which module this symbol belongs to
-            for (auto rit = module_starts.rbegin(); rit != module_starts.rend(); ++rit) {
-                if (sym.line >= rit->first) {
-                    sym.module_name = rit->second;
-                    break;
-                }
-            }
-            prelude_symbols_.push_back(std::move(sym));
-        }
-    }
-
     /// Scan module path
     scan_module_path_symbols();
 }
@@ -1654,8 +1528,6 @@ void LspServer::scan_module_path_symbols() {
 
             auto canonical = entry.path().string();
             if (!scanned_files.insert(canonical).second) continue;
-
-            if (entry.path().filename() == "prelude.eta") continue;
 
             std::ifstream f(entry.path());
             if (!f.is_open()) continue;

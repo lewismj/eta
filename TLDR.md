@@ -16,8 +16,8 @@ Download the latest [release](https://github.com/lewismj/eta/releases) for your 
 
 | Platform | Archive                          |
 |----------|----------------------------------|
-| Windows x64 | `eta-v0.2.0-win-x64.zip`         |
-| Linux x86_64 | `eta-v0.2.0-linux-x86_64.tar.gz` |
+| Windows x64 | `eta-v0.0.2-win-x64.zip`         |
+| Linux x86_64 | `eta-v0.0.2-linux-x86_64.tar.gz` |
 
 Unzip the archive into a directory of your choice.
 
@@ -29,25 +29,25 @@ The installer adds the `bin/` directory to your `PATH`, sets the `ETA_MODULE_PAT
 
 **Windows (PowerShell / Command Prompt):**
 ```console
-cd eta-v0.2.0-win-x64
+cd eta-v0.0.2-win-x64
 .\install.cmd
 ```
 
 **Linux / macOS:**
 ```console
-cd eta-v0.2.0-linux-x86_64
+cd eta-v0.0.2-linux-x86_64
 chmod +x install.sh && ./install.sh
 ```
 
 Example output (Windows):
 ```console
-C:\tmp\eta-v0.2.0-win-x64>.\install.cmd
+C:\tmp\eta-v0.0.2-win-x64>.\install.cmd
 +==============================================================+
 |  Eta Installer (Windows)                                     |
 +==============================================================+
 
-  bin     : C:\tmp\eta-v0.5.0-win-x64\bin
-  stdlib  : C:\tmp\eta-v0.5.0-win-x64\stdlib
+  bin     : C:\tmp\eta-v0.0.2-win-x64\bin
+  stdlib  : C:\tmp\eta-v0.0.2-win-x64\stdlib
 
 > Eta already on user PATH -- skipping.
 > ETA_MODULE_PATH already set -- skipping.
@@ -68,7 +68,7 @@ Extension 'eta-lang.vsix' was successfully installed.
     etai --help
     eta_repl
 
-C:\tmp\eta-v0.2.0-win-x64>
+C:\tmp\eta-v0.0.2-win-x64>
 ```
 
 > [!NOTE]
@@ -86,13 +86,13 @@ The `cookbook/` directory inside the release bundle contains several `.eta` prog
 analyze → emit) and executes it immediately:
 
 ```console
-C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etai hello.eta
+C:\tmp\eta-v0.0.2-win-x64\cookbook\basics> etai hello.eta
 Hello, world!
 2432902008176640000
 ```
 
 ```console
-C:\tmp\eta-v0.2.0-win-x64\cookbook\quant> etai aad.eta
+C:\tmp\eta-v0.0.2-win-x64\cookbook\quant> etai aad.eta
 f(x,y) = x*y + sin(x)
   grad at (2,3): (6.9093 #(2.58385 2))
 g(x) = x^2 + 3x + 1
@@ -112,22 +112,22 @@ dot(v, [1,2,3])
 phases** for faster startup:
 
 ```console
-C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etac hello.eta
+C:\tmp\eta-v0.0.2-win-x64\cookbook\basics> etac hello.eta
 compiled cookbook\basics\hello.eta → cookbook\basics\hello.etac (3 functions, 1 module(s))
 
-C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etai hello.etac
+C:\tmp\eta-v0.0.2-win-x64\cookbook\basics> etai hello.etac
 Hello, world!
 2432902008176640000
 ```
 
 Enable optimization passes with `-O`:
 ```console
-C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etac -O hello.eta -o hello-opt.etac
+C:\tmp\eta-v0.0.2-win-x64\cookbook\basics> etac -O hello.eta -o hello-opt.etac
 ```
 
 Inspect the emitted bytecode without writing a file:
 ```console
-C:\tmp\eta-v0.2.0-win-x64\cookbook\basics> etac --disasm hello.eta
+C:\tmp\eta-v0.0.2-win-x64\cookbook\basics> etac --disasm hello.eta
 ```
 
 Key `etac` flags:
@@ -145,8 +145,8 @@ Key `etac` flags:
 ### Interactive REPL
 
 ```console
-C:\tmp\eta-v0.2.0-win-x64> eta_repl
-Loaded C:\tmp\eta-v0.2.0-win-x64\stdlib\prelude.eta
+C:\tmp\eta-v0.0.2-win-x64> eta_repl
+Loaded C:\tmp\eta-v0.0.2-win-x64\stdlib\prelude.eta
 eta REPL - type an expression and press Enter.
 Use Ctrl+C or (exit) to quit.
 eta> (+ 1 2 3 4 5)
@@ -186,17 +186,17 @@ Open VS Code settings (`Ctrl+,` or `Cmd+,`) and search for **Eta**. The key sett
 
 | Setting | Description | Example |
 |---------|-------------|---------|
-| `eta.lsp.serverPath` | Path to the `eta_lsp` executable | `C:\tmp\eta-v0.2.0-win-x64\bin\eta_lsp.exe` |
-| `eta.dap.executablePath` | Path to the `eta_dap` executable | `C:\tmp\eta-v0.2.0-win-x64\bin\eta_dap.exe` |
-| `eta.modulePath` | Module search path (`ETA_MODULE_PATH`) | `C:\tmp\eta-v0.2.0-win-x64\stdlib` |
+| `eta.lsp.serverPath` | Path to the `eta_lsp` executable | `C:\tmp\eta-v0.0.2-win-x64\bin\eta_lsp.exe` |
+| `eta.dap.executablePath` | Path to the `eta_dap` executable | `C:\tmp\eta-v0.0.2-win-x64\bin\eta_dap.exe` |
+| `eta.modulePath` | Module search path (`ETA_MODULE_PATH`) | `C:\tmp\eta-v0.0.2-win-x64\stdlib` |
 | `eta.debug.autoShowHeap` | Auto-open Heap Inspector on debug start | `true` (default) |
 
 Or add them directly to your `settings.json`:
 
 ```json
 {
-  "eta.lsp.serverPath":     "C:\\tmp\\eta-v0.2.0-win-x64\\bin\\eta_lsp.exe",
-  "eta.dap.executablePath": "C:\\tmp\\eta-v0.2.0-win-x64\\bin\\eta_dap.exe"
+  "eta.lsp.serverPath":     "C:\\tmp\\eta-v0.0.2-win-x64\\bin\\eta_lsp.exe",
+  "eta.dap.executablePath": "C:\\tmp\\eta-v0.0.2-win-x64\\bin\\eta_dap.exe"
 }
 ```
 

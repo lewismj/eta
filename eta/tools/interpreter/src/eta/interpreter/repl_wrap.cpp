@@ -220,7 +220,6 @@ static bool is_import(const std::string& input) {
 
 ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
                                     int repl_id,
-                                    bool prelude_available,
                                     const std::vector<PriorModule>& prior_modules) {
     ReplWrapResult result;
     result.module_name = "__repl_" + std::to_string(repl_id);
@@ -254,9 +253,6 @@ ReplWrapResult wrap_repl_submission(const std::vector<std::string>& forms,
     }
 
     std::string imports;
-    if (prelude_available) {
-        imports += "  (import std.prelude)\n";
-    }
 
     /**
      * Replay historical explicit imports so imported names survive across

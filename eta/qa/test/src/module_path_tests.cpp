@@ -19,6 +19,12 @@ namespace fs = std::filesystem;
 
 /// helpers
 
+#ifdef _WIN32
+static constexpr char kPathSep = ';';
+#else
+static constexpr char kPathSep = ':';
+#endif
+
 /// RAII temporary directory that creates / destroys itself automatically.
 struct TempDir {
     fs::path path;
@@ -358,6 +364,174 @@ BOOST_AUTO_TEST_CASE(from_args_or_env_empty_cli_uses_env) {
     auto r = ModulePathResolver::from_args_or_env("");
     BOOST_REQUIRE(!r.empty());
     BOOST_TEST(r.dirs()[0] == d.path);
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_pkg_entry_expands_release_and_src_roots) {
+    TempDir d;
+    const auto package_root = d.path / "demo";
+    fs::create_directories(package_root / "target" / "release");
+    fs::create_directories(package_root / "src");
+
+    d.create_file("demo/eta.toml", R"toml(
+[package]
+name = "demo"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+)toml");
+
+    EnvVarGuard guard("ETA_MODULE_PATH");
+    const auto env_value = std::string("pkg+") + package_root.string();
+#ifdef _WIN32
+    _putenv_s("ETA_MODULE_PATH", env_value.c_str());
+#else
+    setenv("ETA_MODULE_PATH", env_value.c_str(), 1);
+#endif
+
+    auto r = ModulePathResolver::from_args_or_env_at("", d.path);
+    BOOST_REQUIRE_GE(r.dirs().size(), 2u);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(package_root / "target" / "release"));
+    BOOST_TEST(r.dirs()[1] == fs::weakly_canonical(package_root / "src"));
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_auto_entry_expands_top_level_package_collection) {
+    TempDir d;
+    fs::create_directories(d.path / "packages" / "db" / "native" / "duckdb" / "src" / "db");
+
+    d.create_file("packages/db/native/duckdb/eta.toml", R"toml(
+[package]
+name = "duckdb"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+)toml");
+    const auto duckdb_module =
+        d.create_file("packages/db/native/duckdb/src/db/duckdb.eta", "(module db.duckdb)\n");
+
+    EnvVarGuard guard("ETA_MODULE_PATH");
+    const auto env_value = (d.path / "packages").string();
+#ifdef _WIN32
+    _putenv_s("ETA_MODULE_PATH", env_value.c_str());
+#else
+    setenv("ETA_MODULE_PATH", env_value.c_str(), 1);
+#endif
+
+    auto r = ModulePathResolver::from_args_or_env_at("", d.path);
+    auto resolved = r.resolve("db.duckdb");
+    BOOST_REQUIRE(resolved.has_value());
+    BOOST_TEST(*resolved == fs::weakly_canonical(duckdb_module));
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_pkg_entries_keep_precedence_for_duplicate_modules) {
+    TempDir d;
+    fs::create_directories(d.path / "first" / "src" / "dup");
+    fs::create_directories(d.path / "second" / "src" / "dup");
+
+    d.create_file("first/eta.toml", R"toml(
+[package]
+name = "dup-first"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+)toml");
+    d.create_file("second/eta.toml", R"toml(
+[package]
+name = "dup-second"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+)toml");
+    const auto first_module =
+        d.create_file("first/src/dup/shared.eta", "(module dup.shared (begin 1))\n");
+    const auto second_module =
+        d.create_file("second/src/dup/shared.eta", "(module dup.shared (begin 2))\n");
+
+    EnvVarGuard guard("ETA_MODULE_PATH");
+    const auto env_value = std::string("pkg+") + (d.path / "first").string()
+                         + kPathSep
+                         + std::string("pkg+") + (d.path / "second").string();
+#ifdef _WIN32
+    _putenv_s("ETA_MODULE_PATH", env_value.c_str());
+#else
+    setenv("ETA_MODULE_PATH", env_value.c_str(), 1);
+#endif
+
+    auto r = ModulePathResolver::from_args_or_env_at("", d.path);
+    auto matches = r.resolve_all("dup.shared");
+    BOOST_REQUIRE_EQUAL(matches.size(), 2u);
+    BOOST_TEST(matches[0] == fs::weakly_canonical(first_module));
+    BOOST_TEST(matches[1] == fs::weakly_canonical(second_module));
+
+    auto first = r.resolve("dup.shared");
+    BOOST_REQUIRE(first.has_value());
+    BOOST_TEST(*first == matches.front());
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_pkg_entries_dedupe_normalized_path_variants) {
+    TempDir d;
+    fs::create_directories(d.path / "norm" / "src" / "dup");
+    d.create_file("norm/eta.toml", R"toml(
+[package]
+name = "norm"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+)toml");
+    const auto module_file =
+        d.create_file("norm/src/dup/norm.eta", "(module dup.norm (begin 1))\n");
+
+    std::string normalized_variant;
+#ifdef _WIN32
+    normalized_variant = (d.path / "norm").string();
+    std::replace(normalized_variant.begin(), normalized_variant.end(), '\\', '/');
+#else
+    normalized_variant = ((d.path / "norm") / ".").string();
+#endif
+
+    EnvVarGuard guard("ETA_MODULE_PATH");
+    const auto env_value = std::string("pkg+") + (d.path / "norm").string()
+                         + kPathSep
+                         + std::string("pkg+") + normalized_variant;
+#ifdef _WIN32
+    _putenv_s("ETA_MODULE_PATH", env_value.c_str());
+#else
+    setenv("ETA_MODULE_PATH", env_value.c_str(), 1);
+#endif
+
+    auto r = ModulePathResolver::from_args_or_env_at("", d.path);
+    auto matches = r.resolve_all("dup.norm");
+    BOOST_REQUIRE_EQUAL(matches.size(), 1u);
+    BOOST_TEST(matches[0] == fs::weakly_canonical(module_file));
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_auto_entry_falls_back_to_literal_directory_root) {
+    TempDir d;
+    fs::create_directories(d.path / "legacy-modules" / "legacy");
+    const auto module_file =
+        d.create_file("legacy-modules/legacy/core.eta", "(module legacy.core)\n");
+
+    EnvVarGuard guard("ETA_MODULE_PATH");
+    const auto env_value = (d.path / "legacy-modules").string();
+#ifdef _WIN32
+    _putenv_s("ETA_MODULE_PATH", env_value.c_str());
+#else
+    setenv("ETA_MODULE_PATH", env_value.c_str(), 1);
+#endif
+
+    auto r = ModulePathResolver::from_args_or_env_at("", d.path);
+    auto resolved = r.resolve("legacy.core");
+    BOOST_REQUIRE(resolved.has_value());
+    BOOST_TEST(*resolved == fs::weakly_canonical(module_file));
 }
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_includes_compile_time_stdlib_fallback) {

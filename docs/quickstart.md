@@ -28,14 +28,14 @@ Download the latest archive for your platform from
 
 | Platform     | Archive                            |
 |--------------|------------------------------------|
-| Windows x64  | `eta-v0.2.0-win-x64.zip`          |
-| Linux x86_64 | `eta-v0.2.0-linux-x86_64.tar.gz`  |
+| Windows x64  | `eta-v0.0.2-win-x64.zip`          |
+| Linux x86_64 | `eta-v0.0.2-linux-x86_64.tar.gz`  |
 
 ### Linux / macOS
 
 ```bash
-tar xzf eta-v0.2.0-linux-x86_64.tar.gz
-cd eta-v0.2.0-linux-x86_64
+tar xzf eta-v0.0.2-linux-x86_64.tar.gz
+cd eta-v0.0.2-linux-x86_64
 ./install.sh                  # adds bin/ to PATH, sets ETA_MODULE_PATH
                               # installs VS Code extension if 'code' is on PATH
 ```
@@ -49,8 +49,8 @@ To install into a custom prefix instead of using the bundle in-place:
 ### Windows
 
 ```powershell
-Expand-Archive eta-v0.2.0-win-x64.zip -DestinationPath .
-cd eta-v0.2.0-win-x64
+Expand-Archive eta-v0.0.2-win-x64.zip -DestinationPath .
+cd eta-v0.0.2-win-x64
 .\install.cmd                 # adds bin\ to user PATH, sets ETA_MODULE_PATH
                               # installs VS Code extension if 'code' is on PATH
 ```
@@ -124,7 +124,7 @@ Usage: etac [options] <file.eta> [-o <file.etac>]
 | `-O0` | Disable optimization (default). |
 | `--disasm` | Print disassembly to stdout instead of writing a `.etac` file. |
 | `--no-debug` | Strip debug info (source maps) from the output, producing a smaller file. |
-| `--path <dirs>` | Module search path (`;`-separated on Windows, `:`-separated on Linux). Falls back to `ETA_MODULE_PATH`. |
+| `--path <dirs>` | Module search path (`;`-separated on Windows, `:`-separated on Linux). Falls back to `ETA_MODULE_PATH`. Supports `dir+`, `pkg+`, `pkgs+`, and auto mode entries. |
 | `--help` | Show the help message. |
 
 **Examples:**
@@ -291,6 +291,22 @@ set ETA_MODULE_PATH=.\libs           # Windows
 etai app.eta
 ```
 
+You can mix typed module-path entries:
+
+- `dir+<path>`: treat `<path>` as a plain module root.
+- `pkg+<path>`: treat `<path>` as one package root (`eta.toml` at the root).
+- `pkgs+<path>`: scan `<path>` as a package collection and add discovered package roots.
+- `<path>` (no sigil): auto mode (`pkg+` when `<path>/eta.toml` exists, `pkgs+` when nested package manifests are found, otherwise `dir+`).
+
+Example top-level package directory setup:
+
+```bash
+export ETA_MODULE_PATH=./packages
+etai app.eta
+```
+
+With this setup, imports like `(import db.duckdb)` resolve from package roots under `./packages` without adding each package `src/` path manually.
+
 ### Import Clause Variants
 
 Eta supports several ways to control which names are imported:
@@ -427,7 +443,7 @@ session. It provides an expandable tree of GC root categories:
 ## Bundle Layout
 
 ```
-eta-v0.2.0-<platform>/
+eta-v0.0.2-<platform>/
   bin/
     etac(.exe)              # Ahead-of-time bytecode compiler
     etai(.exe)              # File interpreter (also runs .etac files)

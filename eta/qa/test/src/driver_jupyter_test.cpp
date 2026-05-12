@@ -24,7 +24,6 @@
 #include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/native/sidecar_loader.h"
-#include "eta/runtime/embedded_prelude.h"
 
 namespace fs = std::filesystem;
 
@@ -921,7 +920,7 @@ BOOST_AUTO_TEST_CASE(eval_string_splits_top_level_forms_with_comments_and_bare_a
     BOOST_TEST(marker_out == "\"semi;inside\"");
 }
 
-BOOST_AUTO_TEST_CASE(load_prelude_uses_embedded_blob_or_module_path_fallback) {
+BOOST_AUTO_TEST_CASE(load_prelude_does_not_load_removed_std_prelude_module) {
     ScopedTempDir temp;
     const auto prelude_path = temp.path / "std" / "prelude.eta";
     fs::create_directories(prelude_path.parent_path());
@@ -937,18 +936,10 @@ BOOST_AUTO_TEST_CASE(load_prelude_uses_embedded_blob_or_module_path_fallback) {
     eta::session::Driver driver(std::move(resolver));
 
     const auto result = driver.load_prelude();
-    BOOST_REQUIRE(result.found);
-    BOOST_REQUIRE(result.loaded);
-    BOOST_TEST(driver.has_module("std.prelude"));
-
-    if (eta::runtime::embedded_prelude_blob().empty()) {
-        std::error_code ec;
-        auto expected = fs::weakly_canonical(prelude_path, ec);
-        if (ec) expected = prelude_path.lexically_normal();
-        BOOST_TEST(result.path == expected);
-    } else {
-        BOOST_TEST(result.path == fs::path("<embedded:prelude.etac>"));
-    }
+    BOOST_TEST(!result.found);
+    BOOST_TEST(!result.loaded);
+    BOOST_TEST(result.path.empty());
+    BOOST_TEST(!driver.has_module("std.prelude"));
 }
 
 BOOST_AUTO_TEST_CASE(completions_at_import_prefix_includes_std_torch) {

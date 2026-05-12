@@ -190,17 +190,6 @@ private:
     std::optional<std::string> resolve_module_source(const std::string& module_name);
 
     /**
-     * Load std.prelude (from std/prelude.eta) from the module search path and
-     * add all its module forms to all_forms, registering their names in
-     * seen_modules.
-     * This provides std.core, std.math, std.io, std.prelude etc. to the
-     * linker so that (import std.prelude) in user code resolves correctly.
-     */
-    void preload_prelude(
-        std::vector<eta::reader::parser::SExprPtr>& all_forms,
-        std::unordered_set<std::string>& seen_modules);
-
-    /**
      * Recursively load all imported module files into all_forms so the linker
      * can resolve cross-module references.  seen_modules must already contain
      * the names of every module already present in all_forms.  For imports that
@@ -214,13 +203,13 @@ private:
 
     /**
      * Completion caches
-     * Cached symbols from prelude + module-path .eta files (populated lazily).
+     * Cached symbols from module-path `.eta` files (populated lazily).
      */
     bool completion_cache_loaded_{false};
     std::vector<SymbolInfo> prelude_symbols_;
     std::vector<SymbolInfo> module_path_symbols_;
 
-    /// Populate prelude_symbols_ and module_path_symbols_ from disk.
+    /// Populate cached completion symbols from disk.
     void load_completion_cache();
 
     /// Scan all .eta files in the module search path and collect their symbols.

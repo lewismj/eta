@@ -20,6 +20,7 @@
 #include "eta/runtime/error.h"
 #include "eta/runtime/nanbox.h"
 #include "eta/util/path.h"
+#include "eta/util/runtime_layout.h"
 
 namespace eta::native {
 
@@ -328,6 +329,7 @@ bool NativeSidecarManager::ensure_bundled_sidecars_loaded(std::span<const fs::pa
                                                           std::string_view etai_path) {
     if (bundled_sidecars_attempted_) return true;
     bundled_sidecars_attempted_ = true;
+    const auto& layout = util::kDefaultRuntimeLayoutConfig;
 
     std::unordered_set<std::string> root_seen;
     std::vector<fs::path> candidate_roots;
@@ -342,14 +344,15 @@ bool NativeSidecarManager::ensure_bundled_sidecars_loaded(std::span<const fs::pa
     };
 
     for (const auto& module_dir : module_dirs) {
-        add_candidate_root(module_dir / "packages" / "stdlib" / "native");
-        add_candidate_root(module_dir.parent_path() / "packages" / "stdlib" / "native");
+        add_candidate_root(util::bundled_stdlib_native_root(module_dir, layout));
+        add_candidate_root(util::bundled_stdlib_native_root(module_dir.parent_path(), layout));
     }
 
     if (!etai_path.empty()) {
         const fs::path etai_abs_path = util::canonicalize_path(fs::path(etai_path));
-        add_candidate_root(etai_abs_path.parent_path() / "packages" / "stdlib" / "native");
-        add_candidate_root(etai_abs_path.parent_path().parent_path() / "packages" / "stdlib" / "native");
+        add_candidate_root(util::bundled_stdlib_native_root(etai_abs_path.parent_path(), layout));
+        add_candidate_root(util::bundled_stdlib_native_root(
+            etai_abs_path.parent_path().parent_path(), layout));
     }
 
     if (candidate_roots.empty()) return true;

@@ -27,7 +27,6 @@ bool ReplController::eval_string(std::string source, std::string& out) {
     auto wrapped = interpreter::wrap_repl_submission(
         forms,
         repl_counter_++,
-        runtime_.has_module("std.prelude"),
         repl_modules_);
 
     runtime::nanbox::LispVal result{runtime::nanbox::Nil};
@@ -53,7 +52,6 @@ DisplayValue ReplController::eval_to_display(const std::string& source) {
     auto wrapped = interpreter::wrap_repl_submission(
         forms,
         repl_counter_++,
-        runtime_.has_module("std.prelude"),
         repl_modules_);
 
     runtime::nanbox::LispVal result{runtime::nanbox::Nil};

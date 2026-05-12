@@ -14,6 +14,7 @@
 
 /// Eta interpreter
 #include "eta/session/driver.h"
+#include "eta/session/bootstrap_module.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/docs/markdown.h"
 #include "eta/docs/stdlib_docs.h"
@@ -602,7 +603,7 @@ void DapServer::start_vm_from_current_launch() {
         std::ostringstream msg;
         msg << "[eta_dap] Module search dirs:\n";
         if (resolver.empty()) {
-            msg << "  (none  -  prelude will not load; set eta.lsp.modulePath in VS Code settings)\n";
+            msg << session::dap_empty_module_path_warning();
         } else {
             for (const auto& d : resolver.dirs()) msg << "  " << d.string() << "\n";
         }

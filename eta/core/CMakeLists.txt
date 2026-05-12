@@ -30,7 +30,19 @@ endif()
 # inherit the include paths automatically.
 target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen)
 target_link_libraries(${PROJECT_NAME} PRIVATE csv::parser)
-target_link_libraries(${PROJECT_NAME} PRIVATE nng)
+
+# eta_core compiles sources that include <nng/...>, but linking nng at this
+# layer introduces a cross-target dependency cycle (tests depend on etac ->
+# eta_core). Import nng usage requirements for compilation only; final
+# executables/modules link nng via eta_link_sidecar_builtin_runtime().
+if(TARGET nng)
+    target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
+        $<TARGET_PROPERTY:nng,INTERFACE_INCLUDE_DIRECTORIES>
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        $<TARGET_PROPERTY:nng,INTERFACE_COMPILE_DEFINITIONS>
+    )
+endif()
 
 target_sources(${PROJECT_NAME}
         PRIVATE

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -399,6 +400,61 @@ std::string make_manifest(const std::string& name,
     return manifest;
 }
 
+[[nodiscard]] std::string normalize_cli_output(std::string text) {
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+    while (!text.empty() && text.back() == '\n') {
+        text.pop_back();
+    }
+    return text;
+}
+
+[[nodiscard]] bool ascii_digits(std::string_view text) {
+    if (text.empty()) return false;
+    return std::all_of(
+        text.begin(),
+        text.end(),
+        [](const char ch) {
+            return std::isdigit(static_cast<unsigned char>(ch)) != 0;
+        });
+}
+
+[[nodiscard]] bool version_core_triplet(std::string_view text) {
+    const auto first = text.find('.');
+    if (first == std::string_view::npos) return false;
+    const auto second = text.find('.', first + 1u);
+    if (second == std::string_view::npos) return false;
+    if (text.find('.', second + 1u) != std::string_view::npos) return false;
+
+    return ascii_digits(text.substr(0u, first))
+        && ascii_digits(text.substr(first + 1u, second - first - 1u))
+        && ascii_digits(text.substr(second + 1u));
+}
+
+[[nodiscard]] bool version_suffix_is_valid(std::string_view suffix) {
+    if (suffix.empty()) return true;
+    if (suffix.front() != '-' && suffix.front() != '+') return false;
+    if (suffix.size() == 1u) return false;
+    for (std::size_t i = 1; i < suffix.size(); ++i) {
+        const unsigned char ch = static_cast<unsigned char>(suffix[i]);
+        if (std::isalnum(ch) || suffix[i] == '.' || suffix[i] == '-') continue;
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] bool looks_like_cli_version_token(std::string_view token) {
+    if (token.empty()) return false;
+    if (token.front() == 'v') token.remove_prefix(1u);
+
+    const auto suffix_pos = token.find_first_of("-+");
+    if (suffix_pos == std::string_view::npos) {
+        return version_core_triplet(token);
+    }
+
+    return version_core_triplet(token.substr(0u, suffix_pos))
+        && version_suffix_is_valid(token.substr(suffix_pos));
+}
+
 [[nodiscard]] std::string host_native_target_triple() {
 #if defined(_WIN32)
 #if defined(_M_X64) || defined(__x86_64__)
@@ -609,6 +665,42 @@ BOOST_AUTO_TEST_CASE(init_scaffolds_current_directory) {
     BOOST_TEST(fs::is_regular_file(temp.path / "eta.toml"));
     BOOST_TEST(fs::is_regular_file(temp.path / "src" / (inferred_name + ".eta")));
     BOOST_TEST(fs::is_regular_file(temp.path / "tests" / "smoke.test.eta"));
+}
+
+BOOST_AUTO_TEST_CASE(version_flag_prints_output) {
+    TempDir temp;
+    const auto result = run_eta(temp.path, {"--version"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+
+    const auto normalized = normalize_cli_output(result.output);
+    BOOST_TEST(!normalized.empty());
+    BOOST_TEST(normalized.rfind("eta ", 0u) == 0u);
+}
+
+BOOST_AUTO_TEST_CASE(version_flag_matches_expected_tag_format) {
+    TempDir temp;
+    const auto result = run_eta(temp.path, {"--version"});
+    BOOST_REQUIRE_MESSAGE(result.exit_code == 0, result.output);
+
+    const auto normalized = normalize_cli_output(result.output);
+    BOOST_REQUIRE_MESSAGE(normalized.rfind("eta ", 0u) == 0u, normalized);
+
+    const auto version_token = std::string_view(normalized).substr(4u);
+    BOOST_TEST(looks_like_cli_version_token(version_token));
+}
+
+BOOST_AUTO_TEST_CASE(version_flag_is_stable_across_layouts) {
+    TempDir temp;
+    const auto workspace_root = copy_fixture_tree(
+        temp,
+        fs::path("workspace") / "virtual_root");
+
+    const auto first = run_eta(temp.path, {"--version"});
+    const auto second = run_eta(workspace_root / "packages" / "app", {"--version"});
+    BOOST_REQUIRE_MESSAGE(first.exit_code == 0, first.output);
+    BOOST_REQUIRE_MESSAGE(second.exit_code == 0, second.output);
+
+    BOOST_TEST(normalize_cli_output(first.output) == normalize_cli_output(second.output));
 }
 
 BOOST_AUTO_TEST_CASE(tree_output_is_deterministic_for_path_deps) {

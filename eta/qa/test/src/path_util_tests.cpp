@@ -14,6 +14,7 @@
 
 #include "eta/session/runtime_config.h"
 #include "eta/util/path.h"
+#include "eta/util/runtime_layout.h"
 
 namespace fs = std::filesystem;
 
@@ -130,6 +131,59 @@ BOOST_AUTO_TEST_CASE(current_executable_path_and_sibling_path_are_resolved) {
 #else
     BOOST_TEST(sibling.filename() == fs::path("etai"));
 #endif
+}
+
+BOOST_AUTO_TEST_CASE(runtime_layout_defaults_match_current_package_conventions) {
+    const auto root = fs::path("/runtime");
+
+    BOOST_TEST(
+        eta::util::package_build_output_dir(root)
+        == root / "target" / "release");
+    BOOST_TEST(
+        eta::util::package_source_dir(root)
+        == root / "src");
+    BOOST_TEST(
+        eta::util::workspace_modules_root(root)
+        == root / ".eta" / "modules");
+    BOOST_TEST(
+        eta::util::bundled_stdlib_root(root)
+        == root / "stdlib");
+    BOOST_TEST(
+        eta::util::bundled_stdlib_native_root(root)
+        == root / "packages" / "stdlib" / "native");
+}
+
+BOOST_AUTO_TEST_CASE(runtime_layout_config_overrides_all_layout_tokens) {
+    const auto root = fs::path("/runtime");
+    const auto exe = root / "bin" / "etai";
+    eta::util::RuntimeLayoutConfig config;
+    config.package_build_dir = ".build";
+    config.package_build_profile = "prod";
+    config.package_source_dir = "source";
+    config.workspace_state_dir = ".cache";
+    config.workspace_modules_dir = "deps";
+    config.bundled_stdlib_dir = "runtime";
+    config.packages_dir = "vendor";
+    config.native_dir = "plugins";
+
+    BOOST_TEST(
+        eta::util::package_build_output_dir(root, config)
+        == root / ".build" / "prod");
+    BOOST_TEST(
+        eta::util::package_source_dir(root, config)
+        == root / "source");
+    BOOST_TEST(
+        eta::util::workspace_modules_root(root, config)
+        == root / ".cache" / "deps");
+    BOOST_TEST(
+        eta::util::bundled_stdlib_root(root, config)
+        == root / "runtime");
+    BOOST_TEST(
+        eta::util::bundled_stdlib_root_from_executable(exe, config)
+        == root / "runtime");
+    BOOST_TEST(
+        eta::util::bundled_stdlib_native_root(root, config)
+        == root / "vendor" / "runtime" / "plugins");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

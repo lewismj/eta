@@ -20,6 +20,7 @@
 #include "xeus/xkernel_configuration.hpp"
 #include "xeus-zmq/xserver_zmq.hpp"
 #include "xeus-zmq/xzmq_context.hpp"
+#include "eta/util/runtime_layout.h"
 
 namespace {
 
@@ -241,7 +242,7 @@ private:
 
     auto cur = exe_path.parent_path();
     for (int i = 0; i < 8 && !cur.empty(); ++i) {
-        const auto candidate = cur / "stdlib";
+        const auto candidate = eta::util::bundled_stdlib_root(cur);
         if (is_stdlib_root(candidate)) {
             return fs::weakly_canonical(candidate).string();
         }

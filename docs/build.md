@@ -27,16 +27,16 @@ directory argument.
 
 ```bash
 chmod +x scripts/build-release.sh
-./scripts/build-release.sh ./dist/eta-v0.2.0-linux-x86_64
+./scripts/build-release.sh ./dist/eta-v0.0.2-linux-x86_64
 ```
 
-Produces `dist/eta-v0.2.0-linux-x86_64/` and `dist/eta-v0.2.0-linux-x86_64.tar.gz`.
+Produces `dist/eta-v0.0.2-linux-x86_64/` and `dist/eta-v0.0.2-linux-x86_64.tar.gz`.
 
 Additional flags:
 
 ```bash
 # Explicit version tag
-./scripts/build-release.sh -v v0.2.0
+./scripts/build-release.sh -v v0.0.2
 
 # Enable libtorch bindings (auto-downloads libtorch)
 ./scripts/build-release.sh -t
@@ -46,16 +46,16 @@ Additional flags:
 ### Windows (PowerShell)
 
 ```powershell
-.\scripts\build-release.ps1 .\dist\eta-v0.2.0-win-x64
+.\scripts\build-release.ps1 .\dist\eta-v0.0.2-win-x64
 ```
 
-Produces `dist\eta-v0.2.0-win-x64\` and `dist\eta-v0.2.0-win-x64.zip`.
+Produces `dist\eta-v0.0.2-win-x64\` and `dist\eta-v0.0.2-win-x64.zip`.
 
 Additional flags:
 
 ```powershell
 # Explicit version + vcpkg for Boost
-.\scripts\build-release.ps1 -Version v0.2.0 -VcpkgRoot C:\src\vcpkg
+.\scripts\build-release.ps1 -Version v0.0.2 -VcpkgRoot C:\src\vcpkg
 
 # Enable libtorch bindings
 .\scripts\build-release.ps1 -EnableTorch
@@ -73,7 +73,7 @@ If you prefer not to use the scripts:
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
-cmake --install build --prefix dist/eta-v0.2.0-linux-x86_64
+cmake --install build --prefix dist/eta-v0.0.2-linux-x86_64
 ```
 
 ### Windows (MSVC)
@@ -81,7 +81,7 @@ cmake --install build --prefix dist/eta-v0.2.0-linux-x86_64
 ```powershell
 cmake -B build
 cmake --build build --config Release
-cmake --install build --prefix dist\eta-v0.2.0-win-x64 --config Release
+cmake --install build --prefix dist\eta-v0.0.2-win-x64 --config Release
 ```
 
 ### With CUDA
@@ -105,7 +105,7 @@ your platform and caches it in the build directory.  Supported backends:
 After build or extraction:
 
 ```
-eta-v0.2.0-<platform>/
+eta-v0.0.2-<platform>/
   bin/
     etac(.exe)              # Ahead-of-time bytecode compiler
     etai(.exe)              # File interpreter (also runs .etac files)
@@ -249,8 +249,8 @@ The repository includes `.github/workflows/release.yml` which:
 To trigger a release:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.0.2
+git push origin v0.0.2
 ```
 
 To test the workflow without tagging, use **Actions → Release Bundle →

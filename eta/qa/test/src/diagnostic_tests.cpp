@@ -1,6 +1,7 @@
 #include <boost/test/unit_test.hpp>
 #include <sstream>
 #include "eta/diagnostic/diagnostic.h"
+#include "eta/session/bootstrap_module.h"
 
 using namespace eta::diagnostic;
 
@@ -444,6 +445,27 @@ BOOST_AUTO_TEST_CASE(to_diagnostic_link_error) {
         BOOST_CHECK(d.severity == Severity::Error);
         BOOST_CHECK_EQUAL(d.message, "test");
     }
+}
+
+/**
+ * Stage 12.1 bootstrap messaging contract
+ */
+
+BOOST_AUTO_TEST_CASE(repl_missing_module_path_warning_uses_neutral_wording) {
+    const std::string warning_text =
+        std::string(eta::session::repl_missing_module_path_warning());
+
+    BOOST_CHECK(warning_text.find("stdlib modules") != std::string::npos);
+    BOOST_CHECK(warning_text.find("std.prelude") == std::string::npos);
+    BOOST_CHECK(warning_text.find("std/prelude.eta") == std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(dap_empty_module_path_warning_uses_neutral_wording) {
+    const std::string warning_text =
+        std::string(eta::session::dap_empty_module_path_warning());
+
+    BOOST_CHECK(warning_text.find("stdlib modules") != std::string::npos);
+    BOOST_CHECK(warning_text.find("std.prelude") == std::string::npos);
 }
 
 /**

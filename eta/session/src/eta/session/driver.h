@@ -88,21 +88,20 @@ public:
 
     /// Result of a load_prelude() call.
     struct PreludeResult {
-        bool found{false};  ///< Was a prelude artifact discovered?
-        bool loaded{false}; ///< Did it compile and execute successfully?
-        fs::path path;      ///< Source/.etac path, or an embedded marker.
+        bool found{false};  ///< Deprecated: retained for API compatibility.
+        bool loaded{false}; ///< Deprecated: retained for API compatibility.
+        fs::path path;      ///< Deprecated: retained for API compatibility.
     };
 
     using CompileModuleEntry = CompilationSession::CompileModuleEntry;
     using CompileResult = CompilationSession::CompileResult;
 
     /**
-     * @brief Load and execute the prelude.
+     * @brief Legacy bootstrap hook.
      *
-     * Resolution order:
-     *  1) embedded bytecode blob
-     *  2) bundled/resolved "std/prelude.etac"
-     *  3) source "std/prelude.eta"
+     * `std.prelude` has been removed from the runtime contract. This method now
+     * only ensures package sidecars are loaded and otherwise performs no module
+     * auto-load behavior.
      */
     PreludeResult load_prelude();
 
@@ -138,10 +137,9 @@ public:
     std::optional<CompileResult> compile_file(const fs::path& path);
 
     /**
-     * @brief Load and compile the prelude without executing user code.
+     * @brief Legacy bootstrap alias.
      *
-     * Note: the prelude itself IS executed (its globals must be live for
-     * downstream modules). This is simply a convenience alias for load_prelude().
+     * This forwards to @ref load_prelude.
      */
     PreludeResult compile_prelude();
 
