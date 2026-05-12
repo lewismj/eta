@@ -99,7 +99,7 @@ extension — see [VS Code extension](./reference/vscode.md).
 # GitHub Actions excerpt
 - name: Run Eta tests
   run: eta_test --junit test-results.xml stdlib/tests
-- uses: actions/upload-artifact@v4
+- uses: actions/upload-artifact@v5
   with:
     name: test-results
     path: test-results.xml

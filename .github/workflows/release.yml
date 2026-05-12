@@ -27,7 +27,7 @@ jobs:
     env:
       VERSION: ${{ github.ref_name || inputs.tag_name || 'dev' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set bundle name
         run: echo "BUNDLE=eta-${VERSION}-linux-x86_64" >> $GITHUB_ENV
@@ -69,7 +69,7 @@ jobs:
 
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20.18'
 
@@ -133,7 +133,7 @@ jobs:
           tar -czf ${{ env.BUNDLE }}.tar.gz ${{ env.BUNDLE }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ env.BUNDLE }}
           path: dist/${{ env.BUNDLE }}.tar.gz
@@ -146,7 +146,7 @@ jobs:
     env:
       VERSION: ${{ github.ref_name || inputs.tag_name || 'dev' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set bundle name
         shell: pwsh
@@ -187,7 +187,7 @@ jobs:
         run: cmake --install build --config Release
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20.18'
 
@@ -292,7 +292,7 @@ jobs:
             -DestinationPath "${{ github.workspace }}\dist\${{ env.BUNDLE }}.zip"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ env.BUNDLE }}
           path: dist/${{ env.BUNDLE }}.zip
