@@ -123,9 +123,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
     };
 
     auto make_nondiff_error = [make_ad_runtime_error](std::string op, std::string detail) -> RuntimeError {
+        const std::string message = op + ": non-differentiable point reached in strict mode";
         return make_ad_runtime_error(
             ad::kTagNondiffStrict,
-            op + ": non-differentiable point reached in strict mode",
+            message,
             {
                 ad::field("op", std::move(op)),
                 ad::field("detail", std::move(detail))
@@ -134,9 +135,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     auto make_domain_error = [make_ad_runtime_error](std::string op, double base, double exponent, std::string detail)
         -> RuntimeError {
+        const std::string message = op + ": domain violation";
         return make_ad_runtime_error(
             ad::kTagDomain,
-            op + ": domain violation",
+            message,
             {
                 ad::field("op", std::move(op)),
                 ad::field("base", base),
@@ -147,9 +149,10 @@ inline void register_core_primitives(BuiltinEnvironment& env, Heap& heap, Intern
 
     auto make_unary_domain_error = [make_ad_runtime_error](std::string op, double value, std::string detail)
         -> RuntimeError {
+        const std::string message = op + ": domain violation";
         return make_ad_runtime_error(
             ad::kTagDomain,
-            op + ": domain violation",
+            message,
             {
                 ad::field("op", std::move(op)),
                 ad::field("value", value),

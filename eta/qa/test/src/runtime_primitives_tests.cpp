@@ -416,7 +416,7 @@ BOOST_AUTO_TEST_CASE(aad_unary_domain_sensitive_ops_report_domain_error_tag_and_
         auto* vm_error = std::get_if<eta::runtime::error::VMError>(&op_res.error());
         BOOST_REQUIRE(vm_error != nullptr);
         BOOST_TEST(vm_error->tag_override == std::string(eta::runtime::ad::kTagDomain));
-        BOOST_TEST(vm_error->message == ": domain violation");
+        BOOST_TEST(vm_error->message == std::string(test_case.name) + ": domain violation");
 
         auto* op_field = find_vm_error_field(*vm_error, "op");
         BOOST_REQUIRE(op_field != nullptr);
