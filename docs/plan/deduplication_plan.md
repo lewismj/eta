@@ -1,300 +1,301 @@
 # Core Primitive De-duplication Plan
 
 Status: **draft / proposed**
-Primary goals:
-1. Remove duplicated builtin registration metadata.
-2. Reduce repetitive AAD wrapper logic in `core_primitives.h`.
-3. Keep runtime/analyzer/docs behavior fully consistent.
+
+Objective:
+1. Remove duplicate builtin registration metadata.
+2. Eliminate `builtin_names.h` safely.
+3. Reduce repetitive AAD wrapper code in `core_primitives.h`.
+4. Keep runtime, analyzer, docs, and LSP behavior unchanged.
+
+Decision:
+1. **Yes, we should remove `builtin_names.h`**, but only after its current responsibilities are migrated.
 
 ---
 
-## 0. Pre-flight and safety rails
+## Task 1: Establish Baseline and Migration Safety
 
-Before Phase A:
-1. Capture a baseline test run and keep it attached to the migration PR.
-2. Do not run large refactors in one commit; keep each phase bisectable.
-3. Require green tests at each phase boundary before merging to main.
+Code changes:
+1. No functional changes.
+2. Record current behavior and test baseline in PR notes.
 
-Recommended baseline gate:
-1. Build `eta_core_test`.
-2. Run CTest target `eta_core_test` with `--output-on-failure`.
-3. Run targeted smoke subsets while iterating:
+Tests:
+1. Build and run `eta_core_test`.
+2. Run targeted suites:
    - `builtin_sync_tests`
-   - `stdlib_doc_tests`
    - `runtime_primitives_tests`
+   - `stdlib_doc_tests`
    - `lsp_tests`
    - `native_sidecar_loader_tests`
    - `native_sidecar_manager_tests`
 
-Example local commands (replace `<build_dir>`):
-
-```bash
-cmake --build <build_dir> --target eta_core_test
-ctest --test-dir <build_dir> --output-on-failure -R eta_core_test
-<build_dir>/eta/qa/test/eta_core_test --run_test=builtin_sync_tests
-<build_dir>/eta/qa/test/eta_core_test --run_test=lsp_tests
-```
-
-## 1. Decision: can we remove `builtin_names.h` entirely?
-
-Short answer: **yes, but not in one step**.
-
-Today `builtin_names.h` is still a key compatibility layer used by:
-1. Driver bootstrap (`register_builtin_names` before patching runtime impls).
-2. LSP semantic analysis setup.
-3. Metadata construction path (`builtin_metadata.cpp` currently seeds from `register_builtin_names_legacy`).
-
-We can remove it once a new canonical builtin catalog replaces those call sites.
+Done when:
+1. Baseline is green and captured.
 
 ---
 
-## 2. Target architecture (single source of truth)
+## Task 2: Add Canonical Builtin Catalog
 
-Introduce a single canonical builtin catalog, for example:
-1. `eta/core/src/eta/runtime/builtin_catalog.def` (X-macro style), or
-2. `eta/core/src/eta/runtime/builtin_catalog.h` with one constexpr array.
-
-Each builtin entry should include at least:
-1. `name`
-2. `arity`
-3. `has_rest`
-4. `owner` (`core`, `sidecar:eta-torch`, `sidecar:eta-log`, etc.)
-5. Optional doc overrides (`category`, `signature`, `summary`) where heuristics are insufficient.
-
-All other consumers derive from this catalog.
-
----
-
-## 3. Migration phases
-
-### Phase A: Introduce catalog without behavior change
-
-1. Add the new catalog file and API:
-   - `builtin_catalog() -> span<const BuiltinCatalogEntry>`
-2. Add adapter function:
-   - `register_builtin_specs(BuiltinEnvironment&)`
-   - Registers `name/arity/has_rest` with null funcs.
-3. Keep `builtin_names.h` intact temporarily, but make it delegate to catalog data.
-
-Exit criteria:
-1. Driver/LSP/tests unchanged behavior.
-2. Existing sync tests pass.
-
-Implementation checklist:
-1. Add:
+Code changes:
+1. Add catalog source:
    - `eta/core/src/eta/runtime/builtin_catalog.h`
    - `eta/core/src/eta/runtime/builtin_catalog.cpp` (or header-only constexpr table)
-2. Define `BuiltinCatalogEntry` with:
-   - `name`, `arity`, `has_rest`
-   - provisional `owner` field (can be defaulted in Phase A)
-3. Add adapter:
-   - `register_builtin_specs(BuiltinEnvironment&)`
-4. Refactor `builtin_names.h` internals to call `register_builtin_specs(...)` (public API unchanged for now).
-5. Keep comments in `all_primitives.h` and `builtin_env.h` aligned with new source-of-truth wording.
+2. Add `BuiltinCatalogEntry` with:
+   - `name`
+   - `arity`
+   - `has_rest`
+   - `owner` (`core`, `sidecar:eta-torch`, etc.)
+   - optional metadata override fields (`category`, `signature`, `summary`)
+3. Add API:
+   - `builtin_catalog() -> span<const BuiltinCatalogEntry>`
 
-Tests to add in Phase A:
-1. Extend `eta/qa/test/src/builtin_sync_tests.cpp` with:
-   - `catalog_has_no_duplicate_names`
-   - `catalog_entries_have_valid_arity_metadata`
-   - `register_builtin_specs_matches_register_builtin_names_legacy` (exact name/arity/rest parity while legacy still exists)
-2. Add optional dedicated file `eta/qa/test/src/builtin_catalog_tests.cpp` if `builtin_sync_tests.cpp` becomes too large.
-3. Update `eta/qa/test/CMakeLists.txt` to include new test file if added.
+Tests:
+1. Add tests in `builtin_sync_tests.cpp` (or `builtin_catalog_tests.cpp`):
+   - no duplicate names
+   - valid arity metadata
 
-Phase A test gate:
-1. `builtin_sync_tests` (including new catalog parity checks)
-2. `runtime_primitives_tests`
-3. `lsp_tests`
-4. `eta_core_test` full run
-
-### Phase B: Move metadata + sidecar ownership to catalog
-
-1. Refactor `builtin_metadata.cpp` to build from `builtin_catalog()` directly.
-2. Replace hardcoded sidecar ownership logic with `owner` field from catalog.
-3. Keep doc overrides in one place (prefer catalog fields over name-prefix heuristics).
-
-Exit criteria:
-1. `builtin_metadata()` output unchanged (or intentional + reviewed deltas only).
-2. stdlib doc tests and builtin sync tests pass.
-
-Implementation checklist:
-1. Move sidecar ownership from heuristic code in `builtin_metadata.cpp` into catalog entry data.
-2. Refactor metadata generation to iterate catalog entries directly (not legacy registration).
-3. Keep `category/signature/summary` behavior stable:
-   - preserve current overrides;
-   - only move storage location/source.
-4. Keep `lookup_builtin_metadata`, `builtin_native_sidecar_package`, and `missing_builtin_docs` API signatures unchanged.
-
-Tests to add in Phase B:
-1. In `builtin_sync_tests.cpp`:
-   - `builtin_native_sidecar_package_matches_catalog_owner`
-   - `builtin_metadata_order_matches_catalog_order`
-2. In `lsp_tests.cpp`:
-   - hover/signature test for at least one core builtin and one sidecar-owned builtin to ensure metadata remained intact.
-3. In `native_sidecar_manager_tests.cpp`:
-   - assert sidecar ownership mapping used by placeholders still resolves expected package IDs.
-
-Phase B test gate:
-1. `builtin_sync_tests`
-2. `stdlib_doc_tests`
-3. `lsp_tests`
-4. `native_sidecar_loader_tests` and `native_sidecar_manager_tests`
-5. `eta_core_test` full run
-
-### Phase C: Replace all `builtin_names.h` consumers
-
-1. Driver: replace `register_builtin_names(...)` with `register_builtin_specs(...)`.
-2. LSP: same replacement for analysis env setup.
-3. Tests: switch includes/calls to new catalog API.
-4. Keep a short compatibility shim only if needed for one release.
-
-Exit criteria:
-1. No production call sites include `builtin_names.h`.
-2. CI passes across core/session/tools/tests.
-
-Implementation checklist:
-1. Update Driver bootstrap call sites:
-   - `eta/session/src/eta/session/driver.cpp`
-2. Update LSP analyzer bootstrap call sites:
-   - `eta/tools/lsp/src/eta/lsp/lsp_server.cpp`
-3. Update remaining tests and helpers to include/use catalog APIs.
-4. Keep temporary shim in `builtin_names.h` only for compatibility if any external/internal tool still depends on old symbol names.
-
-Tests to add in Phase C:
-1. In `builtin_sync_tests.cpp`:
-   - `driver_and_lsp_bootstrap_use_catalog_registration` (can be behavioral via environment/spec count parity checks)
-2. In `lsp_tests.cpp`:
-   - semantic diagnostics test covering builtin arity errors still reported as before.
-3. In `runtime_primitives_tests.cpp`:
-   - ensure builtin install count equals `builtin_metadata().size()`.
-
-Phase C test gate:
-1. `builtin_sync_tests`
-2. `runtime_primitives_tests`
-3. `lsp_tests`
-4. `compilation_session_tests`
-5. `eta_core_test` full run
-
-### Phase D: Delete `builtin_names.h`
-
-1. Remove file and legacy API declarations (`register_builtin_names_legacy`).
-2. Remove compatibility shim if introduced.
-3. Update docs/comments that still reference "legacy names table."
-
-Exit criteria:
-1. No references to `register_builtin_names*`.
-2. Build + test green.
-
-Implementation checklist:
-1. Delete:
-   - `eta/core/src/eta/runtime/builtin_names.h`
-2. Remove legacy declarations from:
-   - `eta/core/src/eta/runtime/builtin_metadata.h`
-3. Remove all includes/usages and update comments/docs.
-4. Add a lightweight guard to prevent reintroduction:
-   - repository check script in `scripts/tests/` that fails CI if `register_builtin_names` symbols are referenced.
-
-Tests to add in Phase D:
-1. Add CI/script-level check:
-   - `no_legacy_builtin_names_symbol_references`
-2. Keep all catalog parity tests (legacy parity test should be replaced with direct catalog/runtime parity checks).
-
-Phase D test gate:
-1. `eta_core_test` full run
-2. CLI smoke (`eta`, `etai`, `etac`) in CI job
-3. LSP smoke (in-process tests + startup check)
+Done when:
+1. Catalog compiles and tests pass.
 
 ---
 
-## 4. Core AAD wrapper de-duplication plan
+## Task 3: Add Catalog Registration Adapter (No Behavior Change)
 
-This runs in parallel with Phases B-C once catalog work is stable.
+Code changes:
+1. Add `register_builtin_specs(BuiltinEnvironment&)` that registers null-func specs from catalog.
+2. Keep `builtin_names.h` public API intact for now.
+3. Internally make `builtin_names.h` delegate to the new adapter.
 
-1. Introduce shared helper(s) for unary tape-aware math ops (`sin`, `cos`, `exp`, `log`, `sqrt`, `asin`, `acos`, `atan`, `tan`):
-   - Common active-tape lookup
+Tests:
+1. Add parity test:
+   - adapter output matches legacy registration exactly (name/order/arity/has_rest).
+2. Re-run baseline suites.
+
+Done when:
+1. Adapter and legacy path are behaviorally identical.
+
+---
+
+## Task 4: Move Metadata Construction to Catalog
+
+Code changes:
+1. Refactor `builtin_metadata.cpp` to build metadata from `builtin_catalog()`, not legacy registration.
+2. Keep existing metadata APIs unchanged:
+   - `builtin_metadata()`
+   - `lookup_builtin_metadata(...)`
+   - `missing_builtin_docs(...)`
+
+Tests:
+1. Add metadata order parity test:
+   - metadata order == catalog order.
+2. Add/keep doc completeness and uniqueness tests.
+3. Run `stdlib_doc_tests` and `lsp_tests`.
+
+Done when:
+1. Metadata output is unchanged (or intentional deltas are reviewed).
+
+---
+
+## Task 5: Move Sidecar Ownership Mapping to Catalog
+
+Code changes:
+1. Replace ownership heuristics in `builtin_metadata.cpp` with `owner` from catalog.
+2. Keep `builtin_native_sidecar_package(...)` signature unchanged.
+
+Tests:
+1. Add ownership mapping test:
+   - catalog owner == `builtin_native_sidecar_package(...)`.
+2. Re-run:
+   - `native_sidecar_loader_tests`
+   - `native_sidecar_manager_tests`
+   - `builtin_sync_tests`
+
+Done when:
+1. Sidecar placeholders and ownership behavior are unchanged.
+
+---
+
+## Task 6: Switch Driver Bootstrap to Catalog Adapter
+
+Code changes:
+1. Update `eta/session/src/eta/session/driver.cpp`:
+   - replace `register_builtin_names(...)` usage with `register_builtin_specs(...)`.
+2. Keep patching flow unchanged:
+   - `begin_patching()`
+   - runtime registration
+   - `verify_all_patched()`
+
+Tests:
+1. Add/adjust test ensuring driver bootstrap installs expected builtin count/order.
+2. Run:
+   - `runtime_primitives_tests`
+   - `compilation_session_tests`
+   - `builtin_sync_tests`
+
+Done when:
+1. Driver no longer depends on legacy names API.
+
+---
+
+## Task 7: Switch LSP Bootstrap to Catalog Adapter
+
+Code changes:
+1. Update `eta/tools/lsp/src/eta/lsp/lsp_server.cpp`:
+   - replace `register_builtin_names(...)` with `register_builtin_specs(...)`.
+
+Tests:
+1. Run `lsp_tests`.
+2. Add/adjust LSP semantic test for builtin arity diagnostics to confirm no regression.
+
+Done when:
+1. LSP no longer depends on legacy names API.
+
+---
+
+## Task 8: Remove Legacy API Surface
+
+Code changes:
+1. Remove legacy declarations such as `register_builtin_names_legacy` from public headers.
+2. Update includes and comments across core/session/tools/tests.
+
+Tests:
+1. Full `eta_core_test` run.
+2. Targeted compile check for `eta_lsp`, `etai`, and `etac`.
+
+Done when:
+1. No call sites reference legacy names functions.
+
+---
+
+## Task 9: Delete `builtin_names.h`
+
+Code changes:
+1. Delete `eta/core/src/eta/runtime/builtin_names.h`.
+2. Remove any remaining include references.
+3. Add regression guard script in `scripts/tests/` to fail on `register_builtin_names` symbol usage.
+
+Tests:
+1. Run full `eta_core_test`.
+2. Run CI smoke for:
+   - `eta`
+   - `etai`
+   - `etac`
+   - `eta_lsp`
+3. Run legacy-symbol guard script.
+
+Done when:
+1. Build/test green without `builtin_names.h`.
+
+---
+
+## Task 10: Add Catalog-to-Runtime Order Invariant Test
+
+Code changes:
+1. Add invariant test:
+   - catalog order exactly matches runtime patch registration order in `register_all_primitives`.
+
+Tests:
+1. Run `builtin_sync_tests`.
+
+Done when:
+1. Any future order drift fails tests immediately.
+
+---
+
+## Task 11: Introduce Shared AAD Unary Wrapper Helpers
+
+Code changes:
+1. Add helper functions inside `core_primitives.h` (or local helper header) for unary tape-aware math op boilerplate:
+   - active tape lookup
    - TapeRef validation
-   - Push + node-index guard
-   - Common numeric fallback path
-2. Keep per-op domain checks/strict-mode behavior explicit and local.
-3. Apply incrementally op-by-op with tests after each batch.
+   - entry push + node index check
+   - numeric fallback dispatch
+2. Do not migrate ops yet.
 
-Expected result:
-1. Smaller `core_primitives.h`.
-2. Fewer copy/paste error surfaces.
-3. No change to AD semantics.
+Tests:
+1. Add helper-focused unit coverage in `runtime_primitives_tests.cpp` (or new `aad_primitives_tests.cpp`):
+   - no active tape
+   - stale/mismatched ref
+   - index overflow guard path
 
-Implementation batches:
-1. Batch 1:
-   - Introduce helper(s) only; no primitive migration yet.
-   - Add focused unit tests for helper edge paths (no active tape, stale ref, out-of-range index).
-2. Batch 2:
-   - Migrate low-risk ops: `sin`, `cos`, `exp`.
-3. Batch 3:
-   - Migrate domain-sensitive ops: `log`, `sqrt`, `asin`, `acos`, `atan`, `tan`.
-4. Batch 4 (optional):
-   - Evaluate binary helper for `pow` if it improves readability without obscuring domain/strict handling.
-
-Tests to add for AAD refactor:
-1. Add/extend tests in `eta/qa/test/src/runtime_primitives_tests.cpp` (or dedicated `aad_primitives_tests.cpp`) covering:
-   - primal output parity
-   - tape op type parity
-   - strict mode non-diff error parity
-   - domain error parity
-2. Add end-to-end regression in stdlib tests for gradients across migrated ops (reuse `stdlib/tests/aad.test.eta`, extend if needed).
-
-AAD gate per batch:
-1. New AAD unit tests
-2. Existing `runtime_primitives_tests`
-3. Existing `builtin_sync_tests`
-4. `eta_core_test` full run before merging each batch
+Done when:
+1. Helpers are covered and behavior-neutral.
 
 ---
 
-## 5. Verification strategy
+## Task 12: Migrate Low-risk Unary AAD Ops
 
-Required checks per phase:
-1. `builtin_sync_tests`
-2. `stdlib_doc_tests`
-3. `runtime_primitives_tests`
-4. `native_sidecar_*_tests`
-5. LSP smoke/semantic diagnostics tests
+Code changes:
+1. Migrate `sin`, `cos`, `exp` to helper-based implementation.
 
-Add one new invariant test:
-1. Catalog order exactly matches runtime patch order in `register_all_primitives`.
+Tests:
+1. Add parity tests for:
+   - primal value
+   - tape op type
+   - backward gradient
+2. Run:
+   - `runtime_primitives_tests`
+   - `builtin_sync_tests`
+   - stdlib `aad.test.eta`
 
-Recommended CI structure:
-1. Fast gate (every PR push):
-   - catalog/builtin/AAD targeted tests
-   - LSP targeted tests
-2. Full gate (required before merge):
-   - full `eta_core_test`
-   - package/CLI integration jobs already present in CI
-
-Manual reviewer checklist per phase:
-1. Confirm no user-visible doc/signature regressions in LSP hover/signature help.
-2. Confirm sidecar placeholder behavior unchanged for missing dependencies.
-3. Confirm patch-mode abort guards remain intact and exercised by tests.
+Done when:
+1. No behavior deltas vs baseline.
 
 ---
 
-## 6. Risks and mitigations
+## Task 13: Migrate Domain-sensitive Unary AAD Ops
 
-1. Risk: order drift breaks patch-mode bootstrap.
-   Mitigation: explicit order test + keep `begin_patching()/verify_all_patched()` hard-fail behavior.
+Code changes:
+1. Migrate `log`, `sqrt`, `asin`, `acos`, `atan`, `tan`.
+2. Keep strict-mode and domain checks explicit per op.
 
-2. Risk: metadata regressions in docs/hover/signature help.
-   Mitigation: snapshot test for `builtin_metadata()` and targeted LSP hover/signature tests.
+Tests:
+1. Add parity coverage for:
+   - domain error messages/tags
+   - strict-mode non-diff behavior
+2. Re-run all AAD and runtime primitive tests.
 
-3. Risk: sidecar owner mapping drift.
-   Mitigation: sidecar package mapping test from catalog entries.
+Done when:
+1. Domain and strict-mode behavior matches baseline.
 
 ---
 
-## 7. Recommended implementation order
+## Task 14: Evaluate `pow` Refactor (Optional)
 
-1. Phase A (catalog + adapters)
-2. Phase B (metadata/owner source switch)
-3. Phase C (consumer cutover)
-4. Phase D (delete `builtin_names.h`)
-5. AAD helper refactor batches
+Code changes:
+1. Refactor `pow` only if readability improves without hiding its special-case logic.
+2. Skip if helper abstraction makes behavior harder to reason about.
 
-This keeps each commit bisectable and avoids a risky all-at-once migration.
+Tests:
+1. Add explicit `pow` regression cases:
+   - negative base with non-integer exponent
+   - zero base with negative exponent
+   - strict-mode edge cases
+2. Re-run AAD tests.
+
+Done when:
+1. Either `pow` is improved with full parity, or explicitly left unchanged.
+
+---
+
+## Task 15: Final Cleanup and Completion Gate
+
+Code changes:
+1. Remove stale comments/docs mentioning legacy builtin names table.
+2. Ensure architecture docs point to catalog as single source of truth.
+
+Tests:
+1. Full `eta_core_test`.
+2. Tooling smoke (`eta`, `etai`, `etac`, `eta_lsp`).
+3. Legacy symbol guard script.
+
+Done when:
+1. All tasks complete, all tests green, and docs reflect final architecture.
+
+---
+
+## Minimal Merge Policy
+
+1. One task per PR (or tightly related pair only).
+2. No task merges without its listed tests passing.
+3. No deletion of legacy files before all consuming call sites are migrated.

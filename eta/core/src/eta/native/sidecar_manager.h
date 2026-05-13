@@ -84,6 +84,7 @@ private:
 
     bool ensure_bundled_sidecars_loaded(std::span<const fs::path> module_dirs,
                                         std::string_view etai_path);
+    bool ensure_module_path_sidecars_loaded(std::span<const fs::path> module_dirs);
     bool sync_sidecar_extensions_into_environment();
 
     Host& host_;
@@ -92,6 +93,8 @@ private:
     std::size_t sidecar_registered_extension_count_{0};
     std::optional<std::string> sidecar_manifest_key_;
     bool bundled_sidecars_attempted_{false};
+    bool module_path_sidecars_attempted_{false};
+    bool module_path_sidecars_loaded_{false};
 };
 
 } // namespace eta::native

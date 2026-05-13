@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <expected>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -25,6 +26,9 @@
 namespace eta::native {
 
 namespace {
+
+constexpr std::size_t kModulePathCollectionDepthLimit = 3u;
+constexpr std::string_view kModulePathSidecarManifestKey = "__eta.module-path-sidecars__";
 
 [[nodiscard]] bool is_all_zero_sha256(std::string_view digest) {
     if (digest.size() != 64u) return false;
@@ -133,15 +137,23 @@ bool NativeSidecarManager::ensure_package_sidecars_loaded(std::optional<fs::path
         return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
     }
 
+    const auto load_non_package_sidecars = [&]() {
+        if (!ensure_module_path_sidecars_loaded(module_dirs)) return false;
+        if (module_path_sidecars_loaded_ && !sidecar_manifest_key_.has_value()) {
+            sidecar_manifest_key_ = std::string(kModulePathSidecarManifestKey);
+        }
+        return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+    };
+
     fs::path discovery_start;
     if (start_dir.has_value()) {
         discovery_start = *start_dir;
     } else {
         std::error_code ec;
         discovery_start = fs::current_path(ec);
-        if (ec) return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+        if (ec) return load_non_package_sidecars();
     }
-    if (discovery_start.empty()) return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+    if (discovery_start.empty()) return load_non_package_sidecars();
 
     auto discovery = package::discover_manifest_context(discovery_start);
     if (!discovery) {
@@ -149,16 +161,16 @@ bool NativeSidecarManager::ensure_package_sidecars_loaded(std::optional<fs::path
             "failed to discover package context for native sidecars: " + discovery.error().message);
         return false;
     }
-    if (!discovery->context.has_value()) return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+    if (!discovery->context.has_value()) return load_non_package_sidecars();
     if (*discovery->context == package::ManifestContextKind::WorkspaceNonMember) {
-        return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+        return load_non_package_sidecars();
     }
     if (!discovery->package_manifest_path.has_value()) {
         /**
          * Workspace virtual roots have no selected package context.
          * Keep core-only behavior until a concrete package is selected.
          */
-        return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+        return load_non_package_sidecars();
     }
 
     const auto package_manifest_path = util::canonicalize_path(*discovery->package_manifest_path);
@@ -325,6 +337,157 @@ runtime::types::PrimitiveFunc NativeSidecarManager::make_registered_sidecar_prim
     };
 }
 
+bool NativeSidecarManager::ensure_module_path_sidecars_loaded(
+    std::span<const fs::path> module_dirs) {
+    if (module_path_sidecars_attempted_) return true;
+    module_path_sidecars_attempted_ = true;
+
+    std::unordered_set<std::string> root_seen;
+    std::vector<fs::path> package_roots;
+
+    const auto add_package_root = [&](const fs::path& raw_root) {
+        if (raw_root.empty()) return;
+        std::error_code ec;
+        if (!fs::is_directory(raw_root, ec) || ec) return;
+        const auto canonical_root = util::canonicalize_path(raw_root);
+        const auto root_key = util::canonical_path_key(canonical_root);
+        if (!root_seen.insert(root_key).second) return;
+
+        const auto manifest_path = canonical_root / "eta.toml";
+        ec.clear();
+        if (!fs::is_regular_file(manifest_path, ec) || ec) return;
+        package_roots.push_back(canonical_root);
+    };
+
+    std::function<void(const fs::path&, std::size_t)> scan_collection_root;
+    scan_collection_root = [&](const fs::path& raw_dir, const std::size_t depth) {
+        std::error_code ec;
+        if (!fs::is_directory(raw_dir, ec) || ec) return;
+
+        const auto canonical_dir = util::canonicalize_path(raw_dir);
+        const auto manifest_path = canonical_dir / "eta.toml";
+        ec.clear();
+        if (fs::is_regular_file(manifest_path, ec) && !ec) {
+            add_package_root(canonical_dir);
+            return;
+        }
+
+        if (depth >= kModulePathCollectionDepthLimit) return;
+
+        std::vector<fs::path> children;
+        for (const auto& child : fs::directory_iterator(
+                 canonical_dir,
+                 fs::directory_options::skip_permission_denied,
+                 ec)) {
+            if (ec) break;
+            std::error_code child_ec;
+            if (child.is_directory(child_ec) && !child_ec) {
+                children.push_back(child.path());
+            }
+        }
+        if (ec) return;
+
+        std::sort(children.begin(),
+                  children.end(),
+                  [](const fs::path& lhs, const fs::path& rhs) {
+                      return util::canonical_path_key(lhs)
+                          < util::canonical_path_key(rhs);
+                  });
+
+        for (const auto& child : children) {
+            scan_collection_root(child, depth + 1u);
+        }
+    };
+
+    for (const auto& module_dir : module_dirs) {
+        if (module_dir.empty()) continue;
+        std::error_code ec;
+        if (!fs::is_directory(module_dir, ec) || ec) continue;
+        const auto canonical_dir = util::canonicalize_path(module_dir);
+
+        fs::path ancestor = canonical_dir;
+        for (std::size_t i = 0; i < 3u; ++i) {
+            add_package_root(ancestor);
+            const auto parent = ancestor.parent_path();
+            if (parent.empty() || parent == ancestor) break;
+            ancestor = parent;
+        }
+
+        scan_collection_root(canonical_dir, 0u);
+    }
+
+    if (package_roots.empty()) return true;
+
+    std::unordered_set<std::string> package_seen;
+    std::unordered_map<std::string, fs::path> package_root_by_name;
+    std::vector<NativeSidecarSpec> sidecar_specs;
+    sidecar_specs.reserve(package_roots.size());
+
+    for (const auto& package_root : package_roots) {
+        auto manifest = package::read_manifest(package_root / "eta.toml");
+        if (!manifest) continue;
+        if (!manifest->native.has_value()) continue;
+        if (manifest->native->kind != "sidecar") continue;
+        if (registry_.find_extension(manifest->native->id) != nullptr) continue;
+        if (!package_seen.insert(manifest->name).second) continue;
+
+        const auto* selected_target = select_native_target_for_host(*manifest->native);
+        if (selected_target == nullptr) continue;
+
+        std::error_code ec;
+        const auto artifact_abs =
+            util::canonicalize_path(package_root / selected_target->artifact);
+        if (!is_path_within(package_root, artifact_abs)) continue;
+        if (!fs::is_regular_file(artifact_abs, ec) || ec) continue;
+
+        package_root_by_name.emplace(manifest->name, package_root);
+
+        NativeSidecarSpec spec;
+        spec.package_name = manifest->name;
+        spec.artifact_relpath = selected_target->artifact;
+        spec.abi = manifest->native->abi;
+        spec.entrypoint = manifest->native->entry;
+        spec.expected_extension_id = manifest->native->id;
+        if (!selected_target->sha256.empty() && !is_all_zero_sha256(selected_target->sha256)) {
+            spec.expected_sha256 = selected_target->sha256;
+        }
+        sidecar_specs.push_back(std::move(spec));
+    }
+
+    if (sidecar_specs.empty()) return true;
+
+    NativeLoadContext context;
+    context.context_kind = package::ManifestContextKind::StandalonePackage;
+    std::error_code cwd_ec;
+    context.active_manifest_path = util::canonicalize_path(fs::current_path(cwd_ec));
+    if (cwd_ec) context.active_manifest_path = util::canonicalize_path(fs::path("."));
+    context.lockfile_root = context.active_manifest_path.parent_path();
+    context.modules_root = context.lockfile_root / ".eta" / "modules";
+    context.package_root_by_name = std::move(package_root_by_name);
+
+    auto resolved_sidecars = resolve_native_sidecars(context, sidecar_specs);
+    if (!resolved_sidecars) {
+        host_.emit_sidecar_error(
+            "failed to resolve module-path native sidecar artifact paths: "
+            + resolved_sidecars.error().message);
+        return false;
+    }
+
+    for (const auto& sidecar : *resolved_sidecars) {
+        auto loaded = loader_.load(sidecar);
+        if (!loaded) {
+            host_.emit_sidecar_error(
+                "failed to load module-path native sidecar for package '"
+                + sidecar.spec.package_name + "': " + loaded.error().message);
+            return false;
+        }
+    }
+
+    if (!sync_sidecar_extensions_into_environment()) return false;
+    module_path_sidecars_loaded_ = true;
+    return true;
+}
+
 bool NativeSidecarManager::ensure_bundled_sidecars_loaded(std::span<const fs::path> module_dirs,
                                                           std::string_view etai_path) {
     if (bundled_sidecars_attempted_) return true;
@@ -441,7 +604,9 @@ bool NativeSidecarManager::sync_sidecar_extensions_into_environment() {
     }
 
     if (!host_.can_register_extension_primitives()) {
-        host_.emit_sidecar_error("native sidecars must be loaded before module execution begins");
+        host_.emit_sidecar_error(
+            "native sidecar registration was requested after the session started executing modules; "
+            "sidecars must be discovered from startup module paths");
         return false;
     }
 

@@ -58,6 +58,37 @@ struct LockfileFixture {
     fs::path start_dir;
 };
 
+struct ModulePathSidecarFixture {
+    fs::path packages_root;
+    fs::path package_start_dir;
+};
+
+[[nodiscard]] std::string host_target_triple() {
+#if defined(_WIN32)
+#if defined(_M_X64) || defined(__x86_64__)
+    return "x86_64-pc-windows-msvc";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+    return "aarch64-pc-windows-msvc";
+#else
+    return "unknown-pc-windows-msvc";
+#endif
+#elif defined(__APPLE__)
+#if defined(__aarch64__)
+    return "aarch64-apple-darwin";
+#else
+    return "x86_64-apple-darwin";
+#endif
+#elif defined(__linux__)
+#if defined(__aarch64__)
+    return "aarch64-unknown-linux-gnu";
+#else
+    return "x86_64-unknown-linux-gnu";
+#endif
+#else
+    return "unknown-unknown-unknown";
+#endif
+}
+
 /**
  * @brief Build a minimal package + lockfile fixture with one reachable sidecar.
  *
@@ -198,6 +229,61 @@ struct LockfileFixture {
     return fixture;
 }
 
+[[nodiscard]] ModulePathSidecarFixture create_module_path_sidecar_fixture(
+    const TempDir& temp,
+    const fs::path& sidecar_binary,
+    const std::string& sidecar_sha) {
+    ModulePathSidecarFixture fixture;
+    fixture.packages_root = temp.path / "packages";
+
+    const auto package_root = fixture.packages_root / "db" / "native" / "duckdb";
+    fixture.package_start_dir = package_root / "src" / "db";
+    fs::create_directories(fixture.package_start_dir);
+
+    const auto native_dir = package_root / "native";
+    fs::create_directories(native_dir);
+
+    const auto staged_binary = native_dir / sidecar_binary.filename();
+    std::error_code ec;
+    fs::copy_file(sidecar_binary, staged_binary, fs::copy_options::overwrite_existing, ec);
+    BOOST_REQUIRE_MESSAGE(
+        !ec,
+        "failed to copy sidecar fixture binary '" + sidecar_binary.string()
+            + "' into module-path fixture: " + ec.message());
+
+    {
+        std::ofstream out(
+            package_root / "eta.toml",
+            std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "[package]\n"
+            << "name = \"eta-duckdb\"\n"
+            << "version = \"0.1.0\"\n"
+            << "license = \"MIT\"\n\n"
+            << "[compatibility]\n"
+            << "eta = \">=0.6, <0.8\"\n\n"
+            << "[native]\n"
+            << "kind = \"sidecar\"\n"
+            << "abi = \"eta-native-v1\"\n"
+            << "id = \"eta.test.sidecar\"\n"
+            << "entry = \"eta_register_extension_v1\"\n\n"
+            << "[[native.targets]]\n"
+            << "triple = \"" << host_target_triple() << "\"\n"
+            << "artifact = \"native/" << sidecar_binary.filename().generic_string() << "\"\n"
+            << "sha256 = \"" << sidecar_sha << "\"\n";
+    }
+
+    {
+        std::ofstream out(
+            fixture.package_start_dir / "duckdb.eta",
+            std::ios::out | std::ios::binary | std::ios::trunc);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module db.duckdb)\n";
+    }
+
+    return fixture;
+}
+
 [[nodiscard]] std::string join_lines(const std::vector<std::string>& lines) {
     std::ostringstream out;
     bool first = true;
@@ -315,7 +401,7 @@ BOOST_AUTO_TEST_CASE(package_sidecar_loading_uses_active_lockfile_closure_only) 
     BOOST_TEST(host.invalidate_calls == 1u);
 }
 
-BOOST_AUTO_TEST_CASE(package_sidecar_loading_requires_open_extension_registration_window) {
+BOOST_AUTO_TEST_CASE(package_sidecar_loading_rejects_post_start_registration) {
     const auto fixture_path = sidecar_fixture_path();
     BOOST_REQUIRE_MESSAGE(
         fs::is_regular_file(fixture_path), "missing sidecar fixture binary: " + fixture_path.string());
@@ -338,8 +424,40 @@ BOOST_AUTO_TEST_CASE(package_sidecar_loading_requires_open_extension_registratio
 
     const auto diagnostics = join_lines(host.diagnostics);
     BOOST_TEST(
-        diagnostics.find("native sidecars must be loaded before module execution begins")
+        diagnostics.find("native sidecar registration was requested after the session started executing modules")
         != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(module_path_sidecars_preload_supports_late_module_imports) {
+    const auto fixture_path = sidecar_fixture_path();
+    BOOST_REQUIRE_MESSAGE(
+        fs::is_regular_file(fixture_path), "missing sidecar fixture binary: " + fixture_path.string());
+    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture_path);
+    BOOST_REQUIRE_MESSAGE(
+        fixture_sha.has_value(), "failed to hash sidecar fixture: " + fixture_path.string());
+
+    TempDir temp;
+    const auto fixture =
+        create_module_path_sidecar_fixture(temp, fixture_path, *fixture_sha);
+
+    HostRecorder host;
+    eta::native::NativeSidecarManager manager(host);
+    const std::vector<fs::path> module_dirs{fixture.packages_root};
+
+    const bool preload_ok = manager.ensure_package_sidecars_loaded(
+        temp.path, module_dirs, "");
+    BOOST_REQUIRE_MESSAGE(preload_ok, join_lines(host.diagnostics));
+    BOOST_TEST(host.extension_registrations.size() == 2u);
+    BOOST_TEST(host.invalidate_calls == 1u);
+    BOOST_TEST(host.diagnostics.empty());
+
+    host.allow_extension_registration = false;
+    const bool followup_ok = manager.ensure_package_sidecars_loaded(
+        fixture.package_start_dir, module_dirs, "");
+    BOOST_REQUIRE_MESSAGE(followup_ok, join_lines(host.diagnostics));
+    BOOST_TEST(host.extension_registrations.size() == 2u);
+    BOOST_TEST(host.invalidate_calls == 1u);
+    BOOST_TEST(host.diagnostics.empty());
 }
 
 BOOST_AUTO_TEST_CASE(package_sidecar_loading_reports_duplicate_extension_conflict) {
