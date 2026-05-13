@@ -54,7 +54,7 @@
 | Prelude re-export (optional)    | `stdlib/std/prelude.eta`                              | EDIT   |
 | Runtime primitives header       | `eta/core/src/eta/runtime/bit_primitives.h`           | NEW    |
 | Primitive registration glue     | `eta/core/src/eta/runtime/core_primitives.h` (or driver) | EDIT |
-| Analysis-only name table        | `eta/core/src/eta/runtime/builtin_names.h`            | EDIT   |
+| Builtin catalog metadata        | `eta/core/src/eta/runtime/builtin_catalog.cpp`        | EDIT   |
 | Reader/expander known-symbols   | `eta/core/src/eta/reader/expander.cpp`                | EDIT (if needed for known-name list) |
 | Stdlib build script             | `scripts/build_stdlib_etac.py`                        | NONE — auto-discovers `*.eta` |
 | CMake                           | `CMakeLists.txt`, `eta/core/CMakeLists.txt`           | NONE — header-only addition follows existing pattern |
@@ -62,7 +62,8 @@
 Other stdlib modules (`std.hashset`, `std.csv`, `std.regex`,
 `std.fact_table`) follow the same pattern: thin `.eta` wrappers over
 `%`-prefixed builtins registered in `core_primitives.h` and mirrored in
-`builtin_names.h` so the LSP/semantic analyser knows about them.
+`builtin_catalog.cpp` so the LSP/semantic analyser sees matching slot
+metadata via `register_builtin_specs()`.
 
 ---
 
@@ -161,8 +162,7 @@ Implementation notes:
    standard since `core_primitives.h` uses C++20 features (`std::expected`).
 4. Register in `register_core_primitives` immediately after the existing
    numeric block (`modulo`/`remainder`), and **mirror the order** in
-   `builtin_names.h` between the `r("remainder", …)` line and the
-   transcendentals (`r("sin", …)`).
+   `builtin_catalog.cpp` between the `"remainder"` and `"sin"` entries.
 
 ### 4.1 Multi-word primitives (C++ fast path)
 
@@ -529,17 +529,16 @@ header. (Prelude additions are common — see how `std.log` is included.)
 2. **Stdlib build script:** No change. `scripts/build_stdlib_etac.py`
    recursively globs `stdlib/**/*.eta` (excluding `tests/`) and will
    pick up `bitset.eta` automatically.
-3. **`builtin_names.h`:** add the eight `r("%bit-…", …)` and three
-   `r("%popcount" / "%ctz" / "%clz", 1, false)` lines in the same
-   relative position as the registration in `core_primitives.h`. The
-   header has a strict ordering invariant; add at the documented
-   numeric block (§4).
+3. **`builtin_catalog.cpp`:** add the eight `%bit-*` entries and three
+   `%popcount` / `%ctz` / `%clz` entries with matching arity/rest
+   metadata in the same relative position as the registration in
+   `core_primitives.h`.
 4. **Reader/expander known-symbols list** in `expander.cpp` (lines
    around the existing numeric word `"modulo","remainder",…`): include
    the new `%bit-*`/`%popcount`/`%ctz`/`%clz` if that list is
    significant. Verify by searching the file before editing.
 5. **LSP / semantic analyser:** picks up the new names automatically
-   via `register_builtin_names`. No further work.
+   via `register_builtin_specs`. No further work.
 
 ---
 
@@ -549,7 +548,7 @@ header. (Prelude additions are common — see how `std.log` is included.)
 
 1. Add `bit_primitives.h` with `%bit-and/or/xor/not/shift-left/shift-right`,
    `%popcount`, `%ctz`, `%clz`. Register in `core_primitives.h` and
-   mirror in `builtin_names.h`.
+   mirror in `builtin_catalog.cpp`.
 2. Land `stdlib/std/bitset.eta` skeleton: tag/record helpers,
    `make-bitset`, `bitset?`, `bitset-length`, `bitset-ref`,
    `bitset-set!`, `bitset-clear!`, `bitset-flip!`, plus the bare
@@ -652,7 +651,7 @@ swaps.
       `etai`/CTest.
 - [ ] `eta/core/src/eta/runtime/bit_primitives.h` registers eight
       `%bit-*` plus `%popcount` / `%ctz` / `%clz`.
-- [ ] `builtin_names.h` mirrors the registration order.
+- [ ] `builtin_catalog.cpp` mirrors the registration order.
 - [ ] `popcount 0xFFFFFFFFFFFFFFFF` returns `64` from `etai`.
 - [ ] A 1024-bit set with bits at 0, 63, 64, 127, 128, 1023 produces
       `(0 63 64 127 128 1023)` from `bitset->list`.

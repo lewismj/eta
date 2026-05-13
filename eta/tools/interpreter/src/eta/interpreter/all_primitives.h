@@ -8,7 +8,7 @@
  * (which handles core + port + io + os + process + time and sidecar placeholders
  * for torch + stats + log + nng).
  *
- * Canonical registration order  (MUST match builtin_names.h exactly):
+ * Canonical registration order (MUST match builtin_catalog order exactly):
  *   1. core_primitives.h
  *   2. port_primitives.h
  *   3. io_primitives.h
@@ -20,7 +20,7 @@
  *   9. log_primitives.h
  *  10. nng_primitives.h  (placeholder registration only)
  *
- * For analysis-only tools (LSP), builtin_names.h provides null-func
+ * For analysis-only tools (LSP), register_builtin_specs() provides null-func
  */
 
 #include "eta/runtime/core_primitives.h"
@@ -100,7 +100,7 @@ inline void register_all_primitives(
     runtime::vm::VM& vm,
     std::span<const std::string> command_line_arguments = {})
 {
-    /// Order MUST match builtin_names.h  (see canonical order above)
+    /// Order MUST match builtin_catalog order (see canonical order above)
     runtime::register_core_primitives(env, heap, intern, &vm);
     runtime::register_port_primitives(env, heap, intern, vm);
     runtime::register_io_primitives(env, heap, intern, vm);

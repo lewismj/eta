@@ -10,7 +10,7 @@
 
 #include "eta/interpreter/all_primitives.h"
 #include "eta/nng/session_actor_runtime.h"
-#include "eta/runtime/builtin_names.h"
+#include "eta/runtime/builtin_catalog.h"
 #include "eta/runtime/factory.h"
 #include "eta/session/repl_input.h"
 #include "eta/session/runtime_config.h"
@@ -58,7 +58,7 @@ Driver::Driver(ModulePathResolver resolver,
      * Register all core primitives and native-sidecar placeholders.
      * Step 1: Populate all slots with metadata (name/arity/has_rest) + null funcs.
      */
-    runtime::register_builtin_names(builtins_);
+    runtime::register_builtin_specs(builtins_);
     builtins_.begin_patching();
     register_all_primitives(
         builtins_,

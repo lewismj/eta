@@ -10,7 +10,7 @@
 #include <eta/torch/optimizer_ptr.h>
 #include <eta/torch/torch_factory.h>
 #include <eta/torch/torch_primitives.h>
-#include <eta/runtime/builtin_names.h>
+#include <eta/runtime/builtin_catalog.h>
 
 using namespace eta::runtime::memory;
 using namespace eta::runtime::memory::heap;
@@ -361,7 +361,7 @@ BOOST_AUTO_TEST_CASE(builtin_name_matrix_exp_registered) {
     BOOST_TEST(!env.specs()[*runtime_idx].has_rest);
 
     BuiltinEnvironment names_env;
-    eta::runtime::register_builtin_names(names_env);
+    eta::runtime::register_builtin_specs(names_env);
     auto names_idx = names_env.lookup("torch/matrix-exp");
     BOOST_REQUIRE(names_idx.has_value());
     BOOST_TEST(names_env.specs()[*names_idx].arity == 1u);
@@ -380,7 +380,7 @@ BOOST_AUTO_TEST_CASE(builtin_name_column_l2_norm_registered) {
     BOOST_TEST(!env.specs()[*runtime_idx].has_rest);
 
     BuiltinEnvironment names_env;
-    eta::runtime::register_builtin_names(names_env);
+    eta::runtime::register_builtin_specs(names_env);
     auto names_idx = names_env.lookup("torch/column-l2-norm");
     BOOST_REQUIRE(names_idx.has_value());
     BOOST_TEST(names_env.specs()[*names_idx].arity == 2u);
@@ -637,7 +637,7 @@ BOOST_AUTO_TEST_CASE(prim_torch_backward_and_grad_via_env) {
 
 BOOST_AUTO_TEST_CASE(builtin_names_and_primitives_count_match) {
     /**
-     * Verify that register_builtin_names() metadata matches
+     * Verify that analysis builtin metadata matches
      * register_torch_primitives() via patch mode (no abort = success).
      */
     Heap heap(1ull << 22);
@@ -651,11 +651,11 @@ BOOST_AUTO_TEST_CASE(builtin_names_and_primitives_count_match) {
     register_torch_primitives(prim_env, heap, intern, nullptr);
 
     /**
-     * Build another names-only env with just torch names, via the SSoT
+     * Build another names-only env with just torch names via catalog specs
      * helper: register all names then compare the torch range.
      */
     BuiltinEnvironment names_env;
-    eta::runtime::register_builtin_names(names_env);
+    eta::runtime::register_builtin_specs(names_env);
 
     /**
      * The torch range starts after core+port+io and ends before stats.

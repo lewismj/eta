@@ -1,6 +1,8 @@
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <array>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -8,9 +10,9 @@
 
 #include <eta/runtime/memory/heap.h>
 #include <eta/runtime/memory/intern_table.h>
+#include <eta/runtime/builtin_catalog.h>
 #include <eta/runtime/builtin_env.h>
 #include <eta/runtime/builtin_metadata.h>
-#include <eta/runtime/builtin_names.h>
 #include <eta/reader/special_form_docs.h>
 #include <eta/interpreter/all_primitives.h>
 #include <eta/runtime/os_primitives.h>
@@ -28,7 +30,7 @@ using namespace eta::runtime::memory::intern;
 BOOST_AUTO_TEST_SUITE(builtin_sync_tests)
 
 /**
- * Verify that register_builtin_names() (the SSoT) contains entries for
+ * Verify that register_builtin_specs() contains entries for
  * every builtin that the runtime modules register.
  *
  * We check os, process, time, torch, stats, and log individually (os/log require a live VM;
@@ -38,9 +40,9 @@ BOOST_AUTO_TEST_SUITE(builtin_sync_tests)
  * coverage is provided by the Driver constructor's verify_all_patched() call.
  */
 BOOST_AUTO_TEST_CASE(names_ssot_contains_os_process_time_torch_stats_and_log) {
-    /// 1. Names-only environment via the SSoT
+    /// 1. Analysis registration metadata from the builtin catalog
     BuiltinEnvironment names_env;
-    register_builtin_names(names_env);
+    register_builtin_specs(names_env);
 
     /// 2. OS primitives
     Heap heap(1ull << 22);
@@ -127,11 +129,12 @@ BOOST_AUTO_TEST_CASE(names_ssot_contains_os_process_time_torch_stats_and_log) {
 }
 
 /**
- * Verify basic properties of the SSoT: non-empty, no duplicate names.
+ * Verify basic properties of analysis builtin registration:
+ * non-empty, no duplicate names.
  */
 BOOST_AUTO_TEST_CASE(names_ssot_no_duplicates) {
     BuiltinEnvironment env;
-    register_builtin_names(env);
+    register_builtin_specs(env);
 
     BOOST_TEST(env.size() > 0u);
 
@@ -149,9 +152,105 @@ BOOST_AUTO_TEST_CASE(names_ssot_no_duplicates) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(catalog_has_no_duplicate_names) {
+    const auto catalog = builtin_catalog();
+    BOOST_TEST(catalog.size() > 0u);
+
+    std::unordered_set<std::string> seen;
+    std::vector<std::string> duplicates;
+    for (const auto& entry : catalog) {
+        if (!seen.insert(entry.name).second) {
+            duplicates.push_back(entry.name);
+        }
+    }
+
+    if (!duplicates.empty()) {
+        std::string msg = "Duplicate builtin catalog names:";
+        for (const auto& d : duplicates) msg += " " + d;
+        BOOST_FAIL(msg);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(catalog_matches_analysis_registration_metadata) {
+    BuiltinEnvironment specs_env;
+    register_builtin_specs(specs_env);
+
+    const auto catalog = builtin_catalog();
+    BOOST_REQUIRE_EQUAL(catalog.size(), specs_env.size());
+
+    constexpr std::array<std::string_view, 5> allowed_owners = {
+        "core",
+        "sidecar:eta-torch",
+        "sidecar:eta-stats",
+        "sidecar:eta-log",
+        "sidecar:eta-nng"
+    };
+
+    for (std::size_t i = 0; i < catalog.size(); ++i) {
+        const auto& entry = catalog[i];
+        const auto& spec = specs_env.specs()[i];
+
+        const bool owner_allowed = std::find(
+            allowed_owners.begin(),
+            allowed_owners.end(),
+            std::string_view(entry.owner))
+            != allowed_owners.end();
+
+        BOOST_TEST_CONTEXT("slot " << i << " name=" << entry.name) {
+            BOOST_TEST(!entry.name.empty());
+            BOOST_TEST(owner_allowed);
+            BOOST_TEST(entry.name == spec.name);
+            BOOST_TEST(entry.arity == spec.arity);
+            BOOST_TEST(entry.has_rest == spec.has_rest);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(catalog_registration_adapter_matches_catalog_exactly) {
+    BuiltinEnvironment env;
+    register_builtin_specs(env);
+
+    const auto catalog = builtin_catalog();
+    BOOST_REQUIRE_EQUAL(env.size(), catalog.size());
+
+    for (std::size_t i = 0; i < catalog.size(); ++i) {
+        const auto& spec = env.specs()[i];
+        const auto& entry = catalog[i];
+        BOOST_TEST_CONTEXT("slot " << i << " name=" << entry.name) {
+            BOOST_TEST(spec.name == entry.name);
+            BOOST_TEST(spec.arity == entry.arity);
+            BOOST_TEST(spec.has_rest == entry.has_rest);
+            BOOST_TEST(!spec.func);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(catalog_order_matches_runtime_registration_order) {
+    const auto catalog = builtin_catalog();
+
+    Heap heap(1ull << 22);
+    InternTable intern;
+    vm::VM vm(heap, intern);
+
+    BuiltinEnvironment runtime_env;
+    eta::interpreter::register_all_primitives(runtime_env, heap, intern, vm);
+
+    BOOST_REQUIRE_EQUAL(runtime_env.size(), catalog.size());
+    for (std::size_t i = 0; i < catalog.size(); ++i) {
+        const auto& spec = runtime_env.specs()[i];
+        const auto& entry = catalog[i];
+        BOOST_TEST_CONTEXT("slot " << i << " name=" << entry.name) {
+            BOOST_TEST(spec.name == entry.name);
+            BOOST_TEST(spec.arity == entry.arity);
+            BOOST_TEST(spec.has_rest == entry.has_rest);
+            BOOST_TEST(static_cast<bool>(spec.func));
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(runtime_builtin_registration_matches_metadata_exhaustive) {
     BuiltinEnvironment env;
-    register_builtin_names(env);
+    register_builtin_specs(env);
 
     const auto metadata = builtin_metadata();
     BOOST_REQUIRE_EQUAL(env.size(), metadata.size());
@@ -179,7 +278,7 @@ BOOST_AUTO_TEST_CASE(runtime_builtin_registration_matches_metadata_exhaustive) {
 
 BOOST_AUTO_TEST_CASE(register_all_primitives_installs_nng_sidecar_placeholders) {
     BuiltinEnvironment env;
-    register_builtin_names(env);
+    register_builtin_specs(env);
 
     Heap heap(1ull << 22);
     InternTable intern;
@@ -205,7 +304,7 @@ BOOST_AUTO_TEST_CASE(register_all_primitives_installs_nng_sidecar_placeholders) 
 
 BOOST_AUTO_TEST_CASE(builtin_metadata_is_consistent_across_consumers) {
     BuiltinEnvironment env;
-    register_builtin_names(env);
+    register_builtin_specs(env);
 
     const auto metadata = builtin_metadata();
     BOOST_REQUIRE_EQUAL(env.size(), metadata.size());
@@ -217,6 +316,44 @@ BOOST_AUTO_TEST_CASE(builtin_metadata_is_consistent_across_consumers) {
             BOOST_TEST(spec.name == doc.name);
             BOOST_TEST(spec.arity == doc.arity);
             BOOST_TEST(spec.has_rest == doc.has_rest);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(builtin_metadata_order_matches_catalog_order) {
+    const auto catalog = builtin_catalog();
+    const auto metadata = builtin_metadata();
+
+    BOOST_REQUIRE_EQUAL(metadata.size(), catalog.size());
+    for (std::size_t i = 0; i < metadata.size(); ++i) {
+        const auto& entry = catalog[i];
+        const auto& builtin = metadata[i];
+        BOOST_TEST_CONTEXT("slot " << i << " name=" << entry.name) {
+            BOOST_TEST(builtin.name == entry.name);
+            BOOST_TEST(builtin.arity == entry.arity);
+            BOOST_TEST(builtin.has_rest == entry.has_rest);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(catalog_owner_matches_native_sidecar_lookup) {
+    constexpr std::string_view sidecar_prefix = "sidecar:";
+
+    for (const auto& entry : builtin_catalog()) {
+        std::optional<std::string_view> expected_package;
+        const std::string_view owner = entry.owner;
+        if (owner.starts_with(sidecar_prefix)) {
+            expected_package = owner.substr(sidecar_prefix.size());
+        }
+
+        const auto actual_package = builtin_native_sidecar_package(entry.name);
+
+        BOOST_TEST_CONTEXT("builtin: " << entry.name << " owner=" << entry.owner) {
+            BOOST_TEST(actual_package.has_value() == expected_package.has_value());
+            if (expected_package.has_value()) {
+                BOOST_REQUIRE(actual_package.has_value());
+                BOOST_TEST(*actual_package == *expected_package);
+            }
         }
     }
 }

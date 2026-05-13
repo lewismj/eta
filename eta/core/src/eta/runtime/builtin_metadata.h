@@ -56,12 +56,4 @@ struct BuiltinMetadata {
  */
 [[nodiscard]] std::string format_builtin_summary(const BuiltinMetadata& builtin);
 
-/**
- * @brief Legacy name table used to seed canonical builtin metadata.
- *
- * This exists to preserve the current registration order while PR1 migrates
- * all tool consumers to `builtin_metadata()`.
- */
-void register_builtin_names_legacy(class BuiltinEnvironment& env);
-
 } // namespace eta::runtime

@@ -207,7 +207,7 @@ Deferred but planned:
 | Registry | `eta/core/src/eta/runtime/actor/registry.{h,cpp}` | NEW |
 | Distribution bridge | `eta/core/src/eta/runtime/actor/node_transport.{h,cpp}` | NEW (M5) |
 | Builtin primitives | `eta/core/src/eta/runtime/actor/actor_primitives.{h,cpp}` | NEW |
-| Builtin names | `eta/core/src/eta/runtime/builtin_names.h` | EDIT |
+| Builtin catalog | `eta/core/src/eta/runtime/builtin_catalog.cpp` | EDIT |
 | Builtin metadata | `eta/core/src/eta/runtime/builtin_metadata.cpp` | EDIT |
 | Heap object kinds | `eta/core/src/eta/runtime/types/types.h` and heap factory files | EDIT for `Pid`, `MonitorRef`, possibly `ActorHandle` |
 | Driver wiring | `eta/session/*` / driver setup files | EDIT to allocate one `ActorSystem` per interpreter/session |
@@ -353,7 +353,7 @@ block the semantic MVP.
 ### 5.1 Core primitives
 
 Registered in `actor_primitives.{h,cpp}` and mirrored in
-`builtin_names.h` / `builtin_metadata.cpp`.
+`builtin_catalog.cpp` / `builtin_metadata.cpp`.
 
 | Primitive | Arity | Public wrapper | Description |
 | --------- | :---: | -------------- | ----------- |

@@ -7,8 +7,8 @@
 #include <vector>
 
 #include <eta/interpreter/module_path.h>
+#include <eta/runtime/builtin_catalog.h>
 #include <eta/runtime/builtin_env.h>
-#include <eta/runtime/builtin_names.h>
 #include <eta/runtime/core_primitives.h>
 #include <eta/runtime/error.h>
 #include <eta/runtime/factory.h>
@@ -113,7 +113,7 @@ BOOST_AUTO_TEST_CASE(registers_expected_atom_builtins_and_arities) {
     }
 
     BuiltinEnvironment names_env;
-    register_builtin_names(names_env);
+    register_builtin_specs(names_env);
     for (const auto& builtin : expected) {
         BOOST_TEST(names_env.lookup(builtin.name).has_value());
     }
@@ -290,4 +290,3 @@ BOOST_AUTO_TEST_CASE(atom_builtins_report_arity_errors_via_vm_dispatch) {
 }
 
 BOOST_AUTO_TEST_SUITE_END()
-

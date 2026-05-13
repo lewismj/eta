@@ -388,6 +388,42 @@ BOOST_AUTO_TEST_CASE(completion_includes_raise) {
     BOOST_TEST(found_copy_term);
 }
 
+BOOST_AUTO_TEST_CASE(diagnostics_report_semantic_arity_error_for_if) {
+    const std::string uri = "file:///test/diag_if_arity.eta";
+    const std::string src =
+        "(module m1\n"
+        "  (define x (if 1 2 3 4)))\n";
+
+    auto input = build_input(uri, src, {});
+    auto msgs = run_server(input);
+
+    const auto batches = find_diagnostics_for_uri(msgs, uri);
+    BOOST_REQUIRE(!batches.empty());
+
+    bool found_arity_diag = false;
+    std::string diagnostic_messages;
+    for (const auto& batch : batches) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            const auto message = diag.get_string("message").value_or("");
+            if (!message.empty()) {
+                if (!diagnostic_messages.empty()) diagnostic_messages += " | ";
+                diagnostic_messages += message;
+            }
+            if (message.find("if: invalid syntax") != std::string::npos
+                || message.find("if requires 3 args") != std::string::npos) {
+                found_arity_diag = true;
+                break;
+            }
+        }
+        if (found_arity_diag) break;
+    }
+
+    BOOST_TEST_CONTEXT("diagnostics: " << diagnostic_messages) {
+        BOOST_TEST(found_arity_diag);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(hover_known_special_form_returns_markdown) {
     const std::string uri = "file:///test/hover_special.eta";
     const std::string src = "(if #t 1 0)\n";

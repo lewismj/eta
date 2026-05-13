@@ -2,8 +2,7 @@
 
 #include <vector>
 
-#include "eta/runtime/builtin_env.h"
-#include "eta/runtime/builtin_names.h"
+#include "eta/runtime/builtin_catalog.h"
 
 namespace eta::runtime {
 namespace {
@@ -16,15 +15,6 @@ namespace {
 
 [[nodiscard]] bool is_stats_builtin(std::string_view name) {
     return name.starts_with("%stats-");
-}
-
-[[nodiscard]] bool is_stats_sidecar_builtin(std::string_view name) {
-    return name == "%stats-mean-vec"
-        || name == "%stats-var-vec"
-        || name == "%stats-cov-matrix"
-        || name == "%stats-cor-matrix"
-        || name == "%stats-quantile-vec"
-        || name == "%stats-ols-multi";
 }
 
 [[nodiscard]] bool is_log_builtin(std::string_view name) {
@@ -46,6 +36,22 @@ namespace {
         || name == "monitor"
         || name == "demonitor"
         || name == "enable-heartbeat";
+}
+
+[[nodiscard]] std::optional<std::string_view> native_sidecar_from_owner(
+    std::string_view owner) {
+    constexpr std::string_view prefix = "sidecar:";
+    if (!owner.starts_with(prefix)) return std::nullopt;
+    return owner.substr(prefix.size());
+}
+
+[[nodiscard]] std::optional<std::string_view> catalog_sidecar_package_for_builtin(
+    std::string_view name) {
+    for (const auto& entry : builtin_catalog()) {
+        if (entry.name != name) continue;
+        return native_sidecar_from_owner(entry.owner);
+    }
+    return std::nullopt;
 }
 
 [[nodiscard]] std::string category_for_builtin(std::string_view name) {
@@ -140,14 +146,14 @@ namespace {
     return "Builtin primitive.";
 }
 
-[[nodiscard]] BuiltinMetadata make_builtin_metadata(const BuiltinSpec& spec) {
+[[nodiscard]] BuiltinMetadata make_builtin_metadata(const BuiltinCatalogEntry& entry) {
     BuiltinMetadata metadata;
-    metadata.name = spec.name;
-    metadata.arity = spec.arity;
-    metadata.has_rest = spec.has_rest;
-    metadata.category = category_for_builtin(spec.name);
-    metadata.signature = signature_override(spec.name);
-    metadata.summary = summary_for_builtin(spec.name);
+    metadata.name = entry.name;
+    metadata.arity = entry.arity;
+    metadata.has_rest = entry.has_rest;
+    metadata.category = entry.category.value_or(category_for_builtin(entry.name));
+    metadata.signature = entry.signature.value_or(signature_override(entry.name));
+    metadata.summary = entry.summary.value_or(summary_for_builtin(entry.name));
     if (metadata.signature.empty()) {
         metadata.signature = format_builtin_signature(metadata);
     }
@@ -159,12 +165,11 @@ namespace {
 
 [[nodiscard]] const std::vector<BuiltinMetadata>& builtin_metadata_storage() {
     static const std::vector<BuiltinMetadata> metadata = [] {
-        BuiltinEnvironment env;
-        register_builtin_names_legacy(env);
+        const auto catalog = builtin_catalog();
         std::vector<BuiltinMetadata> out;
-        out.reserve(env.specs().size());
-        for (const auto& spec : env.specs()) {
-            out.push_back(make_builtin_metadata(spec));
+        out.reserve(catalog.size());
+        for (const auto& entry : catalog) {
+            out.push_back(make_builtin_metadata(entry));
         }
         return out;
     }();
@@ -179,11 +184,7 @@ std::span<const BuiltinMetadata> builtin_metadata() {
 }
 
 std::optional<std::string_view> builtin_native_sidecar_package(std::string_view name) {
-    if (is_torch_builtin(name)) return std::string_view{"eta-torch"};
-    if (is_stats_sidecar_builtin(name)) return std::string_view{"eta-stats"};
-    if (is_log_builtin(name)) return std::string_view{"eta-log"};
-    if (is_nng_builtin(name)) return std::string_view{"eta-nng"};
-    return std::nullopt;
+    return catalog_sidecar_package_for_builtin(name);
 }
 
 std::optional<BuiltinMetadata> lookup_builtin_metadata(std::string_view name) {

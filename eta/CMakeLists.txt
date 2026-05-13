@@ -296,6 +296,40 @@ add_test(
 set_tests_properties(stdlib_doc_extractor_tests PROPERTIES
     WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
 
+add_test(
+    NAME builtin_catalog_docs_guard
+    COMMAND ${Python3_EXECUTABLE}
+        "${ETA_REPO_ROOT_DIR}/scripts/tests/check_builtin_catalog_docs.py"
+        --root "${ETA_REPO_ROOT_DIR}"
+)
+set_tests_properties(builtin_catalog_docs_guard PROPERTIES
+    WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
+
+add_test(
+    NAME builtin_catalog_docs_guard_tests
+    COMMAND ${Python3_EXECUTABLE}
+        "${ETA_REPO_ROOT_DIR}/scripts/tests/test_check_builtin_catalog_docs.py"
+)
+set_tests_properties(builtin_catalog_docs_guard_tests PROPERTIES
+    WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
+
+add_test(
+    NAME legacy_builtin_names_symbol_guard
+    COMMAND ${Python3_EXECUTABLE}
+        "${ETA_REPO_ROOT_DIR}/scripts/tests/check_legacy_builtin_names_symbol.py"
+        --root "${ETA_REPO_ROOT_DIR}"
+)
+set_tests_properties(legacy_builtin_names_symbol_guard PROPERTIES
+    WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
+
+add_test(
+    NAME legacy_builtin_names_symbol_guard_tests
+    COMMAND ${Python3_EXECUTABLE}
+        "${ETA_REPO_ROOT_DIR}/scripts/tests/test_check_legacy_builtin_names_symbol.py"
+)
+set_tests_properties(legacy_builtin_names_symbol_guard_tests PROPERTIES
+    WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
+
 # Install libtorch runtime libraries alongside Eta binaries.
 if(TORCH_INSTALL_PREFIX)
     if(WIN32)

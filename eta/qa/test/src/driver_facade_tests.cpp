@@ -6,12 +6,14 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <optional>
 #include <string>
 
+#include "eta/runtime/builtin_catalog.h"
 #include "eta/session/driver.h"
 #include "eta/session/runtime_config.h"
 
@@ -127,6 +129,24 @@ BOOST_AUTO_TEST_CASE(run_source_smoke_evaluates_expression) {
     const bool ok = driver.eval_string("(+ 40 2)", out);
     BOOST_REQUIRE(ok);
     BOOST_TEST(out == "42");
+}
+
+BOOST_AUTO_TEST_CASE(driver_bootstrap_builtin_slots_match_catalog_order) {
+    eta::session::Driver driver;
+    std::string out;
+    BOOST_REQUIRE(driver.eval_string("(+ 1 2)", out));
+
+    const auto catalog = eta::runtime::builtin_catalog();
+    BOOST_TEST(driver.builtin_count() == catalog.size());
+
+    const auto& global_names = driver.global_names();
+    for (std::size_t i = 0; i < catalog.size(); ++i) {
+        const auto it = global_names.find(static_cast<std::uint32_t>(i));
+        BOOST_TEST_CONTEXT("slot " << i << " builtin=" << catalog[i].name) {
+            BOOST_REQUIRE(it != global_names.end());
+            BOOST_TEST(it->second == catalog[i].name);
+        }
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

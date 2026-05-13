@@ -1,7 +1,7 @@
 #include "eta/native/runtime_binding.h"
 #include "eta/native/sdk.h"
+#include "eta/runtime/builtin_catalog.h"
 #include "eta/runtime/builtin_env.h"
-#include "eta/runtime/builtin_names.h"
 #include "eta/runtime/error.h"
 #include "eta/runtime/nanbox.h"
 #include "eta/runtime/types/types.h"
@@ -134,7 +134,7 @@ int register_builtin_symbol_metadata(const EtaNativeApiV1* api, Predicate&& pred
     }
 
     eta::runtime::BuiltinEnvironment builtins;
-    eta::runtime::register_builtin_names_legacy(builtins);
+    eta::runtime::register_builtin_specs(builtins);
     for (const auto& symbol : builtins.specs()) {
         if (!predicate(symbol.name)) continue;
         const int status = api->register_primitive(

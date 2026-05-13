@@ -9,7 +9,7 @@
  *            spawn  spawn-kill  spawn-wait  current-mailbox
  *            monitor  demonitor  enable-heartbeat
  *
- * Registration order MUST match builtin_names.h (ETA_HAS_NNG section).
+ * Registration order MUST match builtin_catalog (ETA_HAS_NNG section).
  * All primitives capture Heap& and InternTable& by reference.
  */
 
@@ -538,7 +538,7 @@ inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_seri
  * @param vm_globals        Pointer to the Driver VM global vector. Required
  *                           for spawn-thread closure/module capture.
  *
- * Registration order MUST match the ETA_HAS_NNG section in builtin_names.h.
+ * Registration order MUST match the ETA_HAS_NNG section in builtin_catalog.
  */
 inline void register_nng_primitives(
     BuiltinEnvironment& env, Heap& heap, InternTable& intern,

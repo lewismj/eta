@@ -1,24 +1,24 @@
 #pragma once
 
 /**
- * @file builtin_names.h
- * @brief Analysis-only builtin registration for the LSP and other tools
- *        that need to know builtin names/arities but do NOT execute code.
+ * @file builtin_specs_seed.h
+ * @brief Seed registration for canonical builtin specs in slot order.
  *
  * Registers every builtin that the runtime provides (core + port + io + os +
  * process + time + torch + stats + log + nng) into a BuiltinEnvironment using
- * metadata from builtin_metadata.h and null PrimitiveFuncs.
+ * null PrimitiveFuncs.
  * The SemanticAnalyzer only reads names/arities from the env to pre-allocate
  *
  * REGISTRATION ORDER must stay in sync with all_primitives.h / driver.h:
  */
 
 #include "eta/runtime/builtin_env.h"
-#include "eta/runtime/builtin_metadata.h"
 
 namespace eta::runtime {
 
-inline void register_builtin_names_legacy(BuiltinEnvironment& env) {
+namespace detail {
+
+inline void register_builtin_specs_seed(BuiltinEnvironment& env) {
     /// Helper: register with a null func (analysis-only, never installed)
     auto r = [&env](const char* name, uint32_t arity, bool has_rest) {
         env.register_builtin(name, arity, has_rest, PrimitiveFunc{});
@@ -625,15 +625,7 @@ inline void register_builtin_names_legacy(BuiltinEnvironment& env) {
     r("enable-heartbeat",    2, false);
 }
 
-inline void register_builtin_names(BuiltinEnvironment& env) {
-    for (const auto& builtin : builtin_metadata()) {
-        env.register_builtin(
-            builtin.name,
-            builtin.arity,
-            builtin.has_rest,
-            PrimitiveFunc{});
-    }
-}
+} // namespace detail
 
 } ///< namespace eta::runtime
 

@@ -62,6 +62,7 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/csv_builtins.cpp
         src/eta/runtime/regex_builtins.cpp
         src/eta/runtime/json_builtins.cpp
+        src/eta/runtime/builtin_catalog.cpp
         src/eta/runtime/builtin_metadata.cpp
         src/eta/docs/stdlib_docs.cpp
         src/eta/runtime/process_primitives.cpp

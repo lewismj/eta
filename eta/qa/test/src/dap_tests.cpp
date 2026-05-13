@@ -810,7 +810,8 @@ BOOST_AUTO_TEST_CASE(script_output_captured_as_output_event) {
     (display "hello-dap")
     (newline)))
 )";
-    auto tmp = fs::temp_directory_path() / "eta_dap_test_output.eta";
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_test_output.eta";
     {
         std::ofstream f(tmp);
         BOOST_REQUIRE(f.is_open());
@@ -839,8 +840,6 @@ BOOST_AUTO_TEST_CASE(script_output_captured_as_output_event) {
 
     /// terminated event must be present
     BOOST_TEST(!find_msg(msgs, "event", "terminated").is_null());
-
-    fs::remove(tmp);
 }
 
 /**
@@ -1430,7 +1429,8 @@ BOOST_AUTO_TEST_CASE(heap_snapshot_while_vm_running_returns_not_paused) {
 (module dap-test-pool
   (begin (display "pool-test")))
 )";
-    auto tmp = fs::temp_directory_path() / "eta_dap_test_pool.eta";
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_test_pool.eta";
     {
         std::ofstream f(tmp);
         BOOST_REQUIRE(f.is_open());
@@ -1473,8 +1473,6 @@ BOOST_AUTO_TEST_CASE(heap_snapshot_while_vm_running_returns_not_paused) {
         BOOST_REQUIRE(err_id.has_value());
         BOOST_TEST(*err_id == 2002);
     }
-
-    fs::remove(tmp);
 }
 
 /**
@@ -1903,7 +1901,8 @@ BOOST_AUTO_TEST_CASE(driver_valid_lines_for_collects_source_lines) {
         "  (defun main ()\n"
         "    (add1 41)))\n";
 
-    auto tmp = fs::temp_directory_path() / "eta_dap_valid_lines_test.eta";
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_valid_lines_test.eta";
     {
         std::ofstream f(tmp, std::ios::binary);
         BOOST_REQUIRE(f.is_open());
@@ -1928,8 +1927,6 @@ BOOST_AUTO_TEST_CASE(driver_valid_lines_for_collects_source_lines) {
         BOOST_TEST(line >= 1u);
         BOOST_TEST(line <= 5u);
     }
-
-    fs::remove(tmp);
 }
 
 /**
@@ -2042,14 +2039,8 @@ BOOST_AUTO_TEST_CASE(scopes_refs_below_compound_base) {
  * 44. Async harness supports pause/continue interaction with stopOnEntry
  */
 BOOST_AUTO_TEST_CASE(async_harness_stop_on_entry_continue_round_trip) {
-    const auto tmp = fs::temp_directory_path() / "eta_dap_async_harness_test.eta";
-    struct TempFileCleanup {
-        fs::path path;
-        ~TempFileCleanup() {
-            std::error_code ec;
-            fs::remove(path, ec);
-        }
-    } cleanup{tmp};
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_async_harness_test.eta";
 
     {
         std::ofstream f(tmp, std::ios::binary);
@@ -2104,14 +2095,8 @@ BOOST_AUTO_TEST_CASE(async_harness_stop_on_entry_continue_round_trip) {
  * 45. Async conditional breakpoint flow pauses exactly on the truthy hit
  */
 BOOST_AUTO_TEST_CASE(async_conditional_breakpoint_pauses_on_truthy_hit) {
-    const auto tmp = fs::temp_directory_path() / "eta_dap_async_conditional_bp_test.eta";
-    struct TempFileCleanup {
-        fs::path path;
-        ~TempFileCleanup() {
-            std::error_code ec;
-            fs::remove(path, ec);
-        }
-    } cleanup{tmp};
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_async_conditional_bp_test.eta";
 
     {
         std::ofstream f(tmp, std::ios::binary);
@@ -2236,14 +2221,8 @@ BOOST_AUTO_TEST_CASE(async_conditional_breakpoint_pauses_on_truthy_hit) {
  * 46. Async logpoint flow emits output and does not pause execution
  */
 BOOST_AUTO_TEST_CASE(async_logpoint_emits_output_without_stopping) {
-    const auto tmp = fs::temp_directory_path() / "eta_dap_async_logpoint_test.eta";
-    struct TempFileCleanup {
-        fs::path path;
-        ~TempFileCleanup() {
-            std::error_code ec;
-            fs::remove(path, ec);
-        }
-    } cleanup{tmp};
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_async_logpoint_test.eta";
 
     {
         std::ofstream f(tmp, std::ios::binary);
@@ -2326,14 +2305,8 @@ BOOST_AUTO_TEST_CASE(async_logpoint_emits_output_without_stopping) {
  * 47. Async function breakpoint flow pauses at function entry
  */
 BOOST_AUTO_TEST_CASE(async_function_breakpoint_pauses_on_function_entry) {
-    const auto tmp = fs::temp_directory_path() / "eta_dap_async_function_bp_test.eta";
-    struct TempFileCleanup {
-        fs::path path;
-        ~TempFileCleanup() {
-            std::error_code ec;
-            fs::remove(path, ec);
-        }
-    } cleanup{tmp};
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_async_function_bp_test.eta";
 
     {
         std::ofstream f(tmp, std::ios::binary);
@@ -2503,14 +2476,8 @@ BOOST_AUTO_TEST_CASE(async_function_breakpoint_pauses_on_function_entry) {
  * still resumes cleanly to termination.
  */
 BOOST_AUTO_TEST_CASE(async_evaluate_uses_sandbox_for_compound_expression) {
-    const auto tmp = fs::temp_directory_path() / "eta_dap_async_sandbox_eval_test.eta";
-    struct TempFileCleanup {
-        fs::path path;
-        ~TempFileCleanup() {
-            std::error_code ec;
-            fs::remove(path, ec);
-        }
-    } cleanup{tmp};
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_async_sandbox_eval_test.eta";
 
     {
         std::ofstream f(tmp, std::ios::binary);
@@ -2665,14 +2632,8 @@ BOOST_AUTO_TEST_CASE(async_evaluate_uses_sandbox_for_compound_expression) {
  * paused frame and pause exactly when the condition is truthy.
  */
 BOOST_AUTO_TEST_CASE(async_conditional_bp_uses_sandbox_for_compound_expression) {
-    const auto tmp = fs::temp_directory_path() / "eta_dap_async_sandbox_cond_bp_test.eta";
-    struct TempFileCleanup {
-        fs::path path;
-        ~TempFileCleanup() {
-            std::error_code ec;
-            fs::remove(path, ec);
-        }
-    } cleanup{tmp};
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_async_sandbox_cond_bp_test.eta";
 
     {
         std::ofstream f(tmp, std::ios::binary);
@@ -2862,15 +2823,19 @@ inline void perf_log(const char* label, std::chrono::nanoseconds dur) {
 }
 
 struct TempEtaFile {
+    fs::path root_dir;
     fs::path path;
     TempEtaFile(const std::string& name, const std::string& body) {
-        path = fs::temp_directory_path() / name;
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        root_dir = fs::temp_directory_path() / ("eta_dap_perf_" + std::to_string(stamp));
+        fs::create_directories(root_dir);
+        path = root_dir / name;
         std::ofstream f(path, std::ios::binary);
         f << body;
     }
     ~TempEtaFile() {
         std::error_code ec;
-        fs::remove(path, ec);
+        fs::remove_all(root_dir, ec);
     }
     TempEtaFile(const TempEtaFile&) = delete;
     TempEtaFile& operator=(const TempEtaFile&) = delete;

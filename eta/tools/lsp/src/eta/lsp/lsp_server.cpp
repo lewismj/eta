@@ -26,9 +26,9 @@
 #include "eta/semantics/semantic_analyzer.h"
 #include "eta/docs/markdown.h"
 #include "eta/docs/stdlib_docs.h"
+#include "eta/runtime/builtin_catalog.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/builtin_metadata.h"
-#include "eta/runtime/builtin_names.h"
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
@@ -993,7 +993,7 @@ void LspServer::validate_document(const std::string& uri) {
     /// Semantic Analysis
     semantics::SemanticAnalyzer sa;
     runtime::BuiltinEnvironment builtins;
-    runtime::register_builtin_names(builtins);
+    runtime::register_builtin_specs(builtins);
     auto sem_res = sa.analyze_all(all_forms, linker, builtins);
     if (!sem_res) {
         const auto& err = sem_res.error();

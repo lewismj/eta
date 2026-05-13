@@ -93,7 +93,7 @@ public:
     /**
      * @brief Switch to patch mode.
      *
-     * After calling register_builtin_names() (which fills every slot with
+     * After calling register_builtin_specs() (which fills every slot with
      * metadata + null funcs), call begin_patching() so that subsequent
      * register_builtin() calls **validate** against the pre-registered
      * metadata and install the func rather than appending new entries.

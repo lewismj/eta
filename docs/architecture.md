@@ -295,3 +295,20 @@ All frontends create a `Driver` instance, which constructs the `Heap`,
 `InternTable`, `VM`, `BuiltinEnvironment`, and `BytecodeFunctionRegistry`
 and wires them together.
 
+---
+
+## Builtin Catalog Contract
+
+**Files:** [`builtin_catalog.h`](../eta/core/src/eta/runtime/builtin_catalog.h) /
+[`builtin_catalog.cpp`](../eta/core/src/eta/runtime/builtin_catalog.cpp)
+
+The builtin catalog is the single source of truth for builtin slot metadata
+(name, arity, rest-arg flag, owner, and optional docs metadata).
+
+- `register_builtin_specs(...)` seeds analysis/LSP environments from
+  `builtin_catalog()` in stable registration order.
+- Driver bootstrap then patches those slots via
+  `begin_patching() -> register_all_primitives(...) -> verify_all_patched()`,
+  preserving analyzer/runtime slot parity across `eta`, `etai`, `etac`, and
+  `eta_lsp`.
+
