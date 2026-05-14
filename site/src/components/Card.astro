@@ -7,19 +7,22 @@ export interface Props {
   title: string;
   body: string;
   href?: string;
+  /** Optional custom link label. If omitted, only a bare arrow is shown. */
   linkLabel?: string;
 }
 
-const { icon, category, title, body, href, linkLabel = "Learn more" } = Astro.props;
+const { icon, category, title, body, href, linkLabel } = Astro.props;
+const Tag: any = href ? "a" : "div";
+const linkProps = href ? { href } : {};
 ---
 
-<div class="card">
+<Tag class={`card${href ? " card--link" : ""}`} {...linkProps}>
   {icon && <div class="card__icon">{icon}</div>}
   {category && <div class="card__category">{category}</div>}
   <div class="card__title">{title}</div>
   <div class="card__body">{body}</div>
-  {href && (
-    <a href={href} class="card__link">{linkLabel}</a>
+  {href && linkLabel && (
+    <span class="card__link">{linkLabel}</span>
   )}
-</div>
+</Tag>
 

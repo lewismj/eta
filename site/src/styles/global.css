@@ -85,6 +85,15 @@ img, svg {
   letter-spacing: -0.02em;
   text-decoration: none;
   color: var(--fg);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand__mark {
+  display: block;
+  height: 70px;
+  width: auto;
 }
 
 .site-nav {
@@ -105,14 +114,14 @@ img, svg {
 .site-nav a.nav-cta {
   background: var(--fg);
   color: var(--bg);
-  padding: 6px 14px;
-  border-radius: 999px;
+  padding: 7px 16px;
+  border-radius: 8px;
   font-weight: 600;
 }
 
 .site-nav a.nav-cta:hover {
-  background: var(--accent-2);
-  color: #fff;
+  background: var(--graphite);
+  color: var(--bg);
 }
 
 /* ──────────────────────────────────────────────
@@ -235,17 +244,99 @@ img, svg {
   gap: 8px 48px;
 }
 
+/* Force a deliberate 2×2 composition for the feature grid. */
+.card-grid--2col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 96px;
+}
+
+@media (max-width: 720px) {
+  .card-grid--2col { grid-template-columns: 1fr; gap: 0; }
+}
+
+/* Quiet typographic strip used beneath the feature grid for
+   secondary capabilities (tooling, packages). */
+.eco-strip {
+  margin: 56px 0 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  line-height: 1.6;
+}
+
+.eco-strip__label {
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.eco-strip__sep {
+  color: var(--line);
+}
+
+.eco-strip__link {
+  color: var(--fg);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s, color 0.15s;
+}
+.eco-strip__link:hover { border-bottom-color: var(--fg); }
+.eco-strip__link::after { content: " →"; color: var(--accent); }
+
+/* ──────────────────────────────────────────────
+   Cookbook — single editorial line
+   ────────────────────────────────────────────── */
+.cookbook-line {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 96px 24px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.cookbook-line__body {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--fg);
+}
+
+.cookbook-line__link {
+  margin-top: 6px;
+  padding: 6px 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--fg);
+  border-bottom: 1.5px solid var(--line);
+  transition: border-color 0.15s;
+}
+.cookbook-line__link:hover { border-bottom-color: var(--fg); }
+.cookbook-line__link::after { content: " →"; color: var(--accent); }
+
 .card {
   background: transparent;
   border: none;
   border-top: 1px solid var(--line);
   border-radius: 0;
-  padding: 28px 0 36px;
+  padding: 32px 0 36px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   box-shadow: none;
   transition: border-color 0.2s;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+  min-height: 160px;
 }
 
 .card:hover {
@@ -253,10 +344,20 @@ img, svg {
   box-shadow: none;
 }
 
-.card__icon {
-  display: none;
+/* Whole-card link variant: motion is the affordance — title slides
+   right, body lifts from muted to fg, top rule darkens. No glyphs. */
+.card--link { cursor: pointer; }
+.card--link .card__title,
+.card--link .card__body {
+  transition: transform 0.18s ease, color 0.18s ease;
 }
+.card--link:hover .card__title { transform: translateX(4px); }
+.card--link:hover .card__body  { color: var(--fg); }
 
+.card__icon { display: none; }
+
+/* Category eyebrow retained for backward compat but no longer used —
+   the title is the dominant label. */
 .card__category {
   font-family: var(--font-display);
   font-size: 0.7rem;
@@ -270,10 +371,12 @@ img, svg {
 .card__title {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.25rem;
-  letter-spacing: -0.015em;
+  font-size: 1.65rem;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
   color: var(--fg);
   display: block;
+  margin-bottom: 6px;
 }
 
 /* Legacy dot from older pages — kept harmless but invisible. */
@@ -281,8 +384,9 @@ img, svg {
 
 .card__body {
   color: var(--muted);
-  font-size: 0.95rem;
-  line-height: 1.6;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  max-width: 38ch;
 }
 
 .card__link {
@@ -298,6 +402,7 @@ img, svg {
 }
 
 .card__link::after { content: "→"; color: var(--accent); }
+
 
 /* ──────────────────────────────────────────────
    Interlude — single editorial band with tonal contrast
@@ -432,6 +537,159 @@ img, svg {
 .tok-string  { color: #d7b0bb; }
 .tok-num     { color: #e4c1ca; }
 .tok-op      { color: #a19a94; }
+
+/* ──────────────────────────────────────────────
+   Dark anchor — merged interlude + code sample
+   ────────────────────────────────────────────── */
+.dark-anchor {
+  background: #171717;
+  color: #ece7e1;
+  padding: 128px 0;
+  margin: 48px 0;
+}
+
+.dark-anchor__inner {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 144px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .dark-anchor { padding: 88px 0; }
+  .dark-anchor__inner { grid-template-columns: 1fr; gap: 40px; }
+}
+
+.dark-anchor__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-top: 6px;
+}
+
+.dark-anchor__label {
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+
+.dark-anchor__lede {
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 2.6vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: #ece7e1;
+  margin: 0;
+}
+
+.dark-anchor__body {
+  color: #b6afa9;
+  font-size: 1.0rem;
+  line-height: 1.65;
+  max-width: 52ch;
+  margin: 0;
+}
+
+.dark-anchor__link {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 8px 0;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #ece7e1;
+  border-bottom: 1.5px solid rgba(236, 231, 225, 0.25);
+  border-radius: 0;
+  transition: border-color 0.15s;
+}
+.dark-anchor__link:hover { border-bottom-color: #ece7e1; }
+.dark-anchor__link::after { content: " →"; color: var(--accent); }
+
+.dark-anchor__code {
+  margin: 0;
+  padding: 4px 0 0;             /* no inner panel; align with copy column */
+  background: transparent;       /* match the band */
+  border: none;
+  border-radius: 0;
+  color: var(--code-fg);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.65;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-shadow: none;
+}
+.dark-anchor__code::-webkit-scrollbar { display: none; }
+.dark-anchor__code code {
+  font-family: var(--font-mono);
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+/* ──────────────────────────────────────────────
+   Closing — typographic ending block
+   ────────────────────────────────────────────── */
+.closing {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 96px 24px 128px;
+  border-top: 1px solid var(--line);
+  margin-top: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.closing__label {
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0;
+}
+
+.closing__url {
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+  color: var(--fg);
+  align-self: flex-start;
+  border-bottom: 1.5px solid var(--line);
+  padding: 4px 0;
+  transition: border-color 0.15s;
+}
+.closing__url:hover { border-bottom-color: var(--fg); }
+.closing__url::after { content: " →"; color: var(--accent); }
+
+.closing__meta {
+  font-size: 0.92rem;
+  color: var(--muted);
+  margin: 0;
+}
+.closing__meta a {
+  color: var(--muted);
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.closing__meta a:hover {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+.closing__meta a::after { content: " →"; color: var(--accent); }
 
 /* ──────────────────────────────────────────────
    Footer
