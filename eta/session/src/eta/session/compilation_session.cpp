@@ -36,16 +36,6 @@ bool CompilationSession::can_register_extension_primitives() const noexcept {
         && runtime_module_info_.empty();
 }
 
-const std::optional<std::filesystem::path>&
-CompilationSession::prelude_origin_path() const noexcept {
-    return prelude_origin_path_;
-}
-
-void CompilationSession::set_prelude_origin_path(
-    std::optional<std::filesystem::path> path) {
-    prelude_origin_path_ = std::move(path);
-}
-
 const std::unordered_map<uint32_t, std::string>&
 CompilationSession::global_names() const noexcept {
     return global_names_;

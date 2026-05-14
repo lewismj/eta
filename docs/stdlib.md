@@ -4,6 +4,9 @@ Reference documentation for the modules under `stdlib/std/`. Each page lists
 the module's exported symbols with short descriptions and call shapes. For
 tutorials and longer examples see the [Language Guide](language_guide.md).
 
+> **Quick-reference tables** — per-module API tables with navigation breadcrumbs
+> are also available in the [Guide stdlib index](guide/stdlib/README.md).
+
 ## Conventions
 
 - Most non-pure modules expose a colon-prefixed namespace
@@ -92,4 +95,3 @@ tutorials and longer examples see the [Language Guide](language_guide.md).
 - [std.test](stdlib/test.md) - Unit tests with TAP/JUnit reporters.
 - [std.jupyter](stdlib/jupyter.md) - Notebook MIME display markers.
 - [std.prof](stdlib/prof.md) - Runtime profiling sessions and reports.
-

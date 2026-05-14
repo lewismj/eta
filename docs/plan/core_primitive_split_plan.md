@@ -59,15 +59,15 @@ Planned file layout:
 core_primitives.h                  <- public declaration only
 core_primitives_internal.h         <- private PrimReg declaration
 core_primitives.cpp                <- dispatcher + call order
-core_primitives_arithmetic.cpp
-core_primitives_math.cpp
-core_primitives_sequences.cpp
-core_primitives_strings.cpp
-core_primitives_misc.cpp
-core_primitives_logic.cpp
-core_primitives_clp.cpp
-core_primitives_aad.cpp
-core_primitives_stats.cpp
+primitives/core_primitives_arithmetic.cpp
+primitives/core_primitives_math.cpp
+primitives/core_primitives_sequences.cpp
+primitives/core_primitives_strings.cpp
+primitives/core_primitives_misc.cpp
+primitives/core_primitives_logic.cpp
+primitives/core_primitives_clp.cpp
+primitives/core_primitives_aad.cpp
+primitives/core_primitives_stats.cpp
 ```
 
 ---
@@ -89,6 +89,22 @@ Tests:
 
 Done when:
 1. Baseline is green and timing notes are captured.
+
+Task 1 implementation notes (2026-05-14):
+1. Baseline build command (with `ETA_MODULE_PATH` unset):
+   - `cmd /d /c '"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul && "C:\Program Files\JetBrains\CLion 2026.1\bin\cmake\win\x64\bin\cmake.exe" --build C:\Users\lewis\develop\eta\out\msvc-release --target eta_all -j 6'`
+2. Baseline timing snapshot:
+   - `eta_all` build: `35.16s`
+   - targeted suites (`runtime_primitives_tests`, `builtin_sync_tests`,
+     `atom_tests`, `csv_reader_tests`, `csv_writer_tests`): `0.49s`
+   - stage gate (`ctest -R "eta_core_test|eta_stdlib_tests"`): `105.72s`
+     (`eta_core_test`: `42.28s`, `eta_stdlib_tests`: `63.41s`)
+3. Stage gate result:
+   - `eta_core_test`: pass
+   - `eta_stdlib_tests`: pass
+4. Baseline and stage-gate runs in this repo should unset `ETA_MODULE_PATH`
+   for the test process so external install/module overrides do not affect
+   results.
 
 ---
 
@@ -112,6 +128,29 @@ Tests:
 Done when:
 1. Public header no longer contains implementation body.
 2. Build and slot-order parity are unchanged.
+
+Task 2 implementation notes (2026-05-14):
+1. Public/private split skeleton landed:
+   - `eta/core/src/eta/runtime/core_primitives.h` is now declaration-only.
+   - Added `eta/core/src/eta/runtime/core_primitives_internal.h` with
+     `PrimReg` state and domain method declarations.
+   - Added `eta/core/src/eta/runtime/core_primitives.cpp` with:
+     - `register_core_primitives(...)` dispatcher
+     - `PrimReg` constructor
+     - placeholder domain methods (`register_arithmetic()` ... `register_stats()`)
+     - temporary legacy implementation path in `PrimReg::register_legacy_block()`.
+   - Added `src/eta/runtime/core_primitives.cpp` to `eta/core/CMakeLists.txt`.
+2. Added slot-order regression coverage for core registration in:
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+   - new test case: `core_registration_matches_metadata_prefix_exactly`.
+3. While removing transitive includes from `core_primitives.h`, tests that used
+   `classify_numeric(...)` now include `eta/runtime/numeric_value.h` directly:
+   - `eta/qa/test/src/csv_reader_tests.cpp`
+   - `eta/qa/test/src/csv_fact_table_tests.cpp`
+4. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass (`132.6s`)
+   - `ctest -R "eta_core_test|eta_stdlib_tests"`: pass (`192.11s`)
+     (`eta_core_test`: `64.24s`, `eta_stdlib_tests`: `127.83s`)
 
 ---
 
@@ -137,6 +176,35 @@ Tests:
 Done when:
 1. Shared helpers are no longer local lambdas in a monolithic block.
 
+Task 3 implementation notes (2026-05-14):
+1. Extracted shared AD helper lambdas into `PrimReg` helper methods:
+   - Declared in `eta/core/src/eta/runtime/core_primitives_internal.h`.
+   - Defined in `eta/core/src/eta/runtime/core_primitives.cpp`.
+   - Helpers moved:
+     - `has_tape_ref(...)`
+     - `allocate_tape_id()`
+     - `make_ad_runtime_error(...)`
+     - `validate_ref_for_tape(...)`
+     - `policy_is_strict(...)`
+     - `make_nondiff_error(...)`
+     - `make_domain_error(...)`
+     - `make_unary_domain_error(...)`
+     - `get_active_tape_for_op(...)`
+2. Updated legacy registration call sites to use `PrimReg` helper methods
+   directly (captures removed for those helpers), with no registration-order or
+   behavior change.
+3. Added focused regression coverage in
+   `eta/qa/test/src/runtime_primitives_tests.cpp`:
+   - `aad_tape_comparison_strict_mode_reports_nondiff_error_shape`
+   - `aad_taped_pow_strict_mode_reports_domain_error_shape`
+4. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass (`91.2s`)
+   - targeted suites via `eta_core_test`:
+     - `runtime_primitives_tests/*`: pass
+     - `builtin_sync_tests/*`: pass
+   - stage gate `ctest -R "eta_core_test|eta_stdlib_tests"`: pass (`195.36s`)
+   - full `ctest`: pass (`9/9`, `203.94s`)
+
 ---
 
 ## Task 4: Extract Arithmetic + Predicates (`arithmetic`)
@@ -159,6 +227,42 @@ Tests:
 Done when:
 1. Arithmetic/predicate registrations are out of the legacy block with no slot drift.
 
+Task 4 implementation notes (2026-05-14):
+1. Added arithmetic split unit and local helper header:
+   - `eta/core/src/eta/runtime/core_primitives_arithmetic.cpp`
+   - `eta/core/src/eta/runtime/core_primitives_arithmetic_helpers.h`
+2. Extracted arithmetic/predicate registrations from the legacy block into
+   `PrimReg::register_arithmetic()`:
+   - `+` `-` `*` `/`
+   - `=` `<` `>` `<=` `>=`
+   - `eq?` `eqv?` `not`
+   - `number?` `boolean?` `string?` `char?` `symbol?` `procedure?` `integer?`
+   - `zero?` `positive?` `negative?`
+   - `abs` `min` `max` `modulo` `remainder`
+3. Dispatcher wiring:
+   - `register_core_primitives(...)` now calls `reg.register_arithmetic();`
+     before `reg.register_legacy_block();`.
+4. Slot-order bridge:
+   - Added `PrimReg::register_pair_list_bridge()` for
+     `cons` `car` `cdr` `pair?` `null?` `list` so slot order remains unchanged
+     around the arithmetic/type-predicate boundary while Task 4 is isolated.
+5. Build wiring:
+   - Added `src/eta/runtime/core_primitives_arithmetic.cpp` to
+     `eta/core/CMakeLists.txt`.
+6. Regression tests added:
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `arithmetic_primitives_preserve_numeric_and_predicate_behavior`
+     - `aad_taped_min_strict_mode_reports_nondiff_error_shape`
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_arithmetic_and_predicate_window_matches_seeded_slots`
+7. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass (`163.7s`)
+   - targeted runtime suites:
+     - `eta_core_test --run_test=runtime_primitives_tests/*:builtin_sync_tests/*`: pass (`1.9s`)
+   - stage gate `ctest -R "eta_core_test|eta_stdlib_tests"`: pass (`184.17s`)
+     (`eta_core_test`: `64.24s`, `eta_stdlib_tests`: `119.89s`)
+   - full `ctest`: pass (`9/9`, `183.47s`)
+
 ---
 
 ## Task 5: Extract Transcendental + AAD Policy (`math`)
@@ -178,6 +282,36 @@ Tests:
 
 Done when:
 1. Math and policy registrations live in `core_primitives_math.cpp`.
+
+Task 5 implementation notes (2026-05-14):
+1. Added math split unit and local helper header:
+   - `eta/core/src/eta/runtime/core_primitives_math.cpp`
+   - `eta/core/src/eta/runtime/core_primitives_math_helpers.h`
+2. Extracted transcendental and AAD policy registrations from the legacy block
+   into `PrimReg::register_math()`:
+   - `sin` `cos` `tan` `asin` `acos` `atan` `exp` `log` `sqrt` `pow`
+   - `set-aad-nondiff-policy!`
+   - `aad-nondiff-policy`
+3. Dispatcher and build wiring:
+   - `register_core_primitives(...)` now calls `reg.register_math();`
+     immediately after `reg.register_arithmetic();`.
+   - Added `src/eta/runtime/core_primitives_math.cpp` to
+     `eta/core/CMakeLists.txt`.
+4. `pow` tape argument resolution helpers were moved into a dedicated local
+   helper header (`core_primitives_math_helpers.h`) to keep shared support
+   logic out of public headers.
+5. Regression tests added:
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `aad_nondiff_policy_primitives_roundtrip_and_validate_input`
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_math_and_aad_policy_window_matches_seeded_slots`
+6. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass (`139.0s`)
+   - targeted suites:
+     - `eta_core_test --run_test=runtime_primitives_tests/*:builtin_sync_tests/*`: pass
+   - stage gate `ctest -R "eta_core_test|eta_stdlib_tests"`: pass (`186.60s`)
+     (`eta_core_test`: `67.63s`, `eta_stdlib_tests`: `118.94s`)
+   - full `ctest`: pass (`9/9`, `147.42s`)
 
 ---
 
@@ -214,6 +348,43 @@ Tests:
 Done when:
 1. Sequence/collection/atom registrations are in `core_primitives_sequences.cpp`.
 
+Task 6 implementation notes (2026-05-14):
+1. Added sequence split unit:
+   - `eta/core/src/eta/runtime/core_primitives_sequences.cpp`
+2. Extracted Task 6 registrations from the legacy block into sequence methods:
+   - `PrimReg::register_pair_list_bridge()` now lives in
+     `core_primitives_sequences.cpp` and is still invoked from
+     `register_arithmetic()` to preserve existing slot order around predicates.
+   - `PrimReg::register_sequences()` now owns list/alist operations:
+     `length` `append` `reverse` `list-ref` `list-tail` `set-car!` `set-cdr!`
+     `assq` `assoc` `member`.
+   - Added bridge methods in `core_primitives_sequences.cpp` for in-place
+     order-preserving extraction from the legacy flow:
+     - `PrimReg::register_sequences_higher_order_bridge()`:
+       `apply` `map` `for-each` `equal?`
+     - `PrimReg::register_sequences_collections_and_atoms_bridge()`:
+       vectors, hash-map/hash-set primitives (including `hash-map-fold` and
+       `hash`), and atom primitives.
+3. Dispatcher/build wiring:
+   - `register_core_primitives(...)` now calls `reg.register_sequences();`
+     after `reg.register_math();`.
+   - `register_legacy_block()` now invokes:
+     - `register_sequences_higher_order_bridge();`
+     - `register_sequences_collections_and_atoms_bridge();`
+     at the original registration points so slot order remains unchanged.
+   - Added method declarations to
+     `eta/core/src/eta/runtime/core_primitives_internal.h`.
+   - Added `src/eta/runtime/core_primitives_sequences.cpp` to
+     `eta/core/CMakeLists.txt`.
+4. Regression tests added:
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_sequences_and_collections_windows_match_seeded_slots`
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `sequence_collection_primitives_preserve_list_map_vector_hash_and_equal_behavior`
+5. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass (`141.7s`)
+   - full `ctest --output-on-failure`: pass (`9/9`, `154.39s`)
+
 ---
 
 ## Task 7: Extract Strings, Symbols, and Delegates (`strings`)
@@ -242,6 +413,39 @@ Tests:
 Done when:
 1. String/symbol/delegate registrations live in `core_primitives_strings.cpp`.
 
+Task 7 implementation notes (2026-05-14):
+1. Added string split unit and local helper header:
+   - `eta/core/src/eta/runtime/core_primitives_strings.cpp`
+   - `eta/core/src/eta/runtime/core_primitives_strings_helpers.h`
+2. Extracted string/symbol/char and delegated registration calls from the
+   legacy block into `PrimReg::register_strings()`:
+   - `symbol->string` `string->symbol`
+   - `string-length` `string-append` `number->string` `string->number`
+   - `string-ref` `substring`
+   - `string=?` `string<?` `string>?` `string<=?` `string>=?`
+   - `char->integer` `integer->char`
+   - `register_csv_builtins(...)`
+   - `register_regex_builtins(...)`
+   - `register_json_builtins(...)`
+3. Dispatcher/build wiring:
+   - `register_core_primitives(...)` now calls `reg.register_strings();`
+     immediately after `reg.register_sequences();`.
+   - Added `src/eta/runtime/core_primitives_strings.cpp` to
+     `eta/core/CMakeLists.txt`.
+   - Removed migrated string/delegate registrations from
+     `register_legacy_block()` while keeping the remaining bridge call order
+     unchanged.
+4. Regression tests added:
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `string_symbol_and_char_primitives_preserve_conversion_and_comparison_behavior`
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_strings_and_delegate_windows_match_seeded_slots`
+5. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass
+   - targeted suites:
+     - `eta_core_test --run_test=runtime_primitives_tests/*:regex_tests/*:json_tests/*:csv_reader_tests/*:csv_writer_tests/*:builtin_sync_tests/*`: pass
+   - full `ctest --output-on-failure`: pass (`9/9`, `140.49s`)
+
 ---
 
 ## Task 8: Extract Misc Runtime Builtins (`misc`)
@@ -266,6 +470,48 @@ Tests:
 Done when:
 1. Misc registrations are isolated in `core_primitives_misc.cpp`.
 
+Task 8 implementation notes (2026-05-14):
+1. Added misc split unit:
+   - `eta/core/src/eta/runtime/core_primitives_misc.cpp`
+2. Extracted misc builtins from the legacy block into misc methods:
+   - `PrimReg::register_misc()`:
+     `error`, `platform`,
+     `%prof-start`, `%prof-stop`, `%prof-report`,
+     `%prof-counter`, `%prof-region-enter`, `%prof-region-exit`,
+     `%prof-enabled?`
+   - `PrimReg::register_misc_lifecycle_bridge()`:
+     `register-finalizer!`, `unregister-finalizer!`,
+     `make-guardian`, `guardian-track!`, `guardian-collect`
+   - `PrimReg::register_misc_eval_bridge()`:
+     `eval` runtime stub
+3. Order-preserving wiring:
+   - `register_legacy_block()` now calls `register_misc()` after
+     `register_sequences_collections_and_atoms_bridge()` so
+     `error/platform/profiler` stay in the same slot region.
+   - Kept `logic-var?` in legacy for Task 9 and inserted
+     `register_misc_lifecycle_bridge()` immediately after it to preserve
+     catalog order around lifecycle builtins.
+   - Replaced the legacy `eval` stub registration with
+     `register_misc_eval_bridge()` at the original end-of-block location.
+4. Build wiring:
+   - Added `src/eta/runtime/core_primitives_misc.cpp` to
+     `eta/core/CMakeLists.txt`.
+   - Added internal method declarations in
+     `eta/core/src/eta/runtime/core_primitives_internal.h` for
+     `register_misc_lifecycle_bridge()` and `register_misc_eval_bridge()`.
+5. Regression tests added:
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `misc_primitives_preserve_runtime_error_profiler_guardian_and_eval_behavior`
+   - `eta/qa/test/src/atom_tests.cpp`
+     - `finalizer_and_guardian_primitives_roundtrip_basic_lifecycle`
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_misc_windows_match_seeded_slots`
+6. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass
+   - targeted suites:
+     - `eta_core_test --run_test=runtime_primitives_tests/*:atom_tests/*:builtin_sync_tests/*`: pass
+   - full `ctest --output-on-failure`: pass (`9/9`, `153.48s`)
+
 ---
 
 ## Task 9: Extract Logic and Attributes (`logic`)
@@ -289,6 +535,45 @@ Tests:
 
 Done when:
 1. Logic/attr registrations are in `core_primitives_logic.cpp`.
+
+Task 9 implementation notes (2026-05-14):
+1. Added logic split unit and local helper header:
+   - `eta/core/src/eta/runtime/core_primitives_logic.cpp`
+   - `eta/core/src/eta/runtime/core_primitives_logic_helpers.h`
+2. Extracted Task 9 logic/attribute registrations from the legacy block into:
+   - `PrimReg::register_logic()`:
+     - `logic-var?`
+     - `put-attr` `get-attr` `del-attr` `attr-var?` `register-attr-hook!`
+     - `logic-var/named` `var-name`
+     - `set-occurs-check!` `occurs-check-mode`
+     - `ground?` `compound?` `term` `functor` `arity` `arg`
+     - `dual?` `dual-primal` `dual-backprop` `make-dual`
+   - `PrimReg::register_logic_prop_attr_bridge()`:
+     - `register-prop-attr!` (kept at its original late-slot position).
+3. Order-preserving wiring:
+   - `register_legacy_block()` now calls `register_logic();` at the original
+     logic region.
+   - `register_logic()` invokes `register_misc_lifecycle_bridge()` in-place so
+     finalizer/guardian slot order remains unchanged.
+   - Replaced legacy `register-prop-attr!` registration with
+     `register_logic_prop_attr_bridge()` immediately before
+     `%clp-prop-queue-size`.
+4. Build wiring:
+   - Added `src/eta/runtime/core_primitives_logic.cpp` to
+     `eta/core/CMakeLists.txt`.
+   - Added `register_logic_prop_attr_bridge()` declaration in
+     `eta/core/src/eta/runtime/core_primitives_internal.h`.
+5. Regression tests added:
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `logic_primitives_preserve_attr_occurs_term_dual_and_prop_attr_behavior`
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_logic_windows_match_seeded_slots`
+6. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass
+   - targeted suites:
+     - `eta_core_test --run_test=runtime_primitives_tests/*:builtin_sync_tests/*`: pass
+     - `eta_core_test --run_test=vm_tests/unification_tests/*`: pass
+     - `eta_core_test --run_test=example_runner_tests/*:compiled_example_tests/*`: pass
 
 ---
 
@@ -315,6 +600,51 @@ Tests:
 Done when:
 1. CLP registrations exist only in `core_primitives_clp.cpp`.
 
+Task 10 implementation notes (2026-05-14):
+1. Added CLP split unit:
+   - `eta/core/src/eta/runtime/core_primitives_clp.cpp`
+2. Extracted all CLP registrations from `register_legacy_block()` into:
+   - `PrimReg::register_clp()`:
+     `%clp-domain-z!`, `%clp-domain-fd!`, `%clp-domain-r!`,
+     `%clp-get-domain`, `%clp-linearize`,
+     `%clp-fm-feasible?`, `%clp-fm-bounds`,
+     `%clp-r-post-leq!`, `%clp-r-post-eq!`, `%clp-r-propagate!`,
+     `%clp-r-minimize`, `%clp-r-maximize`,
+     `%clp-r-qp-minimize`, `%clp-r-qp-maximize`,
+     `%clp-fd-plus!`, `%clp-fd-plus-offset!`, `%clp-fd-abs!`,
+     `%clp-fd-times!`, `%clp-fd-sum!`, `%clp-fd-scalar-product!`,
+     `%clp-fd-element!`, `%clp-fd-all-different!`,
+     `%clp-bool-and!`, `%clp-bool-or!`, `%clp-bool-xor!`,
+     `%clp-bool-imp!`, `%clp-bool-eq!`, `%clp-bool-not!`,
+     `%clp-bool-card!`.
+   - `PrimReg::register_clp_prop_queue_size_bridge()`:
+     `%clp-prop-queue-size`.
+3. Order-preserving wiring:
+   - `register_legacy_block()` now calls `register_clp();` at the original
+     CLP slot region (between logic and tape/AAD sections).
+   - Replaced inline `%clp-prop-queue-size` registration with
+     `register_clp_prop_queue_size_bridge();` at the existing late-slot
+     position, immediately after `register_logic_prop_attr_bridge();`.
+4. Build wiring:
+   - Added `src/eta/runtime/core_primitives_clp.cpp` to
+     `eta/core/CMakeLists.txt`.
+   - Added `register_clp_prop_queue_size_bridge()` declaration in
+     `eta/core/src/eta/runtime/core_primitives_internal.h`.
+5. Regression tests added:
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `clp_primitives_preserve_domain_lookup_and_queue_size_behavior`
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_clp_windows_match_seeded_slots`
+6. Stage-gate stabilization during full test run:
+   - Fixed Windows SHA-256 parser line filtering in
+     `eta/cli/src/eta/cli/main_eta.cpp` so `eta vendor` only accepts digest
+     lines (hex + whitespace), avoiding false matches from non-digest text.
+   - Updated `eta/qa/cli_test/src/eta_cli_test.cpp` sidecar fixture hashing to
+     use the same `certutil` digest source as CLI vendor verification.
+7. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass
+   - `ctest --output-on-failure`: pass (`9/9`, `150.27s`)
+
 ---
 
 ## Task 11: Extract Tape/AAD Control (`aad`)
@@ -334,6 +664,35 @@ Tests:
 
 Done when:
 1. Tape control registrations are in `core_primitives_aad.cpp`.
+
+Task 11 implementation notes (2026-05-14):
+1. Added AAD split unit and local helper header:
+   - `eta/core/src/eta/runtime/core_primitives_aad.cpp`
+   - `eta/core/src/eta/runtime/core_primitives_aad_helpers.h`
+2. Extracted all tape control registrations from `register_legacy_block()`
+   into `PrimReg::register_aad()`:
+   - `tape-new` `tape-start!` `tape-stop!` `tape-clear!`
+   - `tape-var` `tape-backward!` `tape-adjoint` `tape-primal`
+   - `tape-ref?` `tape-ref-index`
+   - `tape-size` `tape-ref-value-of` `tape-ref-value`
+3. Order-preserving wiring:
+   - `register_legacy_block()` now calls `register_aad();` immediately after
+     `register_clp();` at the existing tape/AAD slot region.
+   - Removed the inline tape registration block from
+     `eta/core/src/eta/runtime/core_primitives.cpp`.
+4. Build wiring:
+   - Added `src/eta/runtime/core_primitives_aad.cpp` to
+     `eta/core/CMakeLists.txt`.
+5. Regression tests added:
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `aad_tape_control_primitives_preserve_lifecycle_and_reference_access_behavior`
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_aad_window_matches_seeded_slots`
+6. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass (`119.7s`)
+   - targeted suites:
+     - `eta_core_test --run_test=runtime_primitives_tests/*:builtin_sync_tests/*:example_runner_tests/*:compiled_example_tests/*`: pass
+   - full `ctest --output-on-failure`: pass (`9/9`, `118.70s`)
 
 ---
 
@@ -356,6 +715,37 @@ Tests:
 Done when:
 1. Fact-table/stats registrations are in `core_primitives_stats.cpp`.
 
+Task 12 implementation notes (2026-05-14):
+1. Added stats split unit and local helper header:
+   - `eta/core/src/eta/runtime/core_primitives_stats.cpp`
+   - `eta/core/src/eta/runtime/core_primitives_stats_helpers.h`
+2. Extracted Task 12 registrations from the legacy block into
+   `PrimReg::register_stats()`:
+   - Fact-table builtins (`%fact-table-*`, `fact-table?`)
+   - `term-hash` and `term-variant-hash`
+   - `%stats-*` builtins
+3. Order-preserving wiring:
+   - `register_legacy_block()` now calls `register_stats();` immediately after
+     `register_aad();`.
+   - Kept `register_logic_prop_attr_bridge()`,
+     `register_clp_prop_queue_size_bridge()`, and
+     `register_misc_eval_bridge()` at their existing late-slot positions.
+4. Include-localization and build wiring:
+   - `stats_math.h` and `stats_extract.h` are now included only from
+     `core_primitives_stats.cpp`.
+   - Added `src/eta/runtime/core_primitives_stats.cpp` to
+     `eta/core/CMakeLists.txt`.
+5. Regression tests added:
+   - `eta/qa/test/src/runtime_primitives_tests.cpp`
+     - `stats_primitives_preserve_fact_table_hash_and_stats_behavior`
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+     - `core_stats_windows_match_seeded_slots`
+6. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass (`92.4s`)
+   - targeted suites:
+     - `eta_core_test --run_test=runtime_primitives_tests/*:builtin_sync_tests/*:stats_tests/*:example_runner_tests/*:compiled_example_tests/*`: pass (`20.6s`)
+   - full `ctest --output-on-failure`: pass (`9/9`, `122.21s`)
+
 ---
 
 ## Task 13: Finalize Dispatcher-only Runtime Path
@@ -377,6 +767,62 @@ Tests:
 Done when:
 1. Public header is declaration-only and legacy block is gone.
 2. Slot order parity is preserved.
+
+Task 13 implementation notes (2026-05-14):
+1. Removed the temporary legacy path from core registration:
+   - Deleted `PrimReg::register_legacy_block()` from:
+     - `eta/core/src/eta/runtime/core_primitives_internal.h`
+     - `eta/core/src/eta/runtime/core_primitives.cpp`
+2. Dispatcher is now fully explicit and order-preserving:
+   - `register_core_primitives(...)` directly invokes:
+     - `register_arithmetic()`
+     - `register_math()`
+     - `register_sequences()`
+     - `register_strings()`
+     - `register_sequences_collections_and_atoms_bridge()`
+     - `register_misc()`
+     - `register_logic()`
+     - `register_clp()`
+     - `register_aad()`
+     - `register_stats()`
+     - `register_logic_prop_attr_bridge()`
+     - `register_clp_prop_queue_size_bridge()`
+     - `register_misc_eval_bridge()`
+3. Added Task 13 regression coverage in:
+   - `eta/qa/test/src/builtin_sync_tests.cpp`
+   - strengthened `core_registration_matches_metadata_prefix_exactly` to assert
+     core registration spans the full metadata prefix through the `eval` slot.
+4. Build/source wiring check:
+   - `eta/core/CMakeLists.txt` includes `core_primitives.cpp` and all split
+     domain units:
+     `primitives/core_primitives_arithmetic.cpp`,
+     `primitives/core_primitives_math.cpp`,
+     `primitives/core_primitives_sequences.cpp`,
+     `primitives/core_primitives_strings.cpp`,
+     `primitives/core_primitives_misc.cpp`,
+     `primitives/core_primitives_logic.cpp`,
+     `primitives/core_primitives_clp.cpp`,
+     `primitives/core_primitives_aad.cpp`,
+     `primitives/core_primitives_stats.cpp`.
+5. Validation run (with `ETA_MODULE_PATH` unset):
+   - `eta_all` build: pass (`99.8s`)
+   - stage gate: `ctest --output-on-failure -R "eta_core_test|eta_stdlib_tests"`:
+     pass (`99.79s`)
+   - smoke runs: `etai --help`, `etac --help`, `eta_repl --help`, `eta_lsp --help`:
+     pass
+   - full `ctest --output-on-failure`: pass (`9/9`, `97.97s`)
+
+Task 13 layout cleanup notes (2026-05-14):
+1. Moved split domain registration units into:
+   - `eta/core/src/eta/runtime/primitives/`
+2. Kept dispatcher/public-private surface in:
+   - `eta/core/src/eta/runtime/core_primitives.h`
+   - `eta/core/src/eta/runtime/core_primitives_internal.h`
+   - `eta/core/src/eta/runtime/core_primitives.cpp`
+3. Updated helper includes to use:
+   - `eta/runtime/primitives/core_primitives_*_helpers.h`
+4. Updated `eta/core/CMakeLists.txt` source entries to:
+   - `src/eta/runtime/primitives/core_primitives_*.cpp`
 
 ---
 

@@ -129,19 +129,12 @@ public:
      * @brief Compile a .eta file without executing it.
      *
      * This path preserves semantic analysis and linker behavior used by run_file,
-     * but skips VM execution. The prelude and imported dependencies are still
+     * but skips VM execution. Imported dependencies are still
      * executed normally (they must populate globals for semantic analysis).
      *
      * @return CompileResult on success, std::nullopt on error.
      */
     std::optional<CompileResult> compile_file(const fs::path& path);
-
-    /**
-     * @brief Legacy bootstrap alias.
-     *
-     * This forwards to @ref load_prelude.
-     */
-    PreludeResult compile_prelude();
 
     /**
      * @brief Compile and execute a source string (e.g. from the REPL).

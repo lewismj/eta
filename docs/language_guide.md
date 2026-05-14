@@ -12,6 +12,12 @@
 > either a tutorial chapter under [`docs/guide/`](./guide/) or a module / tool
 > reference under [`docs/guide/reference/`](./guide/reference/).
 
+> [!NOTE]
+> Looking for the library APIs? See the
+> **[Standard Library Guide](./stdlib.md)** — a per-module reference covering
+> `core`, `collections`, `math`, `aad`, `torch`, `causal`, `clp`, `logic`,
+> `net`, `process`, and the rest of the `std.*` packages.
+
 ---
 
 ## Contents
@@ -902,19 +908,3 @@ beginner programs, symbolic & logic, AAD & finance, concurrency, causal
 - [`architecture.md`](./architecture.md) — pipeline overview
 - [`next-steps.md`](./next-steps.md) — short-term work items
 - [`release-notes.md`](./release-notes.md) — version history
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

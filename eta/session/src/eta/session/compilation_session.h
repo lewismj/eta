@@ -155,9 +155,6 @@ public:
     [[nodiscard]] bool has_module(const std::string& name) const noexcept;
     [[nodiscard]] bool can_register_extension_primitives() const noexcept;
 
-    [[nodiscard]] const std::optional<std::filesystem::path>& prelude_origin_path() const noexcept;
-    void set_prelude_origin_path(std::optional<std::filesystem::path> path);
-
     [[nodiscard]] const std::unordered_map<uint32_t, std::string>& global_names() const noexcept;
     [[nodiscard]] std::unordered_map<uint32_t, std::string>& mutable_global_names() noexcept;
 
@@ -218,7 +215,6 @@ private:
     std::unordered_set<std::string> executed_modules_;
     std::unordered_set<std::string> loaded_files_;
     std::unordered_set<std::string> indexed_source_files_;
-    std::optional<std::filesystem::path> prelude_origin_path_;
     std::unordered_set<std::string> loading_modules_;
     std::unordered_map<uint32_t, std::string> global_names_;
     std::unordered_map<std::string, RuntimeModuleInfo> runtime_module_info_;

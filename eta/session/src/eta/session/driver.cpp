@@ -206,10 +206,6 @@ std::optional<Driver::CompileResult> Driver::compile_file(const fs::path& path) 
     return cr;
 }
 
-Driver::PreludeResult Driver::compile_prelude() {
-    return load_prelude();
-}
-
 bool Driver::run_source(std::string_view source,
                         runtime::nanbox::LispVal* result,
                         const std::string& result_binding) {

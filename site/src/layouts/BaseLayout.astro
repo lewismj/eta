@@ -29,13 +29,21 @@ const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap"
     />
+    <!-- Preload the D-DIN faces actually used above the fold so the
+         hero never paints in a fallback. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href={`${base}fonts/D-DIN.woff2`} />
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href={`${base}fonts/D-DIN-Bold.woff2`} />
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href={`${base}fonts/D-DINCondensed-Bold.woff2`} />
     <!-- D-DIN self-hosted — OFL-1.1 licence, source: github.com/amcchord/datto-d-din -->
     <Fragment set:html={`<style>
-      @font-face { font-family: "D-DIN";          src: url("${base}fonts/D-DIN.woff2")               format("woff2"); font-weight: 400;     font-style: normal;  font-display: swap; }
-      @font-face { font-family: "D-DIN";          src: url("${base}fonts/D-DIN-Bold.woff2")           format("woff2"); font-weight: 700 900; font-style: normal;  font-display: swap; }
-      @font-face { font-family: "D-DIN";          src: url("${base}fonts/D-DIN-Italic.woff2")         format("woff2"); font-weight: 400;     font-style: italic;  font-display: swap; }
-      @font-face { font-family: "D-DINCondensed"; src: url("${base}fonts/D-DINCondensed.woff2")       format("woff2"); font-weight: 100 600; font-style: normal;  font-display: swap; }
-      @font-face { font-family: "D-DINCondensed"; src: url("${base}fonts/D-DINCondensed-Bold.woff2")  format("woff2"); font-weight: 700 900; font-style: normal;  font-display: swap; }
+      @font-face { font-family: "D-DIN";          src: url("${base}fonts/D-DIN.woff2")               format("woff2"); font-weight: 400;     font-style: normal;  font-display: block; }
+      @font-face { font-family: "D-DIN";          src: url("${base}fonts/D-DIN-Bold.woff2")           format("woff2"); font-weight: 700 900; font-style: normal;  font-display: block; }
+      @font-face { font-family: "D-DIN";          src: url("${base}fonts/D-DIN-Italic.woff2")         format("woff2"); font-weight: 400;     font-style: italic;  font-display: block; }
+      @font-face { font-family: "D-DINCondensed"; src: url("${base}fonts/D-DINCondensed.woff2")       format("woff2"); font-weight: 100 600; font-style: normal;  font-display: block; }
+      @font-face { font-family: "D-DINCondensed"; src: url("${base}fonts/D-DINCondensed-Bold.woff2")  format("woff2"); font-weight: 700 900; font-style: normal;  font-display: block; }
       @font-face { font-family: "D-DINExp";       src: url("${base}fonts/D-DINExp.woff2")             format("woff2"); font-weight: 400;     font-style: normal;  font-display: swap; }
       @font-face { font-family: "D-DINExp";       src: url("${base}fonts/D-DINExp-Bold.woff2")        format("woff2"); font-weight: 700 900; font-style: normal;  font-display: swap; }
       @font-face { font-family: "D-DINExp";       src: url("${base}fonts/D-DINExp-Italic.woff2")      format("woff2"); font-weight: 400;     font-style: italic;  font-display: swap; }

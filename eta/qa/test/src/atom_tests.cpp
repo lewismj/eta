@@ -153,6 +153,54 @@ BOOST_AUTO_TEST_CASE(atom_new_predicate_deref_and_reset) {
     expect_vm_error(call_builtin(env, "%atom-reset!", {forty_one, ninety_nine}), error::RuntimeErrorCode::TypeError);
 }
 
+BOOST_AUTO_TEST_CASE(finalizer_and_guardian_primitives_roundtrip_basic_lifecycle) {
+    Heap heap(1ull << 22);
+    InternTable intern_table;
+    BuiltinEnvironment env;
+    register_core_primitives(env, heap, intern_table, nullptr);
+
+    const auto one = *ops::encode<std::int64_t>(1);
+    auto tracked = make_vector(heap, {one});
+    BOOST_REQUIRE(tracked.has_value());
+
+    auto finalizer_proc = make_primitive(
+        heap,
+        [](std::span<const LispVal>) -> std::expected<LispVal, error::RuntimeError> {
+            return Nil;
+        },
+        1,
+        false);
+    BOOST_REQUIRE(finalizer_proc.has_value());
+
+    auto register_result = call_builtin(
+        env, "register-finalizer!", {*tracked, *finalizer_proc});
+    BOOST_REQUIRE(register_result.has_value());
+    BOOST_TEST(*register_result == True);
+
+    auto unregister_result = call_builtin(env, "unregister-finalizer!", {*tracked});
+    BOOST_REQUIRE(unregister_result.has_value());
+    BOOST_TEST(*unregister_result == True);
+
+    auto unregister_again = call_builtin(env, "unregister-finalizer!", {*tracked});
+    BOOST_REQUIRE(unregister_again.has_value());
+    BOOST_TEST(*unregister_again == False);
+
+    auto guardian = call_builtin(env, "make-guardian", {});
+    BOOST_REQUIRE(guardian.has_value());
+
+    auto track_result = call_builtin(env, "guardian-track!", {*guardian, *tracked});
+    BOOST_REQUIRE(track_result.has_value());
+    BOOST_TEST(*track_result == True);
+
+    auto collect_result = call_builtin(env, "guardian-collect", {*guardian});
+    BOOST_REQUIRE(collect_result.has_value());
+    BOOST_TEST(*collect_result == False);
+
+    expect_vm_error(
+        call_builtin(env, "guardian-track!", {*guardian, one}),
+        error::RuntimeErrorCode::TypeError);
+}
+
 BOOST_AUTO_TEST_CASE(compare_and_set_uses_raw_lispval_equality) {
     Heap heap(1ull << 22);
     InternTable intern_table;

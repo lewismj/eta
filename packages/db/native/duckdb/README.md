@@ -1,102 +1,66 @@
-# Eta DuckDB
+# db.duckdb
 
-This package is an independent native sidecar package under
-`packages/db/native/duckdb`.
-
-It provides:
-
-- package manifest metadata for a native sidecar (`eta.toml`)
-- package-local native build and test wiring (`CMakeLists.txt`)
-- sidecar extension entrypoint scaffold (`eta_register_duckdb_extension_v1`)
-- Eta module scaffold in `src/db/duckdb.eta`
-- package-local C++ and Eta smoke tests
-
-The pinned upstream DuckDB tag for this package is `v1.5.1`.
-The fetch helper is in `cmake/FetchDuckDB.cmake`.
-Host sidecar staging helper is in `cmake/StageDuckDBSidecar.cmake`.
-
-## Current scope
-
-- D1 standalone package build/test wiring is implemented.
-- D2 primitive registration and package-local primitive behavior are implemented.
-- D3 Eta wrapper API and wrapper tests are implemented.
-- D4 fluent query DSL module and DSL equivalence tests are implemented.
-- D5 docs/examples hardening is implemented.
-- Host sidecar artifacts are staged under `libs/<arch>/...` and host
-  `sha256` is updated in `eta.toml`.
-
-## Eta API
-
-Current exported modules: `db.duckdb` and `db.duckdb.query`.
-
-`db.duckdb` exports:
-
-- `duckdb-upstream-version`
-- `duckdb:open`
-- `duckdb:close!`
-- `duckdb:exec`
-- `duckdb:query`
-- `duckdb:last-error`
-- `duckdb:q-new`
-- `duckdb:q-select`
-- `duckdb:q-from`
-- `duckdb:q-join`
-- `duckdb:q-where`
-- `duckdb:q-group-by`
-- `duckdb:q-having`
-- `duckdb:q-order-by`
-- `duckdb:q-limit`
-- `duckdb:q-to-sql`
-- `duckdb:q-params`
-- `duckdb:q-run`
-
-`duckdb:query` returns normalized list-of-alists row output and wrapper
-errors with stable `duckdb:<operation>:` prefixes.
-
-`db.duckdb.query` exports:
-
-- `duckdb:query`
-- `duckdb:build`
-- `from`
-- `select`
-- `join`
-- `where`
-- `group-by`
-- `having`
-- `order-by`
-- `limit`
-
-Example fluent usage:
+DuckDB bindings for Eta — embedded OLAP SQL via a native sidecar.
+Pinned to DuckDB `v1.5.1`.
 
 ```scheme
 (import db.duckdb)
-(import db.duckdb.query)
-
-(define conn (duckdb:open ":memory:"))
-(duckdb:query conn
-  (from "trades t")
-  (select "t.id" "t.pnl")
-  (where "t.pnl > ?" 0)
-  (order-by "t.pnl DESC")
-  (limit 10))
+(import db.duckdb.query)   ; optional fluent DSL
 ```
+
+## Opening and closing
+
+| Symbol | Description |
+| --- | --- |
+| `(duckdb:open path)` | Open a database at `path`. Use `":memory:"` for an in-memory database. Returns a connection. |
+| `(duckdb:close! conn)` | Close the connection and release all resources. |
+| `(duckdb:last-error conn)` | Last error string, or `#f`. |
+
+## Executing SQL
+
+| Symbol | Description |
+| --- | --- |
+| `(duckdb:exec conn sql)` | Execute a DDL or DML statement. Returns `#t` on success. |
+| `(duckdb:query conn sql [params])` | Execute a SELECT and return rows as a list of alists. `params` is an optional list of `?` positional parameters. |
+
+Results are normalised: each row is an alist of `(column-name . value)` pairs.
+Errors carry stable `duckdb:<operation>:` prefixes.
+
+## Fluent query DSL (`db.duckdb.query`)
+
+| Symbol | Description |
+| --- | --- |
+| `(from table)` | FROM clause. |
+| `(select col ...)` | SELECT list. |
+| `(join table on)` | JOIN clause. |
+| `(where condition [param ...])` | WHERE clause with optional positional parameters. |
+| `(group-by col ...)` | GROUP BY. |
+| `(having condition)` | HAVING. |
+| `(order-by col ...)` | ORDER BY. |
+| `(limit n)` | LIMIT. |
+| `(duckdb:build ...)` | Combine clauses into a query record. |
+| `(duckdb:query conn ...)` | Execute — accepts a raw SQL string, a query record, or inline DSL clauses. |
 
 ## Query styles
 
-Use whichever style you prefer. All three paths are supported.
+All three styles produce identical results. Choose whichever fits your code.
 
-Raw SQL:
+**Raw SQL:**
 
 ```scheme
 (import db.duckdb)
 
 (define conn (duckdb:open ":memory:"))
+(duckdb:exec conn "CREATE TABLE trades (id INTEGER, pnl DOUBLE)")
+(duckdb:exec conn "INSERT INTO trades VALUES (1, 42.5), (2, -3.1), (3, 17.8)")
+
 (duckdb:query conn
-  "SELECT t.id, t.pnl FROM trades t WHERE t.pnl > ? ORDER BY t.pnl DESC LIMIT 10"
+  "SELECT id, pnl FROM trades WHERE pnl > ? ORDER BY pnl DESC LIMIT 10"
   '(0))
+;; => (((id . 1) (pnl . 42.5)) ((id . 3) (pnl . 17.8)))
 ```
 
-Function builder:
+**Function builder:**
 
 ```scheme
 (import db.duckdb)
@@ -107,16 +71,15 @@ Function builder:
     (duckdb:q-order-by
       (duckdb:q-where
         (duckdb:q-from
-          (duckdb:q-select (duckdb:q-new) "t.id" "t.pnl")
-          "trades t")
-        "t.pnl > ?"
-        0)
-      "t.pnl DESC")
+          (duckdb:q-select (duckdb:q-new) "id" "pnl")
+          "trades")
+        "pnl > ?" 0)
+      "pnl DESC")
     10))
 (duckdb:q-run conn q)
 ```
 
-Fluent DSL:
+**Fluent DSL:**
 
 ```scheme
 (import db.duckdb)
@@ -124,37 +87,28 @@ Fluent DSL:
 
 (define conn (duckdb:open ":memory:"))
 (duckdb:query conn
-  (from "trades t")
-  (select "t.id" "t.pnl")
-  (where "t.pnl > ?" 0)
-  (order-by "t.pnl DESC")
+  (from "trades")
+  (select "id" "pnl")
+  (where "pnl > ?" 0)
+  (order-by "pnl DESC")
   (limit 10))
 ```
 
-## Build and test
+## Modules exported
 
-```powershell
-cmake -S packages/db/native/duckdb -B out/duckdb-msvc `
-  -DETA_ETA_EXECUTABLE="C:/Users/lewis/develop/eta/out/msvc-release/eta/cli/eta.exe" `
-  -DETA_ETAI_EXECUTABLE="C:/Users/lewis/develop/eta/out/msvc-release/eta/tools/interpreter/etai.exe" `
-  -DETA_STDLIB_DIR="C:/Users/lewis/develop/eta/stdlib"
-cmake --build out/duckdb-msvc --config Release
-ctest --test-dir out/duckdb-msvc -C Release --output-on-failure
-```
+| Module | Description |
+| --- | --- |
+| `db.duckdb` | Core connection, exec, query, and function-builder API. |
+| `db.duckdb.query` | Fluent DSL macros (`from`, `select`, `join`, `where`, `group-by`, `having`, `order-by`, `limit`). |
 
-Top-level `eta_all` integration:
+## Native sidecar
 
-- `cmake --build <repo-build-dir> --target eta_all` builds `eta_duckdb`.
-- It also stages the host sidecar into `libs/<arch>/...` and refreshes the host
-  `sha256` in `eta.toml`.
+`db.duckdb` is loaded automatically when `(import db.duckdb)` is evaluated,
+provided `ETA_MODULE_PATH` includes the package directory. No separate
+installation step is required.
 
-To stage the host-built sidecar into `libs/<arch>/` and update the host
-`sha256` row in `eta.toml`:
-
-```powershell
-cmake `
-  -DPACKAGE_ROOT="C:/Users/lewis/develop/eta/packages/db/native/duckdb" `
-  -DSIDECAR_BINARY="C:/Users/lewis/develop/eta/out/duckdb-msvc/Release/eta_duckdb.dll" `
-  -DHOST_TARGET_TRIPLE="x86_64-pc-windows-msvc" `
-  -P "C:/Users/lewis/develop/eta/packages/db/native/duckdb/cmake/StageDuckDBSidecar.cmake"
-```
+| Platform | Artifact |
+| --- | --- |
+| Windows x64 | `libs/amd64/eta_duckdb.dll` |
+| Linux x64 | `libs/amd64/libeta_duckdb.so` |
+| macOS arm64 | `libs/arm64/libeta_duckdb.dylib` |

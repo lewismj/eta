@@ -1238,12 +1238,19 @@ CliResult<std::string> compute_sha256_file(const fs::path& file_path) {
     std::string line;
     while (std::getline(in, line)) {
         std::string hex_line;
+        bool invalid_line = false;
         for (const char c : line) {
-            if (std::isxdigit(static_cast<unsigned char>(c))) {
-                hex_line.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            const auto uc = static_cast<unsigned char>(c);
+            if (std::isxdigit(uc)) {
+                hex_line.push_back(static_cast<char>(std::tolower(uc)));
+                continue;
+            }
+            if (!std::isspace(uc)) {
+                invalid_line = true;
+                break;
             }
         }
-        if (hex_line.size() == 64u) {
+        if (!invalid_line && hex_line.size() == 64u) {
             return hex_line;
         }
     }

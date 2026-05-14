@@ -64,6 +64,16 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/json_builtins.cpp
         src/eta/runtime/builtin_catalog.cpp
         src/eta/runtime/builtin_metadata.cpp
+        src/eta/runtime/core_primitives.cpp
+        src/eta/runtime/primitives/core_primitives_arithmetic.cpp
+        src/eta/runtime/primitives/core_primitives_math.cpp
+        src/eta/runtime/primitives/core_primitives_sequences.cpp
+        src/eta/runtime/primitives/core_primitives_strings.cpp
+        src/eta/runtime/primitives/core_primitives_misc.cpp
+        src/eta/runtime/primitives/core_primitives_logic.cpp
+        src/eta/runtime/primitives/core_primitives_clp.cpp
+        src/eta/runtime/primitives/core_primitives_aad.cpp
+        src/eta/runtime/primitives/core_primitives_stats.cpp
         src/eta/docs/stdlib_docs.cpp
         src/eta/runtime/process_primitives.cpp
         src/eta/runtime/prof/profiler.cpp

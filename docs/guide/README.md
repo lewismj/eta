@@ -28,3 +28,4 @@ flags, and runtime internals.
 | [Bytecode & Tools](./bytecode-and-tools.md) | §26 - Tooling |
 | [Profiling](./profiling.md) | §26 - Tooling |
 | [Examples Tour](./examples-tour.md) | §28 - Examples Index |
+| [**Standard Library**](./stdlib/README.md) | All stdlib modules — quick-reference API tables |

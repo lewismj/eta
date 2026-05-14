@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-05-14
+
+### Runtime Cleanup: Unused Prelude Compatibility Code
+
+Removed unused runtime scaffolding that referenced the old prelude bootstrap
+flow:
+
+- removed unused `Driver::compile_prelude()` alias;
+- removed unused `CompilationSession` prelude-origin storage/accessors;
+- removed unused embedded-prelude loader stubs from `EtacLoader` and the
+  corresponding marker-path unit test.
+
+No behavior changes for module loading or execution paths.
+
+---
+
 ## 2026-05-09
 
 ### Native Sidecar Runtime Rollout (NS0-NS9)

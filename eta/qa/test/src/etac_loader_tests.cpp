@@ -311,12 +311,6 @@ private:
 
 BOOST_AUTO_TEST_SUITE(etac_loader_tests)
 
-BOOST_AUTO_TEST_CASE(embedded_prelude_marker_path_is_stable) {
-    BOOST_TEST(
-        eta::session::EtacLoader::embedded_prelude_marker_path() ==
-        fs::path("<embedded:prelude.etac>"));
-}
-
 BOOST_AUTO_TEST_CASE(run_etac_file_stale_source_hash_falls_back_to_source) {
     TempDir temp;
     const auto source_file = temp.write_file(

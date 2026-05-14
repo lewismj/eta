@@ -14,6 +14,7 @@
 #include <eta/runtime/memory/intern_table.h>
 #include <eta/runtime/memory/mark_sweep_gc.h>
 #include <eta/runtime/nanbox.h>
+#include <eta/runtime/numeric_value.h>
 #include <eta/runtime/string_view.h>
 #include <eta/runtime/types/types.h>
 

@@ -86,9 +86,6 @@ public:
           compilation_(compilation),
           compilation_host_(compilation_host) {}
 
-    [[nodiscard]] static std::filesystem::path embedded_prelude_marker_path();
-
-    bool try_load_embedded_prelude();
     bool run_etac_file(const std::filesystem::path& path);
 
 private:
@@ -108,4 +105,3 @@ private:
 };
 
 } // namespace eta::session
-

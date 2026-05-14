@@ -100,7 +100,7 @@ struct EtacFile {
     std::array<std::uint8_t, 16> compiler_id{};
     std::optional<PackageMetadata> package_metadata;
     std::vector<DependencyHashEntry> dependency_hashes;
-    std::vector<std::string> imports;   ///< Non-prelude module dependencies
+    std::vector<std::string> imports;   ///< Imported module dependencies
     std::vector<ModuleEntry> modules;
     semantics::BytecodeFunctionRegistry registry;
 };
@@ -179,7 +179,7 @@ public:
      * @param source_hash   Hash of the original .eta source (for cache invalidation).
      * @param include_debug If true, source_map spans are included.
      * @param os            Output stream (binary mode).
-     * @param imports       Non-prelude module dependencies to store in the .etac.
+     * @param imports       Imported module dependencies to store in the .etac.
      * @param num_builtins  Number of builtin slots registered at compile time.
      * @param package_metadata Optional package metadata for stale-artifact checks.
      * @param dependency_hashes Optional dep-hash table for stale-artifact checks.

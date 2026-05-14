@@ -505,6 +505,57 @@ std::string make_manifest(const std::string& name,
 #endif
 }
 
+[[nodiscard]] std::string compute_fixture_sha256(const fs::path& file_path) {
+#ifdef _WIN32
+    wchar_t system_dir[MAX_PATH] = {};
+    const UINT dir_len = GetSystemDirectoryW(system_dir, MAX_PATH);
+    BOOST_REQUIRE_MESSAGE(
+        dir_len > 0u && dir_len < MAX_PATH,
+        "failed to resolve Windows system directory for certutil");
+    const fs::path certutil_path = fs::path(std::wstring(system_dir, dir_len)) / "certutil.exe";
+
+    const auto result = run_process(
+        certutil_path,
+        file_path.parent_path(),
+        {"-hashfile", file_path.string(), "SHA256"});
+    BOOST_REQUIRE_MESSAGE(
+        result.exit_code == 0,
+        "failed to hash fixture sidecar via certutil: " + result.output);
+
+    std::istringstream in(result.output);
+    std::string line;
+    while (std::getline(in, line)) {
+        std::string hex_line;
+        bool invalid_line = false;
+        for (const char c : line) {
+            const auto uc = static_cast<unsigned char>(c);
+            if (std::isxdigit(uc)) {
+                hex_line.push_back(
+                    static_cast<char>(std::tolower(uc)));
+                continue;
+            }
+            if (!std::isspace(uc)) {
+                invalid_line = true;
+                break;
+            }
+        }
+        if (!invalid_line && hex_line.size() == 64u) {
+            return hex_line;
+        }
+    }
+
+    BOOST_FAIL("failed to parse SHA256 digest from certutil output");
+    return {};
+#else
+    const auto digest = eta::native::compute_sidecar_sha256(file_path);
+    if (!digest.has_value()) {
+        BOOST_FAIL("failed to hash staged sidecar artifact '" + file_path.string()
+                   + "': " + digest.error().message);
+    }
+    return *digest;
+#endif
+}
+
 [[nodiscard]] std::string stage_fixture_sidecar_artifact(const fs::path& package_root,
                                                          const std::string& artifact_relpath) {
     BOOST_REQUIRE_MESSAGE(
@@ -522,12 +573,7 @@ std::string make_manifest(const std::string& name,
                           "failed to copy sidecar fixture to " + artifact_path.string()
                               + ": " + copy_ec.message());
 
-    const auto digest = eta::native::compute_sidecar_sha256(artifact_path);
-    if (!digest.has_value()) {
-        BOOST_FAIL("failed to hash staged sidecar artifact '" + artifact_path.string()
-                   + "': " + digest.error().message);
-    }
-    return *digest;
+    return compute_fixture_sha256(artifact_path);
 }
 
 void configure_fixture_existing_native_sidecar_package(

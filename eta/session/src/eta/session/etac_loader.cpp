@@ -13,7 +13,6 @@
 
 #include "eta/diagnostic/diagnostic.h"
 #include "eta/package/discovery.h"
-#include "eta/runtime/embedded_prelude.h"
 #include "eta/runtime/nanbox.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/vm.h"
@@ -22,36 +21,6 @@
 namespace eta::session {
 
 namespace fs = std::filesystem;
-
-fs::path EtacLoader::embedded_prelude_marker_path() {
-    return fs::path("<embedded:prelude.etac>");
-}
-
-bool EtacLoader::try_load_embedded_prelude() {
-    const auto blob = runtime::embedded_prelude_blob();
-    if (blob.empty()) return false;
-
-    std::string bytes;
-    bytes.resize(blob.size());
-    for (std::size_t i = 0; i < blob.size(); ++i) {
-        bytes[i] = static_cast<char>(blob[i]);
-    }
-
-    std::istringstream in(bytes, std::ios::in | std::ios::binary);
-    runtime::vm::BytecodeSerializer serializer(host_.heap(), host_.intern_table());
-    auto etac_res = serializer.deserialize(
-        in,
-        static_cast<uint32_t>(host_.builtin_count()));
-    if (!etac_res) {
-        return false;
-    }
-
-    if (!execute_deserialized_etac(*etac_res, embedded_prelude_marker_path())) {
-        host_.diagnostics().clear();
-        return false;
-    }
-    return true;
-}
 
 bool EtacLoader::run_etac_file(const fs::path& path) {
     if (!host_.ensure_package_sidecars_loaded(path.parent_path())) {
@@ -140,7 +109,7 @@ void EtacLoader::relocate_function_global_slots(
 
 bool EtacLoader::execute_deserialized_etac(runtime::vm::EtacFile& etac,
                                            const fs::path& artifact_path) {
-    /// Auto-load non-prelude imports
+    /// Auto-load imports
     for (const auto& imp : etac.imports) {
         if (compilation_.has_module(imp)) continue;
         bool shadow_conflict = false;
@@ -490,4 +459,3 @@ std::optional<uint64_t> EtacLoader::hash_file_for_etac_freshness(
 }
 
 } // namespace eta::session
-
