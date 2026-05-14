@@ -3,7 +3,6 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
 import Header from "../../components/Header.astro";
 import Footer from "../../components/Footer.astro";
 import Card from "../../components/Card.astro";
-import CardGrid from "../../components/CardGrid.astro";
 import "../../styles/global.css";
 
 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
@@ -11,32 +10,32 @@ const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
 const cookbooks = [
   {
     title: "Basics",
-    body: "Hello world, functions, higher-order functions, recursion, args, composition, and exceptions.",
+    body: "Hello world. Functions. Higher-order. Recursion. Args. Composition. Exceptions.",
     href: "https://github.com/lewismj/eta/tree/main/cookbook/basics",
   },
   {
     title: "Numerics",
-    body: "European options, SABR calibration, XVA, portfolio LP, AAD, and fact-table analytics.",
+    body: "European options. SABR. XVA. Portfolio LP. AAD. Fact-tables.",
     href: "https://github.com/lewismj/eta/tree/main/cookbook/numerics",
   },
   {
     title: "Logic",
-    body: "N-queens, SEND+MORE=MONEY, boolean simplifier, symbolic diff, unification.",
+    body: "N-queens. Send+more=money. Boolean simplifier. Symbolic diff. Unification.",
     href: "https://github.com/lewismj/eta/tree/main/cookbook/logic",
   },
   {
     title: "Causal",
-    body: "DAGs, do-calculus rules, and counterfactual estimation.",
+    body: "DAGs. do-calculus. Counterfactual estimation.",
     href: "https://github.com/lewismj/eta/tree/main/cookbook/causal",
   },
   {
     title: "Concurrency",
-    body: "Worker pools, Monte Carlo, scatter-gather, pub/sub, and distributed compute.",
+    body: "Worker pools. Monte Carlo. Scatter-gather. Pub/sub. Distributed compute.",
     href: "https://github.com/lewismj/eta/tree/main/cookbook/concurrency",
   },
   {
     title: "ML / Torch",
-    body: "LibTorch examples via the eta-torch package.",
+    body: "libtorch examples via the eta-torch package.",
     href: "https://github.com/lewismj/eta/tree/main/cookbook/ml",
   },
 ];
@@ -44,21 +43,31 @@ const cookbooks = [
 
 <BaseLayout title="Cookbook" description="Practical Eta examples for quant, logic, causal, concurrency, and ML.">
   <Header />
-  <div style="max-width: 1120px; margin: 0 auto; padding: 56px 24px 0;">
+
+  <!-- Page hero — quiet, matches homepage cadence -->
+  <section class="page-hero">
     <p class="section-label">Cookbook</p>
-    <h1 style="font-family: var(--font-display); font-size: clamp(2.5rem,6vw,4.5rem); font-weight:800; letter-spacing:-0.04em; line-height:1; margin-bottom:16px;">
-      Learn by example.
-    </h1>
-    <p style="color: var(--muted); font-size:1.1rem; max-width:600px; margin-bottom:0;">
-      Practical Eta programs covering quant workflows, logic programming,
-      causal inference, concurrent messaging, and ML.
-    </p>
-  </div>
-  <CardGrid>
-    {cookbooks.map((c) => (
-      <Card title={c.title} body={c.body} href={c.href} />
-    ))}
-  </CardGrid>
+    <h1 class="page-hero__title">Examples.</h1>
+  </section>
+
+  <!-- 2×3 grid using the same object-card treatment as the homepage -->
+  <section class="section" style="padding-top: 0;">
+    <div class="card-grid card-grid--3col">
+      {cookbooks.map((c) => (
+        <Card title={c.title} body={c.body} href={c.href} />
+      ))}
+    </div>
+  </section>
+
+  <!-- Closing pointer to the source -->
+  <section class="closing">
+    <p class="closing__label">Source</p>
+    <a class="closing__url" href="https://github.com/lewismj/eta/tree/main/cookbook"
+       target="_blank" rel="noopener noreferrer">
+      github.com/lewismj/eta/tree/main/cookbook
+    </a>
+  </section>
+
   <Footer />
 </BaseLayout>
 
