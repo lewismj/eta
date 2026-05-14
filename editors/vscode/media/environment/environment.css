@@ -14,6 +14,30 @@
     --input-bg: var(--vscode-input-background, #1e1e1e);
 }
 
+@font-face {
+    font-family: "D-DIN";
+    src: url("../fonts/D-DIN.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "D-DIN";
+    src: url("../fonts/D-DIN-Bold.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "D-DIN";
+    src: url("../fonts/D-DIN-Italic.woff2") format("woff2");
+    font-weight: 400;
+    font-style: italic;
+    font-display: swap;
+}
+
 * {
     box-sizing: border-box;
 }
@@ -21,7 +45,7 @@
 body {
     margin: 0;
     padding: 10px;
-    font-family: var(--vscode-font-family, sans-serif);
+    font-family: "D-DIN", var(--vscode-font-family, sans-serif);
     font-size: var(--vscode-font-size, 13px);
     color: var(--fg);
     background: var(--bg);

@@ -4,6 +4,9 @@
     --muted: var(--vscode-descriptionForeground, #9aa0a6);
     --border: var(--vscode-panel-border, #444);
     --accent: var(--vscode-focusBorder, #007acc);
+    --button-bg: var(--vscode-button-background);
+    --button-fg: var(--vscode-button-foreground);
+    --button-hover: var(--vscode-button-hoverBackground);
     --badge: var(--vscode-badge-background, #4d4d4d);
     --badge-fg: var(--vscode-badge-foreground, #fff);
     --bar-bg: var(--vscode-charts-blue, var(--vscode-focusBorder, #0e70c0));
@@ -17,10 +20,34 @@
     --input-border: var(--vscode-input-border, #555);
 }
 
+@font-face {
+    font-family: "D-DIN";
+    src: url("../fonts/D-DIN.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "D-DIN";
+    src: url("../fonts/D-DIN-Bold.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "D-DIN";
+    src: url("../fonts/D-DIN-Italic.woff2") format("woff2");
+    font-weight: 400;
+    font-style: italic;
+    font-display: swap;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-    font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
+    font-family: "D-DIN", var(--vscode-font-family, "Segoe UI", sans-serif);
     font-size: var(--vscode-font-size, 13px);
     color: var(--fg);
     background: var(--bg);
@@ -64,16 +91,18 @@ h3 { font-size: 1em; margin-top: 8px; margin-bottom: 4px; }
 }
 
 .btn {
-    padding: 4px 10px;
+    border: 1px solid transparent;
+    background: var(--button-bg);
+    color: var(--button-fg);
+    border-radius: 3px;
+    padding: 3px 8px;
     cursor: pointer;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 4px;
     font-size: 0.9em;
 }
 
-.btn:hover { opacity: 0.85; }
+.btn:hover {
+    background: var(--button-hover);
+}
 
 .btn.secondary {
     background: transparent;
@@ -82,9 +111,9 @@ h3 { font-size: 1em; margin-top: 8px; margin-bottom: 4px; }
 }
 
 .btn.secondary.active {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
+    background: var(--button-bg);
+    color: var(--button-fg);
+    border-color: transparent;
 }
 
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
