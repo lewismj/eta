@@ -1,5 +1,5 @@
 <div align="center" style="display: flex; justify-content: center; align-items: center; gap: 20px;">
-  <img src="docs/img/eta.svg" alt="Eta logo" width="120">
+  <img src="docs/img/eta.svg" alt="Eta logo" width="90">
   <div style="text-align: left;">
     <h1 style="margin: 0;">η (Eta)</h1>
     <p style="margin: 6px 0 0 0;">
@@ -9,15 +9,12 @@
 </div>
 
 ---
-<p align="center">
-    <strong>Language and System Guide</strong><br>
-    <a href="https://lewismj.github.io/eta/">Eta</a>
-</p>
 
 <p align="center">
-  <strong>Featured Examples</strong><br>
-  <a href="https://lewismj.github.io/eta/docs/featured/">lewismj.github.io/eta/docs/featured/</a>
+    <strong>Documentation</strong><br>
+    <a href="https://lewismj.github.io/eta/">lewismj.github.io/eta</a>
 </p>
+
 
 ---
 
