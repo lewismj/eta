@@ -4,63 +4,39 @@ import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import Hero from "../components/Hero.astro";
 import Card from "../components/Card.astro";
-import CardGrid from "../components/CardGrid.astro";
 import "../styles/global.css";
 
 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
 
-const cookbookRepo = "https://github.com/lewismj/eta/tree/main/cookbook";
 
 const features = [
   {
-    category: "SYMBOLIC",
-    title: "Symbolic Lisp core",
-    body: "NaN-boxed VM, tail-call optimisation, hygienic syntax-rules macros, structural unification, and native backtracking opcodes for Prolog-style logic.",
+    title: "Lisp core",
+    body: "Scheme-like VM. NaN-boxing, unification, backtracking.",
     href: `${base}docs/language-guide/`,
-    linkLabel: "Language guide",
   },
   {
-    category: "LOGIC",
-    title: "Logic & constraints",
-    body: "Built-in unification and backtracking as first-class VM primitives — CLP(FD), CLP(R), and CLP(B) constraint solving without an external solver.",
-    href: `${base}docs/guide/reference/logic/`,
-    linkLabel: "Logic reference",
-  },
-  {
-    category: "NEURAL",
-    title: "Neural networks & AAD",
-    body: "Native reverse-mode AAD integrated into the runtime — zero closure overhead. First-class libtorch bindings for neural networks, tensors, and autograd via Eigen.",
+    title: "Differentiable execution",
+    body: "Reverse-mode AAD, tape VM opcodes. libtorch, LightGBM, Eigen.",
     href: `${base}docs/guide/reference/aad/`,
-    linkLabel: "AAD & Torch reference",
   },
   {
-    category: "CAUSAL",
-    title: "Causal inference",
-    body: "Built-in Pearl's do-calculus — identification algorithms, do-interventions, counterfactual queries, and modern ATE/AIPW/TMLE estimators in pure Eta.",
+    title: "Causal engine",
+    body: "do-calculus. Identification. Counterfactuals.",
     href: `${base}docs/guide/reference/causal/`,
-    linkLabel: "Causal reference",
   },
   {
-    category: "CONCURRENCY",
-    title: "Concurrency & networking",
-    body: "Erlang-style actors and message passing via nng — network-transparent parallelism, supervision trees, pub/sub, and scatter-gather patterns.",
+    title: "Actor system",
+    body: "Network-transparent processes. Supervision. nng.",
     href: `${base}docs/guide/reference/message-passing/`,
-    linkLabel: "Concurrency reference",
   },
-  {
-    category: "TOOLING",
-    title: "Developer tools",
-    body: "VS Code extension with LSP, debugger, and heap inspector; Jupyter kernel; sampling profiler; and a unified CLI for building, testing, and packaging Eta projects.",
-    href: `${base}docs/tools/`,
-    linkLabel: "Tools overview",
-  },
-  {
-    category: "PACKAGES",
-    title: "Packages",
-    body: "Native sidecar package ecosystem — DuckDB, LightGBM, libtorch, and more — installable alongside the standard library for data, ML, and numerics workflows.",
-    href: `${base}packages/`,
-    linkLabel: "Browse packages",
-  },
+];
+
+const ecosystem = [
+  { label: "VS Code",  href: `${base}docs/editors/` },
+  { label: "Jupyter",  href: `${base}docs/guide/reference/jupyter/` },
+  { label: "Profiler", href: `${base}docs/guide/profiling/` },
+  { label: "Packages", href: `${base}packages/` },
 ];
 
 const sampleCode = `(import std.core std.aad)
@@ -109,126 +85,80 @@ const sampleCode = `(import std.core std.aad)
   />
 
 
-  <!-- Feature cards ────────────────────────────── -->
-  <CardGrid label="What Eta gives you">
-    {features.map((f) => (
-      <Card
-        category={f.category}
-        title={f.title}
-        body={f.body}
-        href={f.href}
-        linkLabel={f.linkLabel}
-      />
-    ))}
-  </CardGrid>
+  <!-- Feature cards — 2×2 thematic composition + ecosystem strip ─── -->
+  <section class="section">
+    <div class="card-grid card-grid--2col">
+      {features.map((f) => (
+        <Card
+          title={f.title}
+          body={f.body}
+          href={f.href}
+        />
+      ))}
+    </div>
+    <p class="eco-strip">
+      <span class="eco-strip__label">Ecosystem</span>
+      {ecosystem.map((e, i) => (
+        <>
+          <span class="eco-strip__sep" aria-hidden="true">·</span>
+          <a class="eco-strip__link" href={e.href}>{e.label}</a>
+        </>
+      ))}
+    </p>
+  </section>
 
-  <!-- Interlude — single editorial band ─────────── -->
-  <section class="interlude">
-    <div class="interlude__inner">
-      <p class="interlude__label">A differentiable Lisp</p>
-      <div>
-        <p class="interlude__lede">
+  <!-- Dark anchor: interlude prose + language sample, side by side -->
+  <section class="dark-anchor">
+    <div class="dark-anchor__inner">
+      <div class="dark-anchor__copy">
+        <p class="dark-anchor__label">A differentiable Lisp</p>
+        <h2 class="dark-anchor__lede">
           One runtime for symbolic reasoning, logic, differentiation
           and causal inference.
-        </p>
-        <p class="interlude__body" style="margin-top: 20px;">
+        </h2>
+        <p class="dark-anchor__body">
           Eta embeds unification, backtracking, and reverse-mode
           differentiation directly into the VM. Constraints, macros,
           neural networks, and causal programs operate on the same
           execution model, value representation, and garbage collector.
         </p>
+        <a href={`${base}docs/guide/reference/aad/`} class="dark-anchor__link">
+          AAD reference
+        </a>
       </div>
+      <pre class="dark-anchor__code"><code set:html={sampleCode
+        .replace(/;;.*$/gm, (m) => `<span class="tok-comment">${m}</span>`)
+        .replace(/\b(defun|let\*?|lambda|import|begin|define|if|cond|and|or)\b/g,
+                 '<span class="tok-keyword">$1</span>')
+        .replace(/\b(grad|norm-cdf|bs-d1|bs-call|vector-ref|println|log|exp|sqrt|car|cadr|cons|list|apply)\b/g,
+                 '<span class="tok-fn">$1</span>')
+        .replace(/(?<![a-zA-Z\d])([\d]+\.[\d]*|\.[\d]+|[\d]+)(?![a-zA-Z\d])/g,
+                 '<span class="tok-num">$1</span>')
+      } /></pre>
     </div>
   </section>
 
-  <!-- Code sample ──────────────────────────────── -->
-  <div class="code-section">
-    <div class="code-section__copy">
-      <p class="section-label">Language sample</p>
-      <h2>Price and Greeks.<br/>One backward sweep.</h2>
-      <p>
-        <code>grad</code> records the Black-Scholes forward pass onto a flat
-        tape — ~32 bytes per operation, zero closure allocations — then sweeps
-        in reverse via the chain rule. Price plus all five Greeks fall out of
-        a single call, regardless of how many inputs the function has.
-      </p>
-      <a href={`${base}docs/guide/reference/aad/`} class="btn-text">
-        AAD reference
-      </a>
-    </div>
-    <pre><code set:html={sampleCode
-      .replace(/;;.*$/gm, (m) => `<span class="tok-comment">${m}</span>`)
-      .replace(/\b(defun|let\*?|lambda|import|begin|define|if|cond|and|or)\b/g,
-               '<span class="tok-keyword">$1</span>')
-      .replace(/\b(grad|norm-cdf|bs-d1|bs-call|vector-ref|println|log|exp|sqrt|car|cadr|cons|list|apply)\b/g,
-               '<span class="tok-fn">$1</span>')
-      .replace(/(?<![a-zA-Z\d])([\d]+\.[\d]*|\.[\d]+|[\d]+)(?![a-zA-Z\d])/g,
-               '<span class="tok-num">$1</span>')
-    } /></pre>
-  </div>
+  <!-- Cookbook — single editorial line ─────────── -->
+  <section class="cookbook-line">
+    <p class="section-label">Cookbook</p>
+    <p class="cookbook-line__body">
+      Option Greeks · AAD · Causal portfolios · Wrong-way risk
+    </p>
+    <a class="cookbook-line__link" href={`${base}cookbook/`}>
+      Browse the cookbook
+    </a>
+  </section>
 
-  <!-- Cookbook highlights ──────────────────────── -->
-  <CardGrid label="Cookbook highlights">
-    <Card
-      category="NUMERICS"
-      title="Numerics"
-      body="European options, SABR calibration, XVA with WWR, portfolio LP, fact-table analytics, and automatic adjoint differentiation."
-      href={`${base}docs/guide/reference/aad/`}
-      linkLabel="Numerics reference"
-    />
-    <Card
-      category="LOGIC"
-      title="Logic & constraint"
-      body="N-queens, SEND+MORE=MONEY, boolean simplifier, symbolic differentiation, and unification."
-      href={`${base}docs/guide/reference/logic/`}
-      linkLabel="Logic reference"
-    />
-    <Card
-      category="CAUSAL"
-      title="Causal inference"
-      body="DAGs, do-calculus rules, and counterfactual queries in pure Eta."
-      href={`${base}docs/guide/reference/causal/`}
-      linkLabel="Causal reference"
-    />
-    <Card
-      category="CONCURRENCY"
-      title="Concurrency"
-      body="Worker pools, scatter-gather, distributed Monte Carlo, and reactive pub/sub over nng."
-      href={`${base}docs/guide/reference/message-passing/`}
-      linkLabel="Concurrency reference"
-    />
-  </CardGrid>
-
-  <!-- Links row ────────────────────────────────── -->
-  <section class="section" style="padding-top: 0;">
-    <p class="section-label">Get involved</p>
-    <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px,1fr));">
-      <a href="https://github.com/lewismj/eta" target="_blank" rel="noopener noreferrer" class="card" style="text-decoration:none;">
-        <div class="card__category">SOURCE</div>
-        <div class="card__title">GitHub</div>
-        <div class="card__body">Source, issues, and pull requests.</div>
-      </a>
-      <a href={`${base}docs/build/`} class="card" style="text-decoration:none;">
-        <div class="card__category">BUILD</div>
-        <div class="card__title">Build guide</div>
-        <div class="card__body">CMake setup for Windows, Linux, and macOS.</div>
-      </a>
-      <a href={`${base}docs/guide/reference/bytecode-vm/`} class="card" style="text-decoration:none;">
-        <div class="card__category">RUNTIME</div>
-        <div class="card__title">Virtual machine</div>
-        <div class="card__body">Bytecode opcode catalogue, NaN-boxed value layout, and VM internals.</div>
-      </a>
-      <a href={`${base}docs/release-notes/`} class="card" style="text-decoration:none;">
-        <div class="card__category">RELEASE</div>
-        <div class="card__title">Release notes</div>
-        <div class="card__body">What changed in each release.</div>
-      </a>
-      <a href={`${base}docs/next-steps/`} class="card" style="text-decoration:none;">
-        <div class="card__category">ROADMAP</div>
-        <div class="card__title">Roadmap</div>
-        <div class="card__body">What is planned next for the language.</div>
-      </a>
-    </div>
+  <!-- Closing — restrained typographic ending ─── -->
+  <section class="closing">
+    <p class="closing__label">Open source</p>
+    <a class="closing__url" href="https://github.com/lewismj/eta"
+       target="_blank" rel="noopener noreferrer">
+      github.com/lewismj/eta
+    </a>
+    <p class="closing__meta">
+      Apache 2.0 licensed · <a href={`${base}docs/next-steps/`}>Roadmap</a>
+    </p>
   </section>
 
   <Footer />
