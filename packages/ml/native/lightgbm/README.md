@@ -43,15 +43,14 @@ The package exports the `ml.lightgbm` module with these bindings:
 - `booster-create`, `train!`, `predict`, `eval`, `num-trees`, and
   `feature-importance` call LightGBM through the C API.
 - `eval` returns mean-squared error over the supplied dataset.
-- `save`/`load` use LightGBM model-text serialization inside the sidecar and
-  are keyed by the provided path token for the current Eta process.
+- `save` writes LightGBM model text to the requested filesystem path.
+- `load` reads model text from the requested filesystem path.
 
 Current defaults and scope:
 
 - Booster creation currently uses fixed defaults:
   `objective=regression metric=l2 min_data_in_leaf=1 num_leaves=8 verbosity=-1`
-- Hyperparameter configuration and true file-backed model persistence are not
-  exposed yet.
+- Hyperparameter configuration is not exposed yet.
 
 ## Usage example
 

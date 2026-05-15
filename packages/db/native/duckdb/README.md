@@ -1,6 +1,6 @@
 # db.duckdb
 
-DuckDB bindings for Eta — embedded OLAP SQL via a native sidecar.
+DuckDB bindings for Eta - embedded OLAP SQL via a native sidecar.
 Pinned to DuckDB `v1.5.1`.
 
 ```scheme
@@ -12,18 +12,21 @@ Pinned to DuckDB `v1.5.1`.
 
 | Symbol | Description |
 | --- | --- |
-| `(duckdb:open path)` | Open a database at `path`. Use `":memory:"` for an in-memory database. Returns a connection. |
+| `(duckdb:open path)` | Open a database at `path`. Use `":memory:"` for an in-memory database. Returns a connection handle. |
 | `(duckdb:close! conn)` | Close the connection and release all resources. |
-| `(duckdb:last-error conn)` | Last error string, or `#f`. |
+| `(duckdb:last-error conn-or-nil)` | Return the last sidecar error text for `conn-or-nil`, or `#f` when no error is recorded. |
 
 ## Executing SQL
 
 | Symbol | Description |
 | --- | --- |
 | `(duckdb:exec conn sql)` | Execute a DDL or DML statement. Returns `#t` on success. |
-| `(duckdb:query conn sql [params])` | Execute a SELECT and return rows as a list of alists. `params` is an optional list of `?` positional parameters. |
+| `(duckdb:query conn sql [params])` | Execute SQL and return rows as a list of alists. `params` is an optional list of `?` positional parameters. |
 
-Results are normalised: each row is an alist of `(column-name . value)` pairs.
+Rows are normalized as alists of `(column-name . value)` pairs, where each
+`column-name` is a symbol. Parameter values support nil, booleans, numeric
+values, strings, and symbols.
+
 Errors carry stable `duckdb:<operation>:` prefixes.
 
 ## Fluent query DSL (`db.duckdb.query`)
@@ -39,13 +42,13 @@ Errors carry stable `duckdb:<operation>:` prefixes.
 | `(order-by col ...)` | ORDER BY. |
 | `(limit n)` | LIMIT. |
 | `(duckdb:build ...)` | Combine clauses into a query record. |
-| `(duckdb:query conn ...)` | Execute — accepts a raw SQL string, a query record, or inline DSL clauses. |
+| `(duckdb:query conn ...)` | Execute - accepts a raw SQL string, a query record, or inline DSL clauses. |
 
 ## Query styles
 
 All three styles produce identical results. Choose whichever fits your code.
 
-**Raw SQL:**
+### Raw SQL
 
 ```scheme
 (import db.duckdb)
@@ -60,7 +63,7 @@ All three styles produce identical results. Choose whichever fits your code.
 ;; => (((id . 1) (pnl . 42.5)) ((id . 3) (pnl . 17.8)))
 ```
 
-**Function builder:**
+### Function builder
 
 ```scheme
 (import db.duckdb)
@@ -79,7 +82,7 @@ All three styles produce identical results. Choose whichever fits your code.
 (duckdb:q-run conn q)
 ```
 
-**Fluent DSL:**
+### Fluent DSL
 
 ```scheme
 (import db.duckdb)

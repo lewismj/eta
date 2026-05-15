@@ -1,18 +1,20 @@
 #include "eta/lightgbm/lightgbm_primitives.h"
 
 #include "eta/lightgbm/lightgbm_model.h"
+#include "eta/native/runtime_binding.h"
 #include "eta/runtime/error.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/runtime/string_view.h"
 #include "eta/runtime/types/primitive.h"
 
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -40,11 +42,10 @@ struct NativeRuntime {
     void* runtime_context{nullptr};
     EtaAllocNativeObjectFnV1 alloc_native_object{nullptr};
     EtaGetNativeObjectFnV1 get_native_object{nullptr};
+    eta::runtime::memory::intern::InternTable* intern_table{nullptr};
 };
 
 NativeRuntime g_runtime{};
-std::mutex g_saved_model_mutex;
-std::unordered_map<LispVal, std::string> g_saved_models;
 
 extern "C" void dataset_destroy(void* user_data) {
     delete static_cast<DatasetModel*>(user_data);
@@ -164,7 +165,7 @@ template <typename Payload>
     return static_cast<std::int64_t>(integral);
 }
 
-[[nodiscard]] std::expected<LispVal, RuntimeError> decode_path_token(
+[[nodiscard]] std::expected<std::string, RuntimeError> decode_path(
     const LispVal value,
     const char* who,
     const char* what) {
@@ -172,7 +173,21 @@ template <typename Payload>
         return std::unexpected(type_error(
             std::string(who) + ": " + what + " must be a string"));
     }
-    return value;
+
+    if (g_runtime.intern_table == nullptr) {
+        return std::unexpected(internal_error("lgbm: runtime intern table unavailable"));
+    }
+
+    auto path = eta::runtime::StringView::try_from(value, *g_runtime.intern_table);
+    if (!path) {
+        return std::unexpected(internal_error(
+            std::string(who) + ": failed to decode string path"));
+    }
+    if (path->view().empty()) {
+        return std::unexpected(type_error(
+            std::string(who) + ": " + what + " must not be empty"));
+    }
+    return std::string(path->view());
 }
 
 [[nodiscard]] std::expected<std::pair<std::int32_t, std::int32_t>, RuntimeError>
@@ -337,8 +352,8 @@ PrimitiveResult primitive_save(const PrimitiveArgs args) {
         return std::unexpected(type_error("lgbm/save: expected lgbm booster"));
     }
 
-    auto key = decode_path_token(args[1], "lgbm/save", "second argument");
-    if (!key) return std::unexpected(key.error());
+    auto path = decode_path(args[1], "lgbm/save", "second argument");
+    if (!path) return std::unexpected(path.error());
 
     auto serialized = serialize_booster(*booster);
     if (!serialized) {
@@ -346,9 +361,15 @@ PrimitiveResult primitive_save(const PrimitiveArgs args) {
             "lgbm/save: " + serialized.error()));
     }
 
-    {
-        const std::lock_guard<std::mutex> guard(g_saved_model_mutex);
-        g_saved_models[*key] = std::move(*serialized);
+    std::ofstream out(*path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+        return std::unexpected(internal_error(
+            "lgbm/save: failed to open output path '" + *path + "'"));
+    }
+    out.write(serialized->data(), static_cast<std::streamsize>(serialized->size()));
+    if (!out.good()) {
+        return std::unexpected(internal_error(
+            "lgbm/save: failed to write model to '" + *path + "'"));
     }
     return Nil;
 }
@@ -358,18 +379,20 @@ PrimitiveResult primitive_load(const PrimitiveArgs args) {
         return std::unexpected(type_error("lgbm/load: expected input path"));
     }
 
-    auto key = decode_path_token(args[0], "lgbm/load", "first argument");
-    if (!key) return std::unexpected(key.error());
+    auto path = decode_path(args[0], "lgbm/load", "first argument");
+    if (!path) return std::unexpected(path.error());
 
-    std::string serialized;
-    {
-        const std::lock_guard<std::mutex> guard(g_saved_model_mutex);
-        auto found = g_saved_models.find(*key);
-        if (found == g_saved_models.end()) {
-            return std::unexpected(type_error(
-                "lgbm/load: no model has been saved for this path"));
-        }
-        serialized = found->second;
+    std::ifstream in(*path, std::ios::binary);
+    if (!in.is_open()) {
+        return std::unexpected(internal_error(
+            "lgbm/load: failed to open input path '" + *path + "'"));
+    }
+    std::string serialized(
+        (std::istreambuf_iterator<char>(in)),
+        std::istreambuf_iterator<char>());
+    if (in.bad()) {
+        return std::unexpected(internal_error(
+            "lgbm/load: failed to read model from '" + *path + "'"));
     }
 
     auto loaded = deserialize_booster(serialized);
@@ -491,9 +514,20 @@ int register_lightgbm_primitives(const EtaNativeApiV1* api) {
         return ETA_NATIVE_STATUS_ERROR;
     }
 
+    auto* binding = static_cast<eta::native::SidecarRuntimeBindingV1*>(api->runtime_context);
+    if (binding == nullptr || binding->intern_table == nullptr) {
+        if (api->report_error != nullptr) {
+            api->report_error(
+                api->user_data,
+                "lgbm sidecar requires runtime intern table support");
+        }
+        return ETA_NATIVE_STATUS_ERROR;
+    }
+
     g_runtime.runtime_context = api->runtime_context;
     g_runtime.alloc_native_object = api->alloc_native_object;
     g_runtime.get_native_object = api->get_native_object;
+    g_runtime.intern_table = binding->intern_table;
 
     if (register_one(
             api,

@@ -102,6 +102,13 @@ target_include_directories(eta_lightgbm PRIVATE
 target_link_libraries(eta_lightgbm PRIVATE
     ${ETA_LIGHTGBM_LIBRARY_TARGET}
 )
+if(TARGET eta_core)
+    target_link_libraries(eta_lightgbm PRIVATE eta_core)
+elseif(EXISTS "${ETA_CORE_SRC_DIR}/eta/runtime/memory/intern_table.cpp")
+    target_sources(eta_lightgbm PRIVATE
+        "${ETA_CORE_SRC_DIR}/eta/runtime/memory/intern_table.cpp"
+    )
+endif()
 
 if(ETA_LIGHTGBM_ENABLE_TESTS)
     enable_testing()

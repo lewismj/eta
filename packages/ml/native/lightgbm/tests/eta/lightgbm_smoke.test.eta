@@ -1,5 +1,6 @@
 (module ml.lightgbm.tests.smoke
   (import std.test)
+  (import std.fs)
   (import std.fact_table)
   (import ml.lightgbm)
   (begin
@@ -39,6 +40,9 @@
               (assert-approx-equal prediction
                                    (predict reloaded '(1.0 2.0))
                                    1e-12)))
+          (make-test "save-writes-file"
+            (lambda ()
+              (assert-true (fs:file-exists? "lightgbm_scaffold.model"))))
           (make-test "eval-nonnegative"
             (lambda ()
               (assert-true (and (= quality quality) (>= quality 0.0)))))

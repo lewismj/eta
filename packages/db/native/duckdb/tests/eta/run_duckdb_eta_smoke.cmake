@@ -61,6 +61,13 @@ file(COPY_FILE "${PACKAGE_SOURCE_ROOT}/tests/eta/duckdb_smoke.test.eta"
 file(COPY_FILE "${PACKAGE_SOURCE_ROOT}/tests/eta/duckdb_dsl.test.eta"
                "${app_tests_root}/duckdb_dsl.test.eta")
 file(COPY_FILE "${SIDECAR_BINARY}" "${staged_sidecar}" ONLY_IF_DIFFERENT)
+if(WIN32)
+    get_filename_component(sidecar_dir "${SIDECAR_BINARY}" DIRECTORY)
+    set(duckdb_runtime_dll "${sidecar_dir}/duckdb.dll")
+    if(EXISTS "${duckdb_runtime_dll}")
+        file(COPY_FILE "${duckdb_runtime_dll}" "${duckdb_libs_root}/duckdb.dll" ONLY_IF_DIFFERENT)
+    endif()
+endif()
 file(SHA256 "${staged_sidecar}" sidecar_sha256)
 
 file(WRITE "${duckdb_root}/eta.toml"

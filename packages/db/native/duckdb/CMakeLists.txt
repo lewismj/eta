@@ -33,6 +33,66 @@ if(ETA_DUCKDB_FETCH_UPSTREAM)
     eta_duckdb_fetch()
 endif()
 
+set(ETA_DUCKDB_LIBRARY_TARGET "")
+set(ETA_DUCKDB_INCLUDE_DIR "")
+set(ETA_DUCKDB_NEEDS_STATIC_DEFINE OFF)
+set(ETA_DUCKDB_NEEDS_RUNTIME_DLL_COPY OFF)
+
+if(WIN32 AND TARGET duckdb)
+    set(ETA_DUCKDB_LIBRARY_TARGET duckdb)
+    set(ETA_DUCKDB_NEEDS_RUNTIME_DLL_COPY ON)
+elseif(TARGET duckdb_static)
+    set(ETA_DUCKDB_LIBRARY_TARGET duckdb_static)
+    set(ETA_DUCKDB_NEEDS_STATIC_DEFINE ON)
+elseif(TARGET duckdb)
+    set(ETA_DUCKDB_LIBRARY_TARGET duckdb)
+    if(WIN32)
+        set(ETA_DUCKDB_NEEDS_RUNTIME_DLL_COPY ON)
+    endif()
+endif()
+
+if("${ETA_DUCKDB_LIBRARY_TARGET}" STREQUAL "")
+    find_package(DuckDB QUIET CONFIG)
+    if(TARGET DuckDB::duckdb)
+        set(ETA_DUCKDB_LIBRARY_TARGET DuckDB::duckdb)
+    elseif(TARGET DuckDB::duckdb_static)
+        set(ETA_DUCKDB_LIBRARY_TARGET DuckDB::duckdb_static)
+        set(ETA_DUCKDB_NEEDS_STATIC_DEFINE ON)
+    endif()
+endif()
+
+if(DEFINED ETA_DUCKDB_SOURCE_DIR AND NOT "${ETA_DUCKDB_SOURCE_DIR}" STREQUAL "")
+    set(ETA_DUCKDB_INCLUDE_DIR "${ETA_DUCKDB_SOURCE_DIR}/src/include")
+endif()
+
+if("${ETA_DUCKDB_LIBRARY_TARGET}" STREQUAL "")
+    find_path(ETA_DUCKDB_INCLUDE_DIR
+        NAMES duckdb.h
+    )
+    find_library(ETA_DUCKDB_LIBRARY_PATH
+        NAMES duckdb duckdb_static
+    )
+    if(ETA_DUCKDB_LIBRARY_PATH)
+        add_library(eta_duckdb_external UNKNOWN IMPORTED)
+        set_target_properties(eta_duckdb_external PROPERTIES
+            IMPORTED_LOCATION "${ETA_DUCKDB_LIBRARY_PATH}"
+        )
+        set(ETA_DUCKDB_LIBRARY_TARGET eta_duckdb_external)
+    endif()
+endif()
+
+if("${ETA_DUCKDB_LIBRARY_TARGET}" STREQUAL "")
+    message(FATAL_ERROR
+        "Could not find DuckDB C API library. "
+        "Set ETA_DUCKDB_FETCH_UPSTREAM=ON or install DuckDB and provide headers/libs via CMake search paths.")
+endif()
+
+if("${ETA_DUCKDB_INCLUDE_DIR}" STREQUAL ""
+   AND "${ETA_DUCKDB_LIBRARY_TARGET}" STREQUAL "eta_duckdb_external")
+    message(FATAL_ERROR
+        "Could not find DuckDB headers (duckdb.h).")
+endif()
+
 add_library(eta_duckdb MODULE
     src/eta/duckdb/duckdb_extension.cpp
     src/eta/duckdb/duckdb_primitives.cpp
@@ -59,11 +119,31 @@ set_target_properties(eta_duckdb PROPERTIES
 target_compile_definitions(eta_duckdb PRIVATE
     ETA_NATIVE_EXPORT_SYMBOLS=1
 )
+if(ETA_DUCKDB_NEEDS_STATIC_DEFINE)
+    target_compile_definitions(eta_duckdb PRIVATE
+        DUCKDB_STATIC_BUILD=1
+    )
+endif()
 target_include_directories(eta_duckdb PRIVATE
     ${ETA_CORE_SRC_DIR}
+    ${ETA_DUCKDB_INCLUDE_DIR}
     ${Boost_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+target_link_libraries(eta_duckdb PRIVATE
+    ${ETA_DUCKDB_LIBRARY_TARGET}
+)
+if(TARGET eta_core)
+    target_link_libraries(eta_duckdb PRIVATE eta_core)
+endif()
+if(ETA_DUCKDB_NEEDS_RUNTIME_DLL_COPY)
+    add_custom_command(TARGET eta_duckdb POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:${ETA_DUCKDB_LIBRARY_TARGET}>
+            $<TARGET_FILE_DIR:eta_duckdb>
+        VERBATIM
+    )
+endif()
 
 if(ETA_DUCKDB_ENABLE_TESTS)
     enable_testing()
@@ -79,11 +159,31 @@ if(ETA_DUCKDB_ENABLE_TESTS)
     target_compile_definitions(eta_duckdb_unit_tests PRIVATE
         ETA_NATIVE_EXPORT_SYMBOLS=1
     )
+    if(ETA_DUCKDB_NEEDS_STATIC_DEFINE)
+        target_compile_definitions(eta_duckdb_unit_tests PRIVATE
+            DUCKDB_STATIC_BUILD=1
+        )
+    endif()
     target_include_directories(eta_duckdb_unit_tests PRIVATE
         ${ETA_CORE_SRC_DIR}
+        ${ETA_DUCKDB_INCLUDE_DIR}
         ${Boost_INCLUDE_DIRS}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
+    target_link_libraries(eta_duckdb_unit_tests PRIVATE
+        ${ETA_DUCKDB_LIBRARY_TARGET}
+    )
+    if(TARGET eta_core)
+        target_link_libraries(eta_duckdb_unit_tests PRIVATE eta_core)
+    endif()
+    if(ETA_DUCKDB_NEEDS_RUNTIME_DLL_COPY)
+        add_custom_command(TARGET eta_duckdb_unit_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:${ETA_DUCKDB_LIBRARY_TARGET}>
+                $<TARGET_FILE_DIR:eta_duckdb_unit_tests>
+            VERBATIM
+        )
+    endif()
     add_test(NAME eta_duckdb_unit_tests COMMAND eta_duckdb_unit_tests)
 
     if(ETA_DUCKDB_ENABLE_ETA_TESTS)

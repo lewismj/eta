@@ -70,6 +70,34 @@ namespace {
     if (buffer != nullptr) LocalFree(buffer);
     return message;
 }
+
+struct Win32LibraryLoadResult {
+    HMODULE handle{nullptr};
+    DWORD error_code{ERROR_SUCCESS};
+};
+
+[[nodiscard]] Win32LibraryLoadResult load_library_with_dependencies(
+    const fs::path& artifact_path) {
+#if defined(LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR) && defined(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)
+    constexpr DWORD kLoadFlags = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS;
+    if (HMODULE handle = LoadLibraryExW(artifact_path.c_str(), nullptr, kLoadFlags);
+        handle != nullptr) {
+        return {handle, ERROR_SUCCESS};
+    }
+
+    const DWORD first_error = GetLastError();
+    if (first_error != ERROR_INVALID_PARAMETER && first_error != ERROR_CALL_NOT_IMPLEMENTED) {
+        return {nullptr, first_error};
+    }
+#endif
+
+    if (HMODULE handle =
+            LoadLibraryExW(artifact_path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        handle != nullptr) {
+        return {handle, ERROR_SUCCESS};
+    }
+    return {nullptr, GetLastError()};
+}
 #endif
 
 struct Sha256Context {
@@ -598,12 +626,13 @@ std::expected<void, SidecarLoaderError> SidecarLoader::load(
     }
 
 #if defined(_WIN32)
-    library->handle = LoadLibraryW(sidecar.artifact_path.c_str());
+    const auto load_result = load_library_with_dependencies(sidecar.artifact_path);
+    library->handle = load_result.handle;
     if (library->handle == nullptr) {
         return std::unexpected(SidecarLoaderError{
             SidecarLoaderError::Code::LibraryOpenFailed,
             "failed to load sidecar '" + sidecar.artifact_path.string() + "': "
-                + win32_error_message(GetLastError()),
+                + win32_error_message(load_result.error_code),
         });
     }
 #else

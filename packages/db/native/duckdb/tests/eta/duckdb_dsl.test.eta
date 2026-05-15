@@ -114,6 +114,8 @@
           (make-test "dsl-query-runs-like-builder"
             (lambda ()
               (let* ((conn (duckdb:open ":memory:"))
+                     (_create (duckdb:exec conn "create table numbers(value integer)"))
+                     (_insert (duckdb:exec conn "insert into numbers values (11), (17), (42)"))
                      (dsl-rows (duckdb:dsl-query
                                  conn
                                  (from "numbers")

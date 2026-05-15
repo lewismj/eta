@@ -42,6 +42,8 @@ option(ETA_ENABLE_PACKAGE_NATIVE_SIDECARS
 if(ETA_ENABLE_PACKAGE_NATIVE_SIDECARS)
     set(ETA_LIGHTGBM_FETCH_UPSTREAM ON CACHE BOOL
         "Fetch pinned LightGBM upstream sources for package development." FORCE)
+    set(ETA_DUCKDB_FETCH_UPSTREAM ON CACHE BOOL
+        "Fetch pinned DuckDB upstream sources for package development." FORCE)
     set(ETA_LIGHTGBM_ENABLE_TESTS OFF CACHE BOOL
         "Build package-local tests." FORCE)
     set(ETA_DUCKDB_ENABLE_TESTS OFF CACHE BOOL

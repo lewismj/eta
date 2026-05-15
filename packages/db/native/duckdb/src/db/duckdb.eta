@@ -282,7 +282,7 @@
       (let ((result (catch 'runtime.error (%duckdb-last-error conn-or-nil))))
         (if (duckdb:%runtime-error-payload? result)
             (duckdb:%raise-runtime "duckdb:last-error" result)
-            (if (string? result) result ""))))
+            (if (string? result) result #f))))
 
     ;;@doc (duckdb:q-new)
     ;;@category DB

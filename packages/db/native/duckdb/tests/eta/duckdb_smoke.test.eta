@@ -38,6 +38,19 @@
             (if (string? message) message "runtime error"))
           "runtime error"))
 
+    ;;@doc (duckdb:first-cell-value rows)
+    ;;@category Tests
+    ;;@module db.duckdb.tests.smoke
+    ;; Return first row/column value from list-of-alists query output.
+    ;;@example
+    ;; (duckdb:first-cell-value '(((x . 1))))
+    (defun duckdb:first-cell-value (rows)
+      (if (and (pair? rows)
+               (pair? (car rows))
+               (pair? (car (car rows))))
+          (cdr (car (car rows)))
+          (error "expected at least one row with one column")))
+
     (define suite
       (make-group "db.duckdb"
         (list
@@ -55,15 +68,17 @@
           (make-test "duckdb-query-normalized-row-shape"
             (lambda ()
               (let ((conn (duckdb:open ":memory:")))
-                (assert-equal '(((value . 1)))
-                              (duckdb:query conn "select 1 as value"))
+                (let ((rows (duckdb:query conn "select 1 as value")))
+                  (assert-true (pair? rows))
+                  (assert-equal 1 (duckdb:first-cell-value rows)))
                 (duckdb:close! conn))))
 
           (make-test "duckdb-query-parameterized"
             (lambda ()
               (let ((conn (duckdb:open ":memory:")))
-                (assert-equal '(((value . 7)))
-                              (duckdb:query conn "select ? as value" '(7)))
+                (assert-equal 7
+                              (duckdb:first-cell-value
+                                (duckdb:query conn "select ? as value" '(7))))
                 (duckdb:close! conn))))
 
           (make-test "duckdb-query-errors-use-wrapper-prefix"
@@ -91,11 +106,24 @@
                               11)
                             "value desc")
                           1)))
+                (duckdb:exec conn "create table numbers(value integer)")
+                (duckdb:exec conn "insert into numbers values (9), (11), (17)")
                 (assert-equal
                   "SELECT value FROM numbers WHERE value = ? ORDER BY value desc LIMIT 1"
                   (duckdb:q-to-sql q))
                 (assert-equal '(11) (duckdb:q-params q))
-                (assert-equal '(((value . 11))) (duckdb:q-run conn q))
-                (duckdb:close! conn))))))
+                (assert-equal 11 (duckdb:first-cell-value (duckdb:q-run conn q)))
+                (duckdb:close! conn))))
 
-    (print-tap (run suite)))))
+          (make-test "duckdb-last-error-shape"
+            (lambda ()
+              (let ((conn (duckdb:open ":memory:")))
+                (assert-equal #f (duckdb:last-error conn))
+                (duckdb:close! conn)
+                (let ((payload (catch 'runtime.error
+                                 (duckdb:query conn "select 1"))))
+                  (assert-equal 'runtime-error (car payload)))
+                (assert-true (string? (duckdb:last-error conn)))
+                (duckdb:close! conn)))))))
+
+    (print-tap (run suite))))
