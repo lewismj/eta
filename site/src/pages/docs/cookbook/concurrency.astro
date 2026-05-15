@@ -1,0 +1,13 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import * as page from "../../../../../docs/cookbook/concurrency.md";
+const { Content, getHeadings, frontmatter } = page as any;
+---
+<DocsLayout
+  title={frontmatter?.title ?? "Cookbook — Concurrency"}
+  sourceFile="docs/cookbook/concurrency.md"
+  headings={getHeadings()}
+>
+  <Content />
+</DocsLayout>
+

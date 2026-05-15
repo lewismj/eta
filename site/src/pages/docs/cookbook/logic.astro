@@ -1,0 +1,13 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import * as page from "../../../../../docs/cookbook/logic.md";
+const { Content, getHeadings, frontmatter } = page as any;
+---
+<DocsLayout
+  title={frontmatter?.title ?? "Cookbook — Logic"}
+  sourceFile="docs/cookbook/logic.md"
+  headings={getHeadings()}
+>
+  <Content />
+</DocsLayout>
+
