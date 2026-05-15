@@ -37,6 +37,7 @@ set(ETA_DUCKDB_LIBRARY_TARGET "")
 set(ETA_DUCKDB_INCLUDE_DIR "")
 set(ETA_DUCKDB_NEEDS_STATIC_DEFINE OFF)
 set(ETA_DUCKDB_NEEDS_RUNTIME_DLL_COPY OFF)
+set(ETA_DUCKDB_STATIC_LOADER_TARGET "")
 
 if(WIN32 AND TARGET duckdb)
     set(ETA_DUCKDB_LIBRARY_TARGET duckdb)
@@ -93,6 +94,25 @@ if("${ETA_DUCKDB_INCLUDE_DIR}" STREQUAL ""
         "Could not find DuckDB headers (duckdb.h).")
 endif()
 
+if(ETA_DUCKDB_NEEDS_STATIC_DEFINE)
+    # duckdb_static intentionally expects a companion extension-loader archive.
+    # Prefer the upstream dummy loader to avoid pulling extension-specific
+    # static symbols into Eta's sidecar linkage.
+    if(TARGET dummy_static_extension_loader)
+        set(ETA_DUCKDB_STATIC_LOADER_TARGET dummy_static_extension_loader)
+    elseif(TARGET DuckDB::dummy_static_extension_loader)
+        set(ETA_DUCKDB_STATIC_LOADER_TARGET DuckDB::dummy_static_extension_loader)
+    elseif(TARGET duckdb_generated_extension_loader)
+        set(ETA_DUCKDB_STATIC_LOADER_TARGET duckdb_generated_extension_loader)
+    elseif(TARGET DuckDB::duckdb_generated_extension_loader)
+        set(ETA_DUCKDB_STATIC_LOADER_TARGET DuckDB::duckdb_generated_extension_loader)
+    else()
+        message(STATUS
+            "DuckDB static target selected without an extension-loader archive target; "
+            "assuming the static package already bundles ExtensionHelper::LoadAllExtensions.")
+    endif()
+endif()
+
 add_library(eta_duckdb MODULE
     src/eta/duckdb/duckdb_extension.cpp
     src/eta/duckdb/duckdb_primitives.cpp
@@ -132,6 +152,7 @@ target_include_directories(eta_duckdb PRIVATE
 )
 target_link_libraries(eta_duckdb PRIVATE
     ${ETA_DUCKDB_LIBRARY_TARGET}
+    ${ETA_DUCKDB_STATIC_LOADER_TARGET}
 )
 if(TARGET eta_core)
     target_link_libraries(eta_duckdb PRIVATE eta_core)
@@ -172,6 +193,7 @@ if(ETA_DUCKDB_ENABLE_TESTS)
     )
     target_link_libraries(eta_duckdb_unit_tests PRIVATE
         ${ETA_DUCKDB_LIBRARY_TARGET}
+        ${ETA_DUCKDB_STATIC_LOADER_TARGET}
     )
     if(TARGET eta_core)
         target_link_libraries(eta_duckdb_unit_tests PRIVATE eta_core)
