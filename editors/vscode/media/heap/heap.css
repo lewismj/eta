@@ -1,23 +1,25 @@
 :root {
-    --bg: var(--vscode-editor-background);
-    --fg: var(--vscode-editor-foreground);
-    --muted: var(--vscode-descriptionForeground, #9aa0a6);
-    --border: var(--vscode-panel-border, #444);
-    --accent: var(--vscode-focusBorder, #007acc);
-    --button-bg: var(--vscode-button-background);
-    --button-fg: var(--vscode-button-foreground);
-    --button-hover: var(--vscode-button-hoverBackground);
-    --badge: var(--vscode-badge-background, #4d4d4d);
-    --badge-fg: var(--vscode-badge-foreground, #fff);
-    --bar-bg: var(--vscode-charts-blue, var(--vscode-focusBorder, #0e70c0));
-    --bar-track: var(--vscode-input-background, #1a1a1a);
-    --error: var(--vscode-errorForeground, #f44);
-    --warn: var(--vscode-editorWarning-foreground, #c80);
-    --add: var(--vscode-gitDecoration-addedResourceForeground, #2e8540);
-    --del: var(--vscode-gitDecoration-deletedResourceForeground, #b94a48);
-    --input-bg: var(--vscode-input-background, #1e1e1e);
-    --input-fg: var(--vscode-input-foreground, #ddd);
-    --input-border: var(--vscode-input-border, #555);
+    --bg: var(--vscode-editor-background, #0f0f0f);
+    --fg: var(--vscode-editor-foreground, #ece7e1);
+    --muted: var(--vscode-descriptionForeground, #857d77);
+    --border: var(--vscode-panel-border, #2a2826);
+    --accent: var(--vscode-focusBorder, #fb8aa7);
+    --accent-2: var(--vscode-editorWarning-foreground, #b69a76);
+    --accent-3: var(--vscode-editorInfo-foreground, #95a8b8);
+    --button-bg: var(--vscode-button-background, #fb8aa7);
+    --button-fg: var(--vscode-button-foreground, #0f0f0f);
+    --button-hover: var(--vscode-button-hoverBackground, #f7b1c5);
+    --badge: var(--vscode-badge-background, #2a2826);
+    --badge-fg: var(--vscode-badge-foreground, #ece7e1);
+    --bar-bg: var(--vscode-charts-purple, var(--vscode-focusBorder, #fb8aa7));
+    --bar-track: var(--vscode-input-background, #161310);
+    --error: var(--vscode-errorForeground, #ff6b6b);
+    --warn: var(--vscode-editorWarning-foreground, #b69a76);
+    --add: var(--vscode-gitDecoration-addedResourceForeground, #a8c8a8);
+    --del: var(--vscode-gitDecoration-deletedResourceForeground, #ff6b6b);
+    --input-bg: var(--vscode-input-background, #161310);
+    --input-fg: var(--vscode-input-foreground, #ece7e1);
+    --input-border: var(--vscode-input-border, #2a2826);
 }
 
 @font-face {

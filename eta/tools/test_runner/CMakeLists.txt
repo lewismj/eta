@@ -17,13 +17,11 @@ eta_link_sidecar_builtin_runtime(eta_test)
 target_compile_definitions(eta_test PRIVATE
     ETA_HAS_TORCH=1 ETA_HAS_NNG=1 ETA_HAS_STATS=1
     ETA_STDLIB_DIR="${ETA_STDLIB_SOURCE_DIR}"
-    ETA_TEST_NATIVE_SIDECAR_PATH="$<TARGET_FILE:eta_test_native_sidecar>"
 )
 
 eta_copy_torch_dlls(eta_test)
 eta_copy_nng_dlls(eta_test)
 eta_copy_log_dlls(eta_test)
-add_dependencies(eta_test eta_test_native_sidecar)
 
 if(NOT MSVC)
     target_link_libraries(eta_test PRIVATE stdc++ m)

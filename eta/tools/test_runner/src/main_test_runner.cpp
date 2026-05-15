@@ -28,212 +28,18 @@
  */
 
 #include <algorithm>
-#include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include "eta/native/sidecar_loader.h"
 #include "eta/session/driver.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/port.h"
 
 namespace fs = std::filesystem;
-
-namespace {
-
-struct ScopedTempDir {
-    fs::path path;
-
-    ScopedTempDir() {
-        const auto stamp =
-            std::chrono::steady_clock::now().time_since_epoch().count();
-        path = fs::temp_directory_path() / ("eta_test_sidecar_" + std::to_string(stamp));
-        std::error_code ec;
-        fs::create_directories(path, ec);
-    }
-
-    ~ScopedTempDir() {
-        std::error_code ec;
-        if (!path.empty()) {
-            fs::remove_all(path, ec);
-        }
-    }
-};
-
-struct SidecarSpec {
-    std::string package_name;
-    std::string extension_id;
-    std::string entrypoint;
-};
-
-[[nodiscard]] std::string host_target_triple() {
-#if defined(_WIN32)
-#if defined(_M_X64) || defined(__x86_64__)
-    return "x86_64-pc-windows-msvc";
-#elif defined(_M_ARM64) || defined(__aarch64__)
-    return "aarch64-pc-windows-msvc";
-#else
-    return "unknown-pc-windows-msvc";
-#endif
-#elif defined(__APPLE__)
-#if defined(__aarch64__)
-    return "aarch64-apple-darwin";
-#else
-    return "x86_64-apple-darwin";
-#endif
-#elif defined(__linux__)
-#if defined(__aarch64__)
-    return "aarch64-unknown-linux-gnu";
-#else
-    return "x86_64-unknown-linux-gnu";
-#endif
-#else
-    return "unknown-unknown-unknown";
-#endif
-}
-
-[[nodiscard]] std::optional<fs::path> configured_sidecar_fixture_path() {
-#ifdef ETA_TEST_NATIVE_SIDECAR_PATH
-    return fs::path(ETA_TEST_NATIVE_SIDECAR_PATH);
-#else
-    return std::nullopt;
-#endif
-}
-
-[[nodiscard]] std::optional<fs::path> create_sidecar_workspace_fixture(
-    const fs::path& root,
-    const fs::path& fixture_binary) {
-    const auto fixture_sha = eta::native::compute_sidecar_sha256(fixture_binary);
-    if (!fixture_sha) {
-        std::cerr << "eta-test: warning: failed to hash native sidecar fixture: "
-                  << fixture_binary << "\n";
-        return std::nullopt;
-    }
-
-    const SidecarSpec specs[] = {
-        {"eta-log", "eta.log.sidecar", "eta_register_log_extension_v1"},
-        {"eta-stats", "eta.stats.sidecar", "eta_register_stats_extension_v1"},
-        {"eta-torch", "eta.torch.sidecar", "eta_register_torch_extension_v1"},
-        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
-    };
-
-    const fs::path app_root = root / "app";
-    std::error_code ec;
-    fs::create_directories(app_root / "src", ec);
-    if (ec) {
-        std::cerr << "eta-test: warning: failed to create sidecar fixture app directory: "
-                  << app_root << "\n";
-        return std::nullopt;
-    }
-
-    {
-        std::ofstream out(app_root / "eta.toml", std::ios::out | std::ios::binary | std::ios::trunc);
-        if (!out.is_open()) {
-            std::cerr << "eta-test: warning: failed to write sidecar fixture manifest\n";
-            return std::nullopt;
-        }
-        out << "[package]\n"
-            << "name = \"app\"\n"
-            << "version = \"0.1.0\"\n"
-            << "license = \"MIT\"\n\n"
-            << "[compatibility]\n"
-            << "eta = \">=0.6, <0.8\"\n\n"
-            << "[dependencies]\n";
-        for (const auto& spec : specs) {
-            out << spec.package_name << " = { path = \"../" << spec.package_name << "\" }\n";
-        }
-    }
-
-    for (const auto& spec : specs) {
-        const auto sidecar_root = root / spec.package_name;
-        const auto artifact_relpath = fs::path("native") / "test" / fixture_binary.filename();
-        fs::create_directories((sidecar_root / artifact_relpath).parent_path(), ec);
-        if (ec) {
-            std::cerr << "eta-test: warning: failed to create sidecar package directory: "
-                      << sidecar_root << "\n";
-            return std::nullopt;
-        }
-
-        fs::copy_file(
-            fixture_binary,
-            sidecar_root / artifact_relpath,
-            fs::copy_options::overwrite_existing,
-            ec);
-        if (ec) {
-            std::cerr << "eta-test: warning: failed to stage sidecar fixture binary: "
-                      << fixture_binary << " -> " << (sidecar_root / artifact_relpath) << "\n";
-            return std::nullopt;
-        }
-
-        std::ofstream out(
-            sidecar_root / "eta.toml",
-            std::ios::out | std::ios::binary | std::ios::trunc);
-        if (!out.is_open()) {
-            std::cerr << "eta-test: warning: failed to write sidecar package manifest for "
-                      << spec.package_name << "\n";
-            return std::nullopt;
-        }
-        out << "[package]\n"
-            << "name = \"" << spec.package_name << "\"\n"
-            << "version = \"0.1.0\"\n"
-            << "license = \"MIT\"\n\n"
-            << "[compatibility]\n"
-            << "eta = \">=0.6, <0.8\"\n\n"
-            << "[native]\n"
-            << "kind = \"sidecar\"\n"
-            << "abi = \"eta-native-v1\"\n"
-            << "id = \"" << spec.extension_id << "\"\n"
-            << "entry = \"" << spec.entrypoint << "\"\n\n"
-            << "[[native.targets]]\n"
-            << "triple = \"" << host_target_triple() << "\"\n"
-            << "artifact = \"" << artifact_relpath.generic_string() << "\"\n"
-            << "sha256 = \"" << *fixture_sha << "\"\n";
-    }
-
-    {
-        std::ofstream out(app_root / "eta.lock", std::ios::out | std::ios::binary | std::ios::trunc);
-        if (!out.is_open()) {
-            std::cerr << "eta-test: warning: failed to write sidecar fixture lockfile\n";
-            return std::nullopt;
-        }
-        out << "version = 1\n\n"
-            << "[[package]]\n"
-            << "name = \"app\"\n"
-            << "version = \"0.1.0\"\n"
-            << "source = \"root\"\n"
-            << "dependencies = [";
-        for (std::size_t i = 0; i < std::size(specs); ++i) {
-            if (i != 0u) out << ", ";
-            out << "\"" << specs[i].package_name << "@0.1.0\"";
-        }
-        out << "]\n\n";
-
-        for (const auto& spec : specs) {
-            const auto artifact_relpath = fs::path("native") / "test" / fixture_binary.filename();
-            out << "[[package]]\n"
-                << "name = \"" << spec.package_name << "\"\n"
-                << "version = \"0.1.0\"\n"
-                << "source = \"path+../" << spec.package_name << "\"\n"
-                << "native_id = \"" << spec.extension_id << "\"\n"
-                << "native_abi = \"eta-native-v1\"\n"
-                << "native_entry = \"" << spec.entrypoint << "\"\n"
-                << "native_target_triple = \"" << host_target_triple() << "\"\n"
-                << "native_artifact_relpath = \"" << artifact_relpath.generic_string() << "\"\n"
-                << "native_sha256 = \"" << *fixture_sha << "\"\n"
-                << "dependencies = []\n\n";
-        }
-    }
-
-    return app_root;
-}
-
-} // namespace
 
 /**
  * TAP result counters
@@ -496,15 +302,6 @@ int main(int argc, char* argv[]) {
     std::vector<FileResult> file_results;
     file_results.reserve(test_files.size());
 
-    std::optional<ScopedTempDir> sidecar_temp_dir;
-    std::optional<fs::path> sidecar_fixture_app_root;
-    if (const auto sidecar_fixture = configured_sidecar_fixture_path();
-        sidecar_fixture.has_value() && fs::is_regular_file(*sidecar_fixture)) {
-        sidecar_temp_dir.emplace();
-        sidecar_fixture_app_root =
-            create_sidecar_workspace_fixture(sidecar_temp_dir->path, *sidecar_fixture);
-    }
-
     for (const auto& test_file : test_files) {
         const std::size_t heap_bytes =
             eta::session::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
@@ -514,13 +311,6 @@ int main(int argc, char* argv[]) {
         resolver.add_dir(fs::absolute(test_file).parent_path());
 
         eta::session::Driver driver(resolver, heap_bytes);
-        if (sidecar_fixture_app_root.has_value()) {
-            if (!driver.load_package_sidecars(*sidecar_fixture_app_root)) {
-                std::cerr << "eta-test: warning: failed to load sidecar fixture context:\n";
-                driver.diagnostics().print_all(std::cerr, false, driver.file_resolver());
-            }
-        }
-
         /// Redirect VM output to a StringPort
         auto sp = std::make_shared<eta::runtime::StringPort>(
             eta::runtime::StringPort::Mode::Output);

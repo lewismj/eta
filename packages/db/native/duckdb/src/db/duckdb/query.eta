@@ -5,6 +5,25 @@
   (import (rename db.duckdb (duckdb:query duckdb:%query-sql)))
   (import (except db.duckdb duckdb:query))
   (export
+    ;; re-exported from db.duckdb (superset — import only db.duckdb.query)
+    duckdb-upstream-version
+    duckdb:open
+    duckdb:close!
+    duckdb:exec
+    duckdb:last-error
+    duckdb:q-new
+    duckdb:q-select
+    duckdb:q-from
+    duckdb:q-join
+    duckdb:q-where
+    duckdb:q-group-by
+    duckdb:q-having
+    duckdb:q-order-by
+    duckdb:q-limit
+    duckdb:q-to-sql
+    duckdb:q-params
+    duckdb:q-run
+    ;; db.duckdb.query additions (duckdb:query is the enhanced fluent+SQL version)
     duckdb:query
     duckdb:build
     from

@@ -4,8 +4,9 @@ DuckDB bindings for Eta - embedded OLAP SQL via a native sidecar.
 Pinned to DuckDB `v1.5.1`.
 
 ```scheme
-(import db.duckdb)
-(import db.duckdb.query)   ; optional fluent DSL
+(import db.duckdb)          ; core API only
+;; — or —
+(import db.duckdb.query)    ; fluent DSL + everything from db.duckdb (superset)
 ```
 
 ## Opening and closing
@@ -85,8 +86,7 @@ All three styles produce identical results. Choose whichever fits your code.
 ### Fluent DSL
 
 ```scheme
-(import db.duckdb)
-(import db.duckdb.query)
+(import db.duckdb.query)   ; superset — no need to also import db.duckdb
 
 (define conn (duckdb:open ":memory:"))
 (duckdb:query conn
@@ -102,7 +102,7 @@ All three styles produce identical results. Choose whichever fits your code.
 | Module | Description |
 | --- | --- |
 | `db.duckdb` | Core connection, exec, query, and function-builder API. |
-| `db.duckdb.query` | Fluent DSL macros (`from`, `select`, `join`, `where`, `group-by`, `having`, `order-by`, `limit`). |
+| `db.duckdb.query` | Superset of `db.duckdb` — adds fluent DSL helpers (`from`, `select`, `join`, `where`, `group-by`, `having`, `order-by`, `limit`) and an enhanced `duckdb:query` that accepts both raw SQL and inline DSL clauses. Import this instead of `db.duckdb` when using the fluent API. |
 
 ## Native sidecar
 

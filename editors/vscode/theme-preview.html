@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Eta Dark Theme Preview</title>
+<style>
+@font-face {
+    font-family: "D-DIN";
+    src: url("media/fonts/D-DIN.woff2") format("woff2");
+    font-weight: 400; font-style: normal;
+}
+@font-face {
+    font-family: "D-DIN";
+    src: url("media/fonts/D-DIN-Bold.woff2") format("woff2");
+    font-weight: 700; font-style: normal;
+}
+@font-face {
+    font-family: "D-DIN";
+    src: url("media/fonts/D-DIN-Italic.woff2") format("woff2");
+    font-weight: 400; font-style: italic;
+}
+
+/* ── Site design tokens (dark) ── */
+:root {
+    --bg:        #0f0f0f;
+    --bg-panel:  #0a0908;
+    --bg-line:   #1a1714;
+    --fg:        #ece7e1;
+    --muted:     #857d77;
+    --dim:       #8a847e;
+    --border:    #2a2826;
+    --accent:    #fb8aa7;   /* site --accent   */
+    --accent-2:  #b69a76;   /* site --accent-2 */
+    --accent-3:  #95a8b8;   /* site --accent-3 */
+
+    /* token colours */
+    --tok-comment:   #857d77;
+    --tok-string:    #d7b0bb;
+    --tok-escape:    #e4c1ca;
+    --tok-number:    #e4c1ca;
+    --tok-keyword:   #fb8aa7;
+    --tok-keyword-2: #f0a4bc;
+    --tok-fn-name:   #f0a4bc;
+    --tok-fn:        #f0a4bc;
+    --tok-io:        #95a8b8;
+    --tok-logic:     #95a8b8;
+    --tok-sup:       #b69a76;
+    --tok-op:        #a19a94;
+    --tok-var:       #ece7e1;
+    --tok-punct:     #8a847e;
+    --tok-error:     #ff6b6b;
+    --tok-opcode:    #fb8aa7;
+    --tok-section:   #fb8aa7;
+
+    --font-display: "D-DIN", "Arial Narrow", system-ui, sans-serif;
+    --font-mono:    "JetBrains Mono", "Fira Code", Consolas, monospace;
+    --font-body:    "D-DIN", system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── Layout ── */
+.page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 32px 80px;
+}
+
+.eyebrow {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+}
+
+h1 {
+    font-family: var(--font-display);
+    font-size: 2.6rem;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.0;
+    color: var(--fg);
+    margin-bottom: 8px;
+}
+
+.subtitle {
+    color: var(--muted);
+    font-size: 0.97rem;
+    margin-bottom: 48px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 28px;
+}
+
+.cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-bottom: 40px;
+}
+
+@media (max-width: 780px) { .cols { grid-template-columns: 1fr; } }
+
+.panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.panel-title {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.panel-title .lang-id {
+    background: var(--border);
+    color: var(--dim);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+}
+
+/* ── Code block ── */
+pre {
+    margin: 0;
+    padding: 16px 20px;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    overflow-x: auto;
+    background: var(--bg);
+    counter-reset: line;
+}
+
+/* Line numbers */
+.line {
+    display: block;
+    padding-left: 44px;
+    position: relative;
+    border-radius: 2px;
+}
+
+.line::before {
+    content: attr(data-n);
+    position: absolute;
+    left: 0;
+    width: 32px;
+    text-align: right;
+    color: var(--dim);
+    font-size: 0.78rem;
+    opacity: 0.55;
+    user-select: none;
+}
+
+.line.current-pc {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-left: 2px solid var(--accent);
+    padding-left: 42px;
+}
+
+/* ── Token colours ── */
+.c  { color: var(--tok-comment); font-style: italic; }   /* comment         */
+.s  { color: var(--tok-string);  }                        /* string          */
+.se { color: var(--tok-escape);  }                        /* string escape   */
+.n  { color: var(--tok-number);  }                        /* number          */
+.kw { color: var(--tok-keyword); }                        /* keyword         */
+.k2 { color: var(--tok-keyword-2); }                      /* secondary kw    */
+.fn { color: var(--tok-fn);      }                        /* function name   */
+.fh { color: var(--tok-fn-name); font-weight: 700; }      /* func header     */
+.bi { color: var(--tok-fn);      }                        /* builtin         */
+.io { color: var(--tok-io);      }                        /* io fn           */
+.lg { color: var(--tok-logic);   }                        /* logic           */
+.sp { color: var(--tok-sup);     }                        /* supervisor      */
+.op { color: var(--tok-op); font-style: italic; }         /* operator        */
+.oc { color: var(--tok-opcode);  }                        /* opcode          */
+.sc { color: var(--tok-section); }                        /* section header  */
+.pu { color: var(--tok-punct);   }                        /* punctuation     */
+.va { color: var(--tok-var);     }                        /* variable        */
+.er { color: var(--tok-error);   text-decoration: underline; }
+.fr { color: var(--tok-fn);      }                        /* func ref        */
+.ni { color: var(--tok-number);  }                        /* instruction num */
+
+/* ── Colour swatch section ── */
+.swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 48px;
+}
+
+.swatch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+}
+
+.swatch-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+}
+
+.swatch-label {
+    font-family: var(--font-mono);
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+/* ── Env panel preview ── */
+.env-row {
+    display: grid;
+    grid-template-columns: 12px 110px 1fr;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 16px;
+    font-family: var(--font-body);
+    font-size: 0.86rem;
+    min-height: 24px;
+}
+
+.env-row.changed {
+    background: color-mix(in srgb, var(--accent-3) 12%, transparent);
+    border-left: 2px solid var(--accent-3);
+    padding-left: 14px;
+}
+
+.env-row .env-name { color: var(--fg); }
+.env-row .env-val  { color: var(--muted); }
+.env-row .env-sect {
+    grid-column: 1 / -1;
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dim);
+    padding: 8px 0 2px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    background: var(--border);
+    color: var(--muted);
+}
+
+.badge.accent { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+
+/* ── Section divider ── */
+.section-label {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 20px;
+    margin-top: 48px;
+    border-top: 1px solid var(--border);
+    padding-top: 28px;
+}
+
+/* ── Heap Inspector ── */
+.heap-shell {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    max-width: 860px;
+    font-family: var(--font-body);
+    font-size: 0.86rem;
+    margin-bottom: 8px;
+}
+
+.heap-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+}
+
+.heap-title {
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--fg);
+}
+
+.heap-toolbar-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.heap-input {
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 3px 7px;
+    font-family: var(--font-body);
+    font-size: 0.83rem;
+}
+.heap-input::placeholder { color: var(--muted); }
+
+.hbtn {
+    background: var(--accent);
+    color: #0f0f0f;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 3px 9px;
+    font-family: var(--font-body);
+    font-size: 0.83rem;
+    cursor: pointer;
+}
+.hbtn-sec {
+    background: transparent;
+    color: var(--fg);
+    border-color: var(--border);
+}
+.hbtn-dis { opacity: 0.35; cursor: not-allowed; }
+
+.heap-section {
+    padding: 10px 14px 10px;
+    border-bottom: 1px solid var(--border);
+}
+.heap-section-title {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 7px;
+}
+.heap-muted { color: var(--muted); }
+
+/* Gauge */
+.gauge-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 5px;
+}
+.gauge-bar-wrap {
+    flex: 1;
+    height: 13px;
+    background: var(--bg);
+    background-image: repeating-linear-gradient(
+        -45deg,
+        rgba(255,255,255,0.06) 0, rgba(255,255,255,0.06) 5px,
+        rgba(255,255,255,0.01) 5px, rgba(255,255,255,0.01) 10px
+    );
+    border: 1px solid var(--border);
+    border-radius: 0;
+    overflow: hidden;
+}
+.gauge-bar-fill {
+    height: 100%;
+    background: var(--accent-2);
+    transition: width 0.3s;
+}
+.gauge-pct {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    min-width: 44px;
+    text-align: right;
+    color: var(--fg);
+}
+.gauge-stats {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Kinds table */
+.heap-kinds {
+    padding: 10px 14px 12px;
+    border-bottom: 1px solid var(--border);
+}
+.heap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+}
+.heap-table th {
+    text-align: left;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--fg);
+    cursor: pointer;
+    user-select: none;
+}
+.heap-table th.sorted { color: var(--accent); }
+.heap-table td {
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+.heap-table .num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.8rem; }
+.heap-table tr.row-new td:first-child::before { content: "+ "; color: var(--accent-3); }
+.heap-table tr.row-new td { color: var(--accent-3); }
+.heap-table tr.row-removed { opacity: 0.5; font-style: italic; }
+.heap-table tr.row-removed td:first-child::before { content: "- "; color: var(--tok-error); }
+.heap-table tr:hover td { background: var(--bg-line); }
+
+/* Roots tree */
+.heap-roots {
+    padding: 10px 14px 12px;
+    border-bottom: 1px solid var(--border);
+}
+.root-group {
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+.root-header, .root-mod {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--bg);
+    cursor: pointer;
+    font-size: 0.83rem;
+    border-bottom: 1px solid var(--border);
+}
+.root-header.open, .root-mod.open { background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.root-mod { background: var(--bg-panel); border-top: 1px solid var(--border); border-bottom: 0; }
+.root-mod.open { background: color-mix(in srgb, var(--accent) 4%, var(--bg-panel)); }
+.root-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.root-children { padding: 2px 0; border-bottom: 1px solid var(--border); }
+.root-body { padding: 2px 0; }
+.root-nested {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 2px 8px 2px 24px;
+    font-size: 0.82rem;
+}
+.chevron { color: var(--muted); font-size: 0.72rem; width: 10px; }
+.obj-link { color: var(--accent); cursor: pointer; text-decoration: none; }
+.obj-link:hover { text-decoration: underline; }
+
+/* Detail pane */
+.heap-detail {
+    padding: 10px 14px 14px;
+}
+.detail-row {
+    margin: 3px 0;
+    font-size: 0.83rem;
+}
+.detail-label { color: var(--muted); }
+.detail-actions { margin-top: 8px; display: flex; gap: 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+    <div class="eyebrow">Eta VM · VS Code Extension</div>
+    <h1>Dark Theme Preview</h1>
+    <p class="subtitle">Site palette applied to editor token colours, disassembly view, and debug panels. D-DIN used for all UI chrome; JetBrains Mono for code.</p>
+
+    <!-- ── Colour palette ── -->
+    <div class="section-label">Colour palette</div>
+    <div class="swatches">
+        <div class="swatch"><div class="swatch-dot" style="background:#fb8aa7"></div><span class="swatch-label">#fb8aa7 — accent · opcodes · keywords</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#f0a4bc"></div><span class="swatch-label">#f0a4bc — function names · secondary kw</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#d7b0bb"></div><span class="swatch-label">#d7b0bb — strings</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#e4c1ca"></div><span class="swatch-label">#e4c1ca — numbers · constants</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#b69a76"></div><span class="swatch-label">#b69a76 — accent-2 · supervisor · logic vars</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#95a8b8"></div><span class="swatch-label">#95a8b8 — accent-3 · IO · logic kw</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#a19a94"></div><span class="swatch-label">#a19a94 — operators</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#857d77"></div><span class="swatch-label">#857d77 — comments · muted</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#ece7e1"></div><span class="swatch-label">#ece7e1 — foreground</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#ff6b6b"></div><span class="swatch-label">#ff6b6b — errors · exceptions</span></div>
+    </div>
+
+    <!-- ── Code + Disassembly side-by-side ── -->
+    <div class="section-label">Source ↔ Disassembly</div>
+    <div class="cols">
+
+        <!-- Eta source -->
+        <div class="panel">
+            <div class="panel-title">portfolio.eta <span class="lang-id">eta</span></div>
+            <pre><span class="line" data-n="1"><span class="c">; Monte-Carlo portfolio VaR</span></span>
+<span class="line" data-n="2"><span class="pu">(</span><span class="kw">module</span> <span class="va">portfolio</span><span class="pu">)</span></span>
+<span class="line" data-n="3"></span>
+<span class="line" data-n="4"><span class="pu">(</span><span class="kw">import</span> <span class="va">std.math</span>   <span class="op">'</span><span class="pu">[</span><span class="bi">sqrt</span> <span class="bi">log</span> <span class="bi">exp</span><span class="pu">]</span><span class="pu">)</span></span>
+<span class="line" data-n="5"><span class="pu">(</span><span class="kw">import</span> <span class="va">std.tensor</span> <span class="op">'</span><span class="pu">[</span><span class="bi">matrix</span> <span class="bi">dot</span><span class="pu">]</span><span class="pu">)</span></span>
+<span class="line" data-n="6"></span>
+<span class="line" data-n="7"><span class="pu">(</span><span class="kw">defn</span> <span class="fn">simulate-paths</span></span>
+<span class="line" data-n="8">  <span class="pu">[</span><span class="va">S0</span> <span class="va">mu</span> <span class="va">sigma</span> <span class="va">T</span> <span class="va">N</span><span class="pu">]</span></span>
+<span class="line" data-n="9">  <span class="pu">(</span><span class="kw">let</span> <span class="pu">[</span><span class="va">dt</span>   <span class="pu">(</span><span class="op">/</span> <span class="va">T</span> <span class="va">N</span><span class="pu">)</span></span>
+<span class="line" data-n="10">        <span class="va">drift</span> <span class="pu">(</span><span class="op">*</span> <span class="pu">(</span><span class="op">-</span> <span class="va">mu</span> <span class="pu">(</span><span class="op">/</span> <span class="pu">(</span><span class="op">*</span> <span class="va">sigma</span> <span class="va">sigma</span><span class="pu">)</span> <span class="n">2.0</span><span class="pu">)</span><span class="pu">)</span> <span class="va">dt</span><span class="pu">)</span><span class="pu">]</span></span>
+<span class="line" data-n="11">    <span class="pu">(</span><span class="kw">for</span> <span class="va">i</span> <span class="kw">in</span> <span class="pu">(</span><span class="bi">range</span> <span class="va">N</span><span class="pu">)</span></span>
+<span class="line" data-n="12">      <span class="pu">(</span><span class="op">*</span> <span class="va">S0</span> <span class="pu">(</span><span class="bi">exp</span> <span class="pu">(</span><span class="op">+</span> <span class="va">drift</span></span>
+<span class="line" data-n="13">                       <span class="pu">(</span><span class="op">*</span> <span class="va">sigma</span> <span class="pu">(</span><span class="bi">sqrt</span> <span class="va">dt</span><span class="pu">)</span></span>
+<span class="line" data-n="14">                          <span class="pu">(</span><span class="io">randn</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span></span>
+<span class="line" data-n="15"></span>
+<span class="line" data-n="16"><span class="pu">(</span><span class="kw">defn</span> <span class="fn">var-95</span> <span class="pu">[</span><span class="va">returns</span><span class="pu">]</span></span>
+<span class="line" data-n="17">  <span class="pu">(</span><span class="kw">let</span> <span class="pu">[</span><span class="va">sorted</span> <span class="pu">(</span><span class="bi">sort</span> <span class="va">returns</span><span class="pu">)</span></span>
+<span class="line" data-n="18">        <span class="va">idx</span>    <span class="pu">(</span><span class="bi">floor</span> <span class="pu">(</span><span class="op">*</span> <span class="n">0.05</span> <span class="pu">(</span><span class="bi">len</span> <span class="va">sorted</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span><span class="pu">]</span></span>
+<span class="line" data-n="19">    <span class="pu">(</span><span class="bi">nth</span> <span class="va">sorted</span> <span class="va">idx</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span></span>
+<span class="line" data-n="20"></span>
+<span class="line" data-n="21"><span class="pu">(</span><span class="k2">try</span></span>
+<span class="line" data-n="22">  <span class="pu">(</span><span class="kw">let</span> <span class="pu">[</span><span class="va">paths</span> <span class="pu">(</span><span class="fn">simulate-paths</span> <span class="n">100.0</span> <span class="n">0.08</span> <span class="n">0.2</span> <span class="n">1.0</span> <span class="n">252</span><span class="pu">)</span><span class="pu">]</span></span>
+<span class="line" data-n="23">    <span class="pu">(</span><span class="io">println</span> <span class="s">"VaR 95%:"</span> <span class="pu">(</span><span class="fn">var-95</span> <span class="va">paths</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span></span>
+<span class="line" data-n="24">  <span class="pu">(</span><span class="k2">catch</span> <span class="va">e</span> <span class="pu">(</span><span class="er">error</span> <span class="s">"sim failed: "</span> <span class="va">e</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span></span></pre>
+        </div>
+
+        <!-- Disassembly -->
+        <div class="panel">
+            <div class="panel-title">disassembly — current function <span class="lang-id">eta-bytecode</span></div>
+            <pre><span class="line" data-n="1"><span class="sc">-- Constants --</span></span>
+<span class="line" data-n="2"><span class="pu">[</span><span class="ni">0</span><span class="pu">]</span>  <span class="s">"VaR 95%:"</span></span>
+<span class="line" data-n="3"><span class="pu">[</span><span class="ni">1</span><span class="pu">]</span>  <span class="fr">&lt;func:3&gt;</span>  <span class="c">; simulate-paths</span></span>
+<span class="line" data-n="4"><span class="pu">[</span><span class="ni">2</span><span class="pu">]</span>  <span class="fr">&lt;func:4&gt;</span>  <span class="c">; var-95</span></span>
+<span class="line" data-n="5"><span class="pu">[</span><span class="ni">3</span><span class="pu">]</span>  <span class="n">100.0</span></span>
+<span class="line" data-n="6"><span class="pu">[</span><span class="ni">4</span><span class="pu">]</span>  <span class="n">0.05</span></span>
+<span class="line" data-n="7"><span class="pu">[</span><span class="ni">5</span><span class="pu">]</span>  <span class="n">252</span></span>
+<span class="line" data-n="8"></span>
+<span class="line" data-n="9"><span class="fh">=== portfolio.var-95 ===</span></span>
+<span class="line" data-n="10"><span class="sc">-- Locals --</span></span>
+<span class="line" data-n="11"><span class="ni">0</span> <span class="pu">:</span>  <span class="oc">LoadArg</span>      <span class="n">0</span>          <span class="c">; returns</span></span>
+<span class="line" data-n="12"><span class="ni">1</span> <span class="pu">:</span>  <span class="oc">LoadConst</span>    <span class="n">1</span>          <span class="c">; &lt;func:3&gt; simulate-paths</span></span>
+<span class="line" data-n="13"><span class="ni">2</span> <span class="pu">:</span>  <span class="oc">Call</span>         <span class="n">1</span></span>
+<span class="line" data-n="14"><span class="ni">3</span> <span class="pu">:</span>  <span class="oc">Store</span>        <span class="n">0</span>          <span class="c">; sorted</span></span>
+<span class="line" data-n="15"><span class="ni">4</span> <span class="pu">:</span>  <span class="oc">LoadLocal</span>    <span class="n">0</span>          <span class="c">; sorted</span></span>
+<span class="line" data-n="16"><span class="ni">5</span> <span class="pu">:</span>  <span class="oc">LoadConst</span>    <span class="n">4</span>          <span class="c">; 0.05</span></span>
+<span class="line" data-n="17"><span class="ni">6</span> <span class="pu">:</span>  <span class="oc">LoadBuiltin</span>  <span class="va">len</span></span>
+<span class="line" data-n="18"><span class="ni">7</span> <span class="pu">:</span>  <span class="oc">Call</span>         <span class="n">1</span></span>
+<span class="line" data-n="19"><span class="ni">8</span> <span class="pu">:</span>  <span class="oc">Mul</span></span>
+<span class="line" data-n="20"><span class="ni">9</span> <span class="pu">:</span>  <span class="oc">LoadBuiltin</span>  <span class="va">floor</span></span>
+<span class="line" data-n="21"><span class="ni">10</span> <span class="pu">:</span> <span class="oc">Call</span>         <span class="n">1</span></span>
+<span class="line current-pc" data-n="22"><span class="ni">11</span> <span class="pu">:</span> <span class="oc">Store</span>        <span class="n">1</span>          <span class="c">; idx  ← PC</span></span>
+<span class="line" data-n="23"><span class="ni">12</span> <span class="pu">:</span> <span class="oc">LoadLocal</span>    <span class="n">0</span>          <span class="c">; sorted</span></span>
+<span class="line" data-n="24"><span class="ni">13</span> <span class="pu">:</span> <span class="oc">LoadLocal</span>    <span class="n">1</span>          <span class="c">; idx</span></span>
+<span class="line" data-n="25"><span class="ni">14</span> <span class="pu">:</span> <span class="oc">LoadBuiltin</span>  <span class="va">nth</span></span>
+<span class="line" data-n="26"><span class="ni">15</span> <span class="pu">:</span> <span class="oc">TailCall</span>     <span class="n">2</span></span></pre>
+        </div>
+    </div>
+
+    <!-- ── Environment Inspector preview ── -->
+    <div class="section-label">Environment Inspector (webview panel)</div>
+    <div class="panel" style="max-width:480px">
+        <div class="panel-title">Environment <span class="badge accent">paused</span></div>
+        <div style="padding: 6px 0 4px">
+            <div class="env-row"><span></span><span class="env-sect">Locals</span></div>
+            <div class="env-row"><span class="pu">▸</span><span class="env-name">returns</span><span class="env-val"><span class="badge">list</span> ·  252 items</span></div>
+            <div class="env-row changed"><span class="pu">▸</span><span class="env-name">sorted</span><span class="env-val"><span class="badge">list</span> ·  252 items</span></div>
+            <div class="env-row changed"><span></span><span class="env-name">idx</span><span class="env-val" style="color:var(--tok-number)">12</span></div>
+            <div class="env-row"><span></span><span class="env-sect">Closure</span></div>
+            <div class="env-row"><span></span><span class="env-name">S0</span><span class="env-val" style="color:var(--tok-number)">100.0</span></div>
+            <div class="env-row"><span></span><span class="env-name">mu</span><span class="env-val" style="color:var(--tok-number)">0.08</span></div>
+            <div class="env-row"><span></span><span class="env-name">sigma</span><span class="env-val" style="color:var(--tok-number)">0.2</span></div>
+            <div class="env-row"><span></span><span class="env-name">T</span><span class="env-val" style="color:var(--tok-number)">1.0</span></div>
+            <div class="env-row"><span></span><span class="env-name">N</span><span class="env-val" style="color:var(--tok-number)">252</span></div>
+        </div>
+    </div>
+
+    <!-- ── Heap Inspector ── -->
+    <div class="section-label">Heap Inspector (webview panel)</div>
+
+    <div class="heap-shell">
+
+        <!-- toolbar -->
+        <div class="heap-toolbar">
+            <span class="heap-title">Eta Heap Inspector</span>
+            <div class="heap-toolbar-btns">
+                <input class="heap-input" type="text" placeholder="Filter kinds…" style="width:130px">
+                <button class="hbtn hbtn-sec">Capture Baseline</button>
+                <button class="hbtn hbtn-sec hbtn-dis">Diff</button>
+                <button class="hbtn hbtn-sec hbtn-dis">Clear Baseline</button>
+                <button class="hbtn">Refresh</button>
+            </div>
+        </div>
+
+        <!-- memory gauges -->
+        <div class="heap-section">
+            <div class="heap-section-title">Memory</div>
+            <div class="gauge-row">
+                <div class="gauge-bar-wrap">
+                    <div class="gauge-bar-fill" style="width:63%"></div>
+                </div>
+                <span class="gauge-pct">63.1%</span>
+            </div>
+            <div class="gauge-stats">14.22 MB used of soft limit 22.50 MB &nbsp;|&nbsp; Free headroom: 8.28 MB</div>
+        </div>
+
+        <div class="heap-section">
+            <div class="heap-section-title">Cons Pool</div>
+            <div class="gauge-row">
+                <div class="gauge-bar-wrap">
+                    <div class="gauge-bar-fill" style="width:38%"></div>
+                </div>
+                <span class="gauge-pct">38.0%</span>
+            </div>
+            <div class="gauge-stats">95,000 / 250,000 &nbsp;|&nbsp; Free: 155,000 &nbsp;|&nbsp; 3.62 MB</div>
+        </div>
+
+        <!-- object kinds table -->
+        <div class="heap-kinds">
+            <div class="heap-section-title">Object Kinds &nbsp;<span class="heap-muted">(12)</span></div>
+            <table class="heap-table">
+                <thead>
+                    <tr>
+                        <th>Kind</th>
+                        <th class="num">Count</th>
+                        <th class="num sorted">Bytes ↓</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Closure</td>        <td class="num">48,201</td><td class="num">5.51 MB</td></tr>
+                    <tr><td>Cons</td>            <td class="num">95,000</td><td class="num">3.62 MB</td></tr>
+                    <tr><td>Vector</td>          <td class="num">12,044</td><td class="num">2.15 MB</td></tr>
+                    <tr><td>HashMap</td>         <td class="num">3,812</td> <td class="num">1.09 MB</td></tr>
+                    <tr class="row-new"><td>Tensor</td>    <td class="num">214</td>   <td class="num">780.0 KB</td></tr>
+                    <tr><td>String</td>          <td class="num">28,601</td><td class="num">715.0 KB</td></tr>
+                    <tr><td>Port</td>            <td class="num">42</td>    <td class="num">3.3 KB</td></tr>
+                    <tr><td>Symbol</td>          <td class="num">9,104</td> <td class="num">284.5 KB</td></tr>
+                    <tr><td>Fixnum</td>          <td class="num">31,200</td><td class="num">243.8 KB</td></tr>
+                    <tr><td>Flonum</td>          <td class="num">8,920</td> <td class="num">139.4 KB</td></tr>
+                    <tr class="row-removed"><td>ByteVector</td>  <td class="num">0</td><td class="num">0 B</td></tr>
+                    <tr><td>Continuation</td>    <td class="num">7</td>     <td class="num">448 B</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- GC roots tree -->
+        <div class="heap-roots">
+            <div class="heap-section-title">GC Roots</div>
+
+            <!-- root group: Globals -->
+            <div class="root-group">
+                <div class="root-header open">
+                    <span class="chevron">▾</span>
+                    <span class="root-title">Globals</span>
+                    <span class="badge">184</span>
+                </div>
+                <div class="root-body">
+                    <!-- module row -->
+                    <div class="root-mod open">
+                        <span class="chevron">▾</span>
+                        <span class="root-title">portfolio</span>
+                        <span class="badge">6</span>
+                    </div>
+                    <div class="root-children">
+                        <div class="root-nested"><span class="obj-link">simulate-paths</span><span class="heap-muted">#0x00a4</span></div>
+                        <div class="root-nested"><span class="obj-link">var-95</span><span class="heap-muted">#0x00a5</span></div>
+                        <div class="root-nested"><span class="obj-link">paths</span><span class="heap-muted">#0x00a6</span></div>
+                        <div class="root-nested"><span class="obj-link">mu</span><span class="heap-muted">0.08</span></div>
+                        <div class="root-nested"><span class="obj-link">sigma</span><span class="heap-muted">0.2</span></div>
+                        <div class="root-nested"><span class="obj-link">N</span><span class="heap-muted">252</span></div>
+                    </div>
+                    <div class="root-mod">
+                        <span class="chevron">▸</span>
+                        <span class="root-title">std.math</span>
+                        <span class="badge">38</span>
+                    </div>
+                    <div class="root-mod">
+                        <span class="chevron">▸</span>
+                        <span class="root-title">std.tensor</span>
+                        <span class="badge">12</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- root group: Stack -->
+            <div class="root-group">
+                <div class="root-header open">
+                    <span class="chevron">▾</span>
+                    <span class="root-title">Stack</span>
+                    <span class="badge">9</span>
+                </div>
+                <div class="root-body" style="padding:4px 0">
+                    <div class="root-nested"><span class="obj-link">returns</span><span class="heap-muted">list · #0x10c2</span></div>
+                    <div class="root-nested"><span class="obj-link">sorted</span><span class="heap-muted">list · #0x10c3</span></div>
+                    <div class="root-nested"><span class="obj-link">idx</span><span class="heap-muted">12</span></div>
+                </div>
+            </div>
+
+            <!-- root group: continuations -->
+            <div class="root-group">
+                <div class="root-header">
+                    <span class="chevron">▸</span>
+                    <span class="root-title">Continuations</span>
+                    <span class="badge">7</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- detail pane -->
+        <div class="heap-detail">
+            <div class="heap-section-title">Object Detail &nbsp;<span class="heap-muted">#0x10c2</span></div>
+            <div class="detail-row"><span class="detail-label">Kind</span> &nbsp; <span>Cons (list)</span></div>
+            <div class="detail-row"><span class="detail-label">Size</span> &nbsp; <span>252 cells · 3.94 KB</span></div>
+            <div class="detail-row"><span class="detail-label">Refs from</span> &nbsp; <span class="obj-link">var-95</span> &nbsp; <span class="obj-link">Stack[0]</span></div>
+            <div class="detail-actions">
+                <button class="hbtn hbtn-sec">Find Paths</button>
+                <button class="hbtn hbtn-sec">Copy Address</button>
+            </div>
+        </div>
+
+    </div><!-- /heap-shell -->
+
+    <!-- ── Logic / CLP example ── -->
+    <div class="section-label">Logic programming tokens</div>
+    <div class="cols">
+        <div class="panel">
+            <div class="panel-title">nqueens.eta <span class="lang-id">eta</span></div>
+            <pre><span class="line" data-n="1"><span class="pu">(</span><span class="kw">module</span> <span class="va">nqueens</span><span class="pu">)</span></span>
+<span class="line" data-n="2"></span>
+<span class="line" data-n="3"><span class="c">; Solve N-Queens via logic unification</span></span>
+<span class="line" data-n="4"><span class="pu">(</span><span class="lg">defrel</span> <span class="fn">safe</span> <span class="pu">[</span><span class="va">?q</span> <span class="va">?rest</span> <span class="va">?d</span><span class="pu">]</span></span>
+<span class="line" data-n="5">  <span class="pu">(</span><span class="lg">conde</span></span>
+<span class="line" data-n="6">    <span class="pu">[</span><span class="pu">(</span><span class="lg">==</span> <span class="va">?rest</span> <span class="pu">'</span><span class="pu">(</span><span class="pu">)</span><span class="pu">)</span><span class="pu">]</span></span>
+<span class="line" data-n="7">    <span class="pu">[</span><span class="pu">(</span><span class="lg">fresh</span> <span class="pu">[</span><span class="va">?h</span> <span class="va">?t</span><span class="pu">]</span></span>
+<span class="line" data-n="8">       <span class="pu">(</span><span class="lg">==</span> <span class="va">?rest</span> <span class="pu">(</span><span class="bi">cons</span> <span class="va">?h</span> <span class="va">?t</span><span class="pu">)</span><span class="pu">)</span></span>
+<span class="line" data-n="9">       <span class="pu">(</span><span class="lg">=/=</span> <span class="va">?q</span> <span class="va">?h</span><span class="pu">)</span></span>
+<span class="line" data-n="10">       <span class="pu">(</span><span class="lg">=/=</span> <span class="va">?q</span> <span class="pu">(</span><span class="op">+</span> <span class="va">?h</span> <span class="va">?d</span><span class="pu">)</span><span class="pu">)</span></span>
+<span class="line" data-n="11">       <span class="pu">(</span><span class="lg">=/=</span> <span class="va">?q</span> <span class="pu">(</span><span class="op">-</span> <span class="va">?h</span> <span class="va">?d</span><span class="pu">)</span><span class="pu">)</span></span>
+<span class="line" data-n="12">       <span class="pu">(</span><span class="fn">safe</span> <span class="va">?q</span> <span class="va">?t</span> <span class="pu">(</span><span class="op">+</span> <span class="va">?d</span> <span class="n">1</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span><span class="pu">]</span><span class="pu">)</span><span class="pu">)</span></span>
+<span class="line" data-n="13"></span>
+<span class="line" data-n="14"><span class="pu">(</span><span class="lg">run*</span> <span class="pu">[</span><span class="va">?q</span><span class="pu">]</span> <span class="pu">(</span><span class="fn">nqueens</span> <span class="n">8</span> <span class="va">?q</span><span class="pu">)</span><span class="pu">)</span></span></pre>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">concurrency.eta <span class="lang-id">eta</span></div>
+            <pre><span class="line" data-n="1"><span class="pu">(</span><span class="kw">module</span> <span class="va">worker-pool</span><span class="pu">)</span></span>
+<span class="line" data-n="2"></span>
+<span class="line" data-n="3"><span class="c">; Supervised worker pool with back-pressure</span></span>
+<span class="line" data-n="4"><span class="pu">(</span><span class="sp">defsupervisor</span> <span class="fn">pool-sup</span></span>
+<span class="line" data-n="5">  <span class="pu">{</span><span class="va">:strategy</span>  <span class="sp">:one-for-one</span></span>
+<span class="line" data-n="6">   <span class="va">:max-restarts</span> <span class="n">5</span></span>
+<span class="line" data-n="7">   <span class="va">:children</span>  <span class="pu">[</span><span class="fn">worker-a</span> <span class="fn">worker-b</span> <span class="fn">worker-c</span><span class="pu">]</span><span class="pu">}</span><span class="pu">)</span></span>
+<span class="line" data-n="8"></span>
+<span class="line" data-n="9"><span class="pu">(</span><span class="kw">defn</span> <span class="fn">dispatch</span> <span class="pu">[</span><span class="va">task</span><span class="pu">]</span></span>
+<span class="line" data-n="10">  <span class="pu">(</span><span class="kw">let</span> <span class="pu">[</span><span class="va">sock</span> <span class="pu">(</span><span class="io">nng/push0</span><span class="pu">)</span><span class="pu">]</span></span>
+<span class="line" data-n="11">    <span class="pu">(</span><span class="io">nng/dial</span> <span class="va">sock</span> <span class="s">"inproc://tasks"</span><span class="pu">)</span></span>
+<span class="line" data-n="12">    <span class="pu">(</span><span class="io">nng/send</span> <span class="va">sock</span> <span class="va">task</span><span class="pu">)</span></span>
+<span class="line" data-n="13">    <span class="pu">(</span><span class="io">nng/close</span> <span class="va">sock</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span></span>
+<span class="line" data-n="14"></span>
+<span class="line" data-n="15"><span class="pu">(</span><span class="k2">defmacro</span> <span class="fn">with-timeout</span> <span class="pu">[</span><span class="va">ms</span> <span class="op">&amp;</span><span class="va">body</span><span class="pu">]</span></span>
+<span class="line" data-n="16">  <span class="op">`</span><span class="pu">(</span><span class="k2">try</span></span>
+<span class="line" data-n="17">     <span class="pu">(</span><span class="sp">with-deadline</span> <span class="va">ms</span> <span class="op">~@</span><span class="va">body</span><span class="pu">)</span></span>
+<span class="line" data-n="18">     <span class="pu">(</span><span class="k2">catch</span> <span class="va">:timeout</span> <span class="va">_</span></span>
+<span class="line" data-n="19">       <span class="pu">(</span><span class="io">println</span> <span class="s">"timed out after"</span> <span class="va">ms</span> <span class="s">"ms"</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span><span class="pu">)</span></span></pre>
+        </div>
+    </div>
+
+</div>
+</body>
+</html>
+

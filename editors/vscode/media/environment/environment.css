@@ -1,17 +1,19 @@
 :root {
-    --bg: var(--vscode-editor-background);
-    --fg: var(--vscode-editor-foreground);
-    --muted: var(--vscode-descriptionForeground);
-    --border: var(--vscode-panel-border, #3b3b3b);
-    --button-bg: var(--vscode-button-background);
-    --button-fg: var(--vscode-button-foreground);
-    --button-hover: var(--vscode-button-hoverBackground);
-    --accent: var(--vscode-focusBorder, #007acc);
-    --badge-bg: var(--vscode-badge-background, #4d4d4d);
-    --badge-fg: var(--vscode-badge-foreground, #fff);
-    --error-bg: var(--vscode-inputValidation-errorBackground, rgba(255, 0, 0, 0.12));
-    --error-fg: var(--vscode-errorForeground, #f14c4c);
-    --input-bg: var(--vscode-input-background, #1e1e1e);
+    --bg: var(--vscode-editor-background, #0f0f0f);
+    --fg: var(--vscode-editor-foreground, #ece7e1);
+    --muted: var(--vscode-descriptionForeground, #857d77);
+    --border: var(--vscode-panel-border, #2a2826);
+    --button-bg: var(--vscode-button-background, #fb8aa7);
+    --button-fg: var(--vscode-button-foreground, #0f0f0f);
+    --button-hover: var(--vscode-button-hoverBackground, #f7b1c5);
+    --accent: var(--vscode-focusBorder, #fb8aa7);
+    --accent-2: var(--vscode-editorWarning-foreground, #b69a76);
+    --accent-3: var(--vscode-editorInfo-foreground, #95a8b8);
+    --badge-bg: var(--vscode-badge-background, #2a2826);
+    --badge-fg: var(--vscode-badge-foreground, #ece7e1);
+    --error-bg: var(--vscode-inputValidation-errorBackground, rgba(255, 107, 107, 0.12));
+    --error-fg: var(--vscode-errorForeground, #ff6b6b);
+    --input-bg: var(--vscode-input-background, #161310);
 }
 
 @font-face {
@@ -181,8 +183,8 @@ h2 {
 }
 
 .row.changed {
-    background: color-mix(in srgb, var(--vscode-editorInfo-foreground, #3794ff) 10%, transparent);
-    border-left: 2px solid var(--vscode-editorInfo-foreground, #3794ff);
+    background: color-mix(in srgb, var(--accent-3) 12%, transparent);
+    border-left: 2px solid var(--accent-3);
 }
 
 .row.changed .name,

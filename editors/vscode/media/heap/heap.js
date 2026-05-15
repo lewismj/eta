@@ -39,7 +39,7 @@
     function gaugeColor(cls) {
         if (cls === 'crit') return '#f85149';
         if (cls === 'warn') return '#d29922';
-        return '#2f81f7';
+        return '#b69a76';
     }
     function gaugeSvg(pct, cls) {
         const fill = Math.max(0, Math.min(100, pct));
