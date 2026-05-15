@@ -44,7 +44,22 @@ function(eta_duckdb_fetch)
     set(CMAKE_CXX_STANDARD 17 CACHE STRING
         "C++ standard to enforce"
         FORCE)
+    # DuckDB's upstream install tree includes extension-loader artifacts that
+    # Eta does not package/use directly; skip generating upstream install rules
+    # so super-build installs only include Eta-owned install entries.
+    if(DEFINED CMAKE_SKIP_INSTALL_RULES)
+        set(_eta_duckdb_prev_skip_install_rules_defined TRUE)
+        set(_eta_duckdb_prev_skip_install_rules "${CMAKE_SKIP_INSTALL_RULES}")
+    else()
+        set(_eta_duckdb_prev_skip_install_rules_defined FALSE)
+    endif()
+    set(CMAKE_SKIP_INSTALL_RULES ON)
     FetchContent_MakeAvailable(duckdb_upstream)
+    if(_eta_duckdb_prev_skip_install_rules_defined)
+        set(CMAKE_SKIP_INSTALL_RULES "${_eta_duckdb_prev_skip_install_rules}")
+    else()
+        unset(CMAKE_SKIP_INSTALL_RULES)
+    endif()
     set(CMAKE_CXX_STANDARD "${_eta_duckdb_prev_cxx_standard}")
     set(CMAKE_CXX_STANDARD "${_eta_duckdb_prev_cxx_standard}" CACHE STRING
         "C++ standard to enforce"

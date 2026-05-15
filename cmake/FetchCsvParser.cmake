@@ -32,6 +32,13 @@ if(POLICY CMP0169)
 endif()
 
 if(TARGET csv)
+    # Eta links csv-parser through eta_core into MODULE sidecars, so the static
+    # archive must be PIC-capable on ELF/Mach-O platforms.
+    set_target_properties(csv PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    if(TARGET csv_no_simd)
+        set_target_properties(csv_no_simd PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+
     if(NOT TARGET csv::parser)
         add_library(csv::parser ALIAS csv)
     endif()
