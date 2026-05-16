@@ -67,6 +67,12 @@ export class EnvironmentInspectorPanel {
                         msg.scope === 'all' ? 'eta.showDisassemblyAll' : 'eta.showDisassembly',
                     );
                     break;
+                case 'runFile':
+                    await commands.executeCommand('eta.runFile');
+                    break;
+                case 'debugFile':
+                    await commands.executeCommand('eta.debugFile');
+                    break;
                 case 'setFilter':
                     await this.updateFilterSetting(msg.key as FilterKey, !!msg.value);
                     this.postSettings();

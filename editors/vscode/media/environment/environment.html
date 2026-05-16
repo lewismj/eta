@@ -13,21 +13,45 @@
         <h2>Eta Environment Inspector</h2>
         <div class="toolbar">
             <button id="refreshBtn" class="btn">Refresh</button>
+            <button id="expandBtn" class="btn secondary">Expand All</button>
             <button id="collapseBtn" class="btn secondary">Collapse All</button>
+            <input id="bindingFilter" class="binding-filter" type="search" placeholder="Filter bindings...">
         </div>
-        <div class="filters">
-            <label><input type="checkbox" id="followActiveFrame"> Follow frame</label>
-            <label><input type="checkbox" id="showLocals"> Locals</label>
-            <label><input type="checkbox" id="showClosures"> Closures</label>
-            <label><input type="checkbox" id="showGlobals"> Module</label>
-            <label><input type="checkbox" id="showBuiltins"> Builtins</label>
-            <label><input type="checkbox" id="showInternal"> Internal</label>
-            <label><input type="checkbox" id="showNil"> Nil</label>
-            <label><input type="checkbox" id="showChangedOnly"> Changed Only</label>
+        <div class="filter-groups">
+            <div class="filter-row">
+                <span class="group-label">Scope</span>
+                <label><input type="checkbox" id="showLocals"> Locals</label>
+                <label><input type="checkbox" id="showClosures"> Closures</label>
+                <label><input type="checkbox" id="showGlobals"> Module</label>
+                <label><input type="checkbox" id="showBuiltins"> Builtins</label>
+            </div>
+            <div class="filter-row">
+                <span class="group-label">Options</span>
+                <label><input type="checkbox" id="followActiveFrame"> Follow frame</label>
+                <label><input type="checkbox" id="showInternal"> Internal</label>
+                <label><input type="checkbox" id="showNil"> Nil</label>
+                <label><input type="checkbox" id="showChangedOnly"> Changed only</label>
+                <label><input type="checkbox" id="hideEmpty"> Hide empty</label>
+            </div>
         </div>
     </header>
 
     <div id="error" class="error" style="display:none;"></div>
+    <div id="emptyState" class="empty-state" style="display:none;">
+        <div class="empty-title" id="emptyTitle">No active Eta debug session</div>
+        <div class="empty-body" id="emptyBody">Start or pause an Eta debug session to inspect lexical environments.</div>
+        <div class="empty-actions">
+            <button id="runFileBtn" class="btn">Run File</button>
+            <button id="debugFileBtn" class="btn secondary">Debug File</button>
+        </div>
+    </div>
+
+    <section id="frameSummary" class="frame-summary" style="display:none;">
+        <div class="frame-label">Current frame</div>
+        <div id="frameMain" class="frame-main"></div>
+        <div id="frameLocation" class="frame-location"></div>
+    </section>
+
     <div id="status" class="status"></div>
     <div id="environments" class="tree"></div>
 

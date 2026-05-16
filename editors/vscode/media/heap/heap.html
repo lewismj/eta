@@ -9,29 +9,92 @@
     <link rel="stylesheet" href="{{cssUri}}">
 </head>
 <body>
-    <section class="top-panel">
-        <header>
+    <header class="header panel">
+        <div class="title-row">
             <h2>Eta Heap Inspector</h2>
-            <div class="toolbar">
-                <div class="toolbar-group">
-                    <input type="text" id="kindFilter" placeholder="Filter kinds..." />
-                </div>
-                <div class="toolbar-group">
-                    <button class="btn secondary" id="baselineBtn" title="Capture current snapshot as a comparison baseline.">Capture Baseline</button>
-                    <button class="btn secondary" id="diffBtn" title="Toggle diff view against the captured baseline." disabled>Diff</button>
-                    <button class="btn secondary" id="clearBaselineBtn" title="Drop the baseline snapshot." disabled>Clear Baseline</button>
-                    <button class="btn" id="refreshBtn" title="Re-request a heap snapshot from the VM.">Refresh</button>
-                </div>
+            <div class="title-actions">
+                <button class="btn" id="refreshBtn" title="Request a heap snapshot from the VM.">Refresh</button>
             </div>
-        </header>
+        </div>
+        <div class="filter-row">
+            <div class="field-group">
+                <label class="field-label" for="heapFilter">Filter heap</label>
+                <input id="heapFilter" type="search" placeholder="Kinds, roots, names, object ids...">
+            </div>
+            <div class="field-group mode-group">
+                <label class="field-label" for="filterMode">Scope</label>
+                <select id="filterMode">
+                    <option value="all">All</option>
+                    <option value="kinds">Kinds</option>
+                    <option value="roots">Roots</option>
+                    <option value="objectIds">Object ids</option>
+                </select>
+            </div>
+        </div>
+        <div class="baseline-row">
+            <div id="baselineState" class="baseline-state">Baseline: none captured</div>
+            <div class="baseline-actions">
+                <button class="btn secondary" id="baselineBtn" title="Capture the current snapshot as baseline.">Capture</button>
+                <button class="btn secondary" id="diffBtn" title="Toggle diff view against the captured baseline.">Diff</button>
+                <button class="btn secondary" id="clearBaselineBtn" title="Clear captured baseline.">Clear</button>
+            </div>
+        </div>
+    </header>
+
+    <section id="emptyState" class="empty-state panel">
+        <div id="emptyTitle" class="empty-title">No heap snapshot available</div>
+        <div id="emptyBody" class="empty-body">Pause the VM (breakpoint or step), then refresh the heap inspector.</div>
+        <div class="empty-actions">
+            <button class="btn" id="emptyRefreshBtn">Refresh</button>
+        </div>
     </section>
 
-    <div id="gauges"></div>
-    <div id="kinds"></div>
-    <div id="roots">
-        <div id="placeholder">Pause the VM (breakpoint / step) to inspect the heap.</div>
-    </div>
-    <div id="detail" style="display:none;"></div>
+    <main id="mainContent" class="layout" hidden>
+        <section class="main-column">
+            <div id="gaugeCards" class="gauge-grid"></div>
+
+            <section class="panel kinds-panel">
+                <div class="panel-header">
+                    <h3>Object Kinds</h3>
+                    <div id="kindsSummary" class="panel-meta"></div>
+                </div>
+                <div id="kindsTable" class="table-wrap"></div>
+            </section>
+
+            <section id="rootsPanel" class="panel roots-panel">
+                <div class="panel-header roots-header">
+                    <h3>GC Roots</h3>
+                    <div class="panel-actions">
+                        <span id="rootsSummary" class="panel-meta"></span>
+                        <button class="btn tertiary" id="expandRootsBtn">Expand All</button>
+                        <button class="btn tertiary" id="collapseRootsBtn">Collapse All</button>
+                    </div>
+                </div>
+                <div class="roots-filter-row">
+                    <input id="rootsFilter" type="search" placeholder="Filter roots...">
+                    <div id="kindFocus" class="kind-focus" hidden>
+                        <span id="kindFocusText"></span>
+                        <button class="chip-btn" id="clearKindFocusBtn" title="Clear focused kind">Clear</button>
+                    </div>
+                </div>
+                <div class="roots-columns">
+                    <span>Name</span>
+                    <span class="num-col">Object</span>
+                    <span>Kind</span>
+                    <span class="num-col">Size</span>
+                    <span class="actions-col">Actions</span>
+                </div>
+                <div id="rootsTree" class="roots-tree"></div>
+            </section>
+        </section>
+
+        <aside class="panel detail-pane">
+            <div class="panel-header">
+                <h3>Selected Object</h3>
+            </div>
+            <div id="detailContent" class="detail-content"></div>
+        </aside>
+    </main>
 
     <script nonce="{{nonce}}" src="{{jsUri}}"></script>
 </body>

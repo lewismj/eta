@@ -192,9 +192,32 @@ if [ "${skip_native}" != "ON" ]; then
 fi
 
 echo "> Building Eta package artifacts (.etac) for non-stdlib packages"
+stdlib_module_path="${project_root}/stdlib"
+effective_module_path="${ETA_MODULE_PATH:-}"
+if [ -d "${stdlib_module_path}" ]; then
+  case ":${effective_module_path}:" in
+    *":${stdlib_module_path}:"*) ;;
+    *)
+      if [ -n "${effective_module_path}" ]; then
+        effective_module_path="${stdlib_module_path}:${effective_module_path}"
+      else
+        effective_module_path="${stdlib_module_path}"
+      fi
+      ;;
+  esac
+fi
+
+if [ -n "${effective_module_path}" ]; then
+  echo "  using ETA_MODULE_PATH=${effective_module_path}"
+fi
+
 while IFS= read -r manifest; do
   echo "  - ${manifest}"
-  "${eta_executable}" build --manifest-path "${manifest}"
+  if [ -n "${effective_module_path}" ]; then
+    ETA_MODULE_PATH="${effective_module_path}" "${eta_executable}" build --manifest-path "${manifest}"
+  else
+    "${eta_executable}" build --manifest-path "${manifest}"
+  fi
 done < <(find "${project_root}/packages" -type f -name "eta.toml" \
           ! -path "*/packages/stdlib/*" | sort)
 

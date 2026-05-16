@@ -89,15 +89,15 @@ describe('disassembly parser (B4)', () => {
     it('classifies disassembly lines for sidebar syntax-like styling', () => {
         const call = styleDisassemblyTreeLine('       1: Call                   0', { callTarget: 1 });
         assert.strictEqual(call.iconId, 'arrow-right');
-        assert.strictEqual(call.colorId, 'symbolIcon.functionForeground');
+        assert.strictEqual(call.colorId, 'editorWarning.foreground');
 
         const constant = styleDisassemblyTreeLine('       0: LoadConst              0  ; 7');
         assert.strictEqual(constant.iconId, 'symbol-number');
-        assert.strictEqual(constant.colorId, 'symbolIcon.numberForeground');
+        assert.strictEqual(constant.colorId, 'editorWarning.foreground');
 
         const control = styleDisassemblyTreeLine('       2: Return');
         assert.strictEqual(control.iconId, 'debug-step-over');
-        assert.strictEqual(control.colorId, 'symbolIcon.keywordForeground');
+        assert.strictEqual(control.colorId, 'editorWarning.foreground');
 
         const current = styleDisassemblyTreeLine('       1: Call                   0', { isCurrentPC: true });
         assert.strictEqual(current.iconId, 'debug-stackframe');

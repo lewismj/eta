@@ -129,39 +129,39 @@ export function buildEnvironmentRequestArgs(session: DebugSession): {
 function scopeIcon(scopeKind: string): ThemeIcon {
     switch (scopeKind) {
         case 'locals':
-            return new ThemeIcon('bracket', new ThemeColor('symbolIcon.variableForeground'));
+            return new ThemeIcon('bracket', new ThemeColor('editorInfo.foreground'));
         case 'closure':
         case 'closures':
         case 'upvalues':
-            return new ThemeIcon('link', new ThemeColor('symbolIcon.referenceForeground'));
+            return new ThemeIcon('link', new ThemeColor('editorWarning.foreground'));
         case 'module':
         case 'globals':
-            return new ThemeIcon('symbol-module', new ThemeColor('symbolIcon.moduleForeground'));
+            return new ThemeIcon('symbol-module', new ThemeColor('editorInfo.foreground'));
         case 'builtins':
-            return new ThemeIcon('library', new ThemeColor('symbolIcon.functionForeground'));
+            return new ThemeIcon('library', new ThemeColor('editorWarning.foreground'));
         default:
-            return new ThemeIcon('symbol-namespace', new ThemeColor('symbolIcon.namespaceForeground'));
+            return new ThemeIcon('symbol-namespace', new ThemeColor('editorInfo.foreground'));
     }
 }
 
 const TYPE_ICON: Record<string, [string, string?]> = {
-    procedure: ['symbol-method', 'symbolIcon.functionForeground'],
-    builtin: ['zap', 'symbolIcon.functionForeground'],
-    continuation: ['debug-step-back', 'symbolIcon.eventForeground'],
-    pair: ['list-tree', 'symbolIcon.arrayForeground'],
-    vector: ['symbol-array', 'symbolIcon.arrayForeground'],
-    hashmap: ['symbol-structure', 'symbolIcon.structForeground'],
-    hashset: ['symbol-structure', 'symbolIcon.structForeground'],
-    string: ['symbol-string', 'symbolIcon.stringForeground'],
-    symbol: ['symbol-key', 'symbolIcon.keyForeground'],
-    integer: ['symbol-number', 'symbolIcon.numberForeground'],
-    number: ['symbol-number', 'symbolIcon.numberForeground'],
-    boolean: ['symbol-boolean', 'symbolIcon.booleanForeground'],
-    char: ['symbol-text', 'symbolIcon.stringForeground'],
-    port: ['plug', 'symbolIcon.interfaceForeground'],
-    tensor: ['graph', 'symbolIcon.numberForeground'],
+    procedure: ['symbol-method', 'editorWarning.foreground'],
+    builtin: ['zap', 'editorWarning.foreground'],
+    continuation: ['debug-step-back', 'editorInfo.foreground'],
+    pair: ['list-tree', 'editorInfo.foreground'],
+    vector: ['symbol-array', 'editorInfo.foreground'],
+    hashmap: ['symbol-structure', 'editorInfo.foreground'],
+    hashset: ['symbol-structure', 'editorInfo.foreground'],
+    string: ['symbol-string', 'editorInfo.foreground'],
+    symbol: ['symbol-key', 'editorInfo.foreground'],
+    integer: ['symbol-number', 'editorWarning.foreground'],
+    number: ['symbol-number', 'editorWarning.foreground'],
+    boolean: ['symbol-boolean', 'editorWarning.foreground'],
+    char: ['symbol-text', 'editorInfo.foreground'],
+    port: ['plug', 'editorInfo.foreground'],
+    tensor: ['graph', 'editorWarning.foreground'],
     nil: ['circle-slash', 'disabledForeground'],
-    object: ['symbol-misc', 'symbolIcon.colorForeground'],
+    object: ['symbol-misc', 'editorInfo.foreground'],
 };
 
 function sniffType(value: string): string {

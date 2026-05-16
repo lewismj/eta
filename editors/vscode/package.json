@@ -229,6 +229,14 @@
                 }
             }
         },
+        "configurationDefaults": {
+            "[eta]": {
+                "editor.fontFamily": "Iosevka, 'Iosevka Term', 'Iosevka Fixed', Consolas, 'Courier New', monospace"
+            },
+            "[eta-bytecode]": {
+                "editor.fontFamily": "Iosevka, 'Iosevka Term', 'Iosevka Fixed', Consolas, 'Courier New', monospace"
+            }
+        },
         "commands": [
             {
                 "command": "eta.runFile",

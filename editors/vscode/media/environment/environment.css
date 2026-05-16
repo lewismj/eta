@@ -6,12 +6,12 @@
     --muted: var(--vscode-descriptionForeground, #8a9099);
     --dim: var(--vscode-disabledForeground, #9aa1ab);
     --border: var(--vscode-panel-border, #3a4048);
-    --button-bg: var(--vscode-button-background, #879caf);
+    --button-bg: var(--vscode-button-background, #8ea8c0);
     --button-fg: var(--vscode-button-foreground, #1d2128);
-    --button-hover: var(--vscode-button-hoverBackground, #9fb2c3);
+    --button-hover: var(--vscode-button-hoverBackground, #a5bdd2);
     --accent: var(--vscode-focusBorder, #cf7c92);
     --accent-2: var(--vscode-editorWarning-foreground, #9f8668);
-    --accent-3: var(--vscode-editorInfo-foreground, #8ea1b5);
+    --accent-3: var(--vscode-editorInfo-foreground, #8ea8c0);
     --badge-bg: var(--vscode-badge-background, #3a4048);
     --badge-fg: var(--vscode-badge-foreground, #e7e2dc);
     --error-bg: var(--vscode-inputValidation-errorBackground, rgba(255, 107, 107, 0.12));
@@ -20,7 +20,7 @@
 
     --font-display: "D-DIN", "Arial Narrow", system-ui, sans-serif;
     --font-body: "D-DIN", var(--vscode-font-family, "Segoe UI"), sans-serif;
-    --font-mono: var(--vscode-editor-font-family, "JetBrains Mono", Consolas, monospace);
+    --font-mono: var(--vscode-editor-font-family, "Iosevka", "Iosevka Term", "Iosevka Fixed", Consolas, monospace);
 }
 
 @font-face {
@@ -79,27 +79,58 @@ h2 {
 }
 
 .toolbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto auto auto minmax(180px, 1fr);
     gap: 6px;
-    flex-wrap: wrap;
 }
 
-.filters {
+.binding-filter {
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--fg);
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
+    min-width: 0;
+}
+
+.binding-filter::placeholder {
+    color: var(--muted);
+}
+
+.filter-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.filter-row {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 8px 12px;
     color: var(--muted);
     font-size: 0.84rem;
 }
 
-.filters label {
+.group-label {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    min-width: 46px;
+}
+
+.filter-row label {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     white-space: nowrap;
 }
 
-.filters input[type="checkbox"] {
+.filter-row input[type="checkbox"] {
     accent-color: var(--accent);
 }
 
@@ -124,9 +155,69 @@ h2 {
     border-color: var(--border);
 }
 
+.frame-summary {
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-panel);
+    padding: 7px 9px;
+    margin-bottom: 8px;
+}
+
+.frame-label {
+    font-family: var(--font-display);
+    font-size: 0.66rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+.frame-main {
+    font-family: var(--font-body);
+    color: var(--fg);
+    font-size: 0.86rem;
+}
+
+.frame-location {
+    margin-top: 1px;
+    font-family: var(--font-mono);
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
 .status {
     color: var(--muted);
     margin-bottom: 8px;
+    min-height: 18px;
+    font-size: 0.83rem;
+}
+
+.empty-state {
+    border: 1px dashed var(--border);
+    border-radius: 3px;
+    padding: 10px;
+    margin-bottom: 8px;
+    background: color-mix(in srgb, var(--bg-panel) 75%, var(--bg));
+}
+
+.empty-title {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--fg);
+}
+
+.empty-body {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.empty-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
 }
 
 .error {
@@ -167,13 +258,15 @@ h2 {
 }
 
 .env-header:hover {
-    background: rgba(251, 138, 167, 0.07);
-    background: color-mix(in srgb, var(--accent) 7%, var(--bg-panel));
+    background: color-mix(in srgb, var(--accent-3) 7%, var(--bg-panel));
 }
 
 .env-header.open {
-    background: rgba(251, 138, 167, 0.09);
-    background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
+    background: color-mix(in srgb, var(--accent-3) 10%, var(--bg-panel));
+}
+
+.env-header.empty {
+    color: var(--muted);
 }
 
 .chevron {
@@ -189,14 +282,10 @@ h2 {
     white-space: nowrap;
 }
 
-.badge {
-    border-radius: 999px;
-    padding: 0 6px;
-    line-height: 18px;
-    font-size: 11px;
+.env-meta {
     font-family: var(--font-mono);
-    color: var(--badge-fg);
-    background: var(--badge-bg);
+    font-size: 0.77rem;
+    color: var(--muted);
 }
 
 .env-body {
@@ -204,9 +293,22 @@ h2 {
     background: var(--bg);
 }
 
+.binding-columns {
+    display: grid;
+    grid-template-columns: 16px 42px minmax(120px, 36%) minmax(160px, 1fr) auto;
+    gap: 6px;
+    padding: 2px 6px;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    font-family: var(--font-display);
+}
+
 .row {
     display: grid;
-    grid-template-columns: auto auto 1fr auto auto;
+    grid-template-columns: 16px 42px minmax(120px, 36%) minmax(160px, 1fr) auto;
     align-items: center;
     gap: 6px;
     padding: 2px 6px;
@@ -214,15 +316,18 @@ h2 {
     font-size: 0.84rem;
 }
 
+.row:hover,
+.row:focus-within {
+    background: color-mix(in srgb, var(--accent-3) 6%, transparent);
+}
+
 .row.changed {
-    background: rgba(149, 168, 184, 0.12);
-    background: color-mix(in srgb, var(--accent-3) 12%, transparent);
     border-left: 2px solid var(--accent-3);
 }
 
-.row.changed .name,
-.row.changed .value {
-    color: var(--fg);
+.row.changed .name::before {
+    content: "● ";
+    color: var(--accent-3);
 }
 
 .row.depth-1 { padding-left: 18px; }
@@ -236,13 +341,16 @@ h2 {
     background: transparent;
     color: var(--muted);
     cursor: pointer;
-    width: 12px;
+    width: 14px;
     padding: 0;
+    font-size: 0.8rem;
 }
 
-.icon {
-    width: 12px;
-    color: var(--vscode-symbolIcon-variableForeground, var(--fg));
+.kind {
+    color: var(--accent-2);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    white-space: nowrap;
 }
 
 .name {
@@ -262,6 +370,14 @@ h2 {
 .actions {
     display: inline-flex;
     gap: 4px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.row:hover .actions,
+.row:focus-within .actions {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .icon-btn {
@@ -273,15 +389,36 @@ h2 {
     line-height: 18px;
     font-size: 11px;
     cursor: pointer;
+    font-family: var(--font-body);
 }
 
 .icon-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
+    border-color: var(--accent-3);
+    color: var(--accent-3);
+}
+
+.value-expanded {
+    margin: 0;
+    padding: 2px 6px 4px 64px;
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .hint {
     color: var(--dim);
     font-style: italic;
     padding: 4px 6px;
+}
+
+@media (max-width: 640px) {
+    .toolbar {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .binding-filter {
+        grid-column: 1 / -1;
+    }
 }

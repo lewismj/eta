@@ -225,11 +225,42 @@ $PackageManifests = Get-ChildItem -Path (Join-Path $ProjectRoot "packages") -Rec
     Where-Object { $_.FullName -notmatch '[\\/]+packages[\\/]+stdlib[\\/]' } |
     Sort-Object FullName
 
+$StdlibModulePath = Join-Path $ProjectRoot "stdlib"
+$EffectiveModulePath = $env:ETA_MODULE_PATH
+if (Test-Path -LiteralPath $StdlibModulePath) {
+    $parts = @()
+    if (-not [string]::IsNullOrWhiteSpace($EffectiveModulePath)) {
+        $parts = $EffectiveModulePath.Split([System.IO.Path]::PathSeparator)
+    }
+    if (-not ($parts -contains $StdlibModulePath)) {
+        if ([string]::IsNullOrWhiteSpace($EffectiveModulePath)) {
+            $EffectiveModulePath = $StdlibModulePath
+        } else {
+            $EffectiveModulePath = "$StdlibModulePath$([System.IO.Path]::PathSeparator)$EffectiveModulePath"
+        }
+    }
+}
+
+$PreviousModulePath = $env:ETA_MODULE_PATH
+if (-not [string]::IsNullOrWhiteSpace($EffectiveModulePath)) {
+    Write-Host "  using ETA_MODULE_PATH=$EffectiveModulePath"
+    $env:ETA_MODULE_PATH = $EffectiveModulePath
+}
+
+try {
 foreach ($manifest in $PackageManifests) {
     Write-Host "  - $($manifest.FullName)"
     & $EtaExecutable build --manifest-path $manifest.FullName
     if ($LASTEXITCODE -ne 0) {
         throw "eta build failed for manifest: $($manifest.FullName)"
+    }
+}
+}
+finally {
+    if ($null -eq $PreviousModulePath) {
+        Remove-Item Env:ETA_MODULE_PATH -ErrorAction SilentlyContinue
+    } else {
+        $env:ETA_MODULE_PATH = $PreviousModulePath
     }
 }
 

@@ -35,6 +35,7 @@
 #include "eta/package/manifest.h"
 #include "eta/package/resolver.h"
 #include "eta/util/path.h"
+#include "eta/util/runtime_layout.h"
 
 namespace fs = std::filesystem;
 
@@ -1851,6 +1852,64 @@ void add_package_layout_dirs(const fs::path& package_root,
     if (!added) add_unique(package_root);
 }
 
+[[nodiscard]] fs::path resolve_self_path(const char* argv0) {
+    if (auto self = eta::util::current_executable_path(); self.has_value()) return *self;
+    if (argv0 != nullptr && argv0[0] != '\0') {
+        return canonicalize_path(fs::absolute(fs::path(argv0)));
+    }
+    return {};
+}
+
+void add_unique_existing_dir(const fs::path& candidate,
+                             std::unordered_set<std::string>& seen,
+                             std::vector<fs::path>& out) {
+    std::error_code ec;
+    if (!fs::is_directory(candidate, ec) || ec) return;
+    const auto canonical = canonicalize_path(candidate);
+    if (seen.insert(path_key(canonical)).second) out.push_back(canonical);
+}
+
+[[nodiscard]] bool is_stdlib_root(const fs::path& candidate) {
+    std::error_code ec;
+    if (!fs::is_directory(candidate, ec) || ec) return false;
+    ec.clear();
+    return fs::is_directory(candidate / "std", ec) && !ec;
+}
+
+void add_stdlib_from_ancestors(fs::path start,
+                               std::unordered_set<std::string>& seen,
+                               std::vector<fs::path>& out) {
+    if (start.empty()) return;
+    start = canonicalize_path(start);
+    auto current = start;
+    while (!current.empty()) {
+        const auto candidate = current / "stdlib";
+        if (is_stdlib_root(candidate)) {
+            add_unique_existing_dir(candidate, seen, out);
+            return;
+        }
+        const auto parent = current.parent_path();
+        if (parent == current) return;
+        current = parent;
+    }
+}
+
+void add_stdlib_module_entry(const fs::path& project_root,
+                             const char* argv0,
+                             std::unordered_set<std::string>& seen,
+                             std::vector<fs::path>& out) {
+    add_stdlib_from_ancestors(project_root, seen, out);
+
+    const auto self = resolve_self_path(argv0);
+    if (!self.empty()) {
+        const auto bundled = eta::util::bundled_stdlib_root_from_executable(self);
+        if (is_stdlib_root(bundled)) {
+            add_unique_existing_dir(bundled, seen, out);
+        }
+        add_stdlib_from_ancestors(self.parent_path(), seen, out);
+    }
+}
+
 [[nodiscard]] std::optional<fs::path>
 workspace_member_root_from_source(std::string_view source, const fs::path& workspace_root) {
     if (source.rfind("workspace+", 0) != 0) return std::nullopt;
@@ -1862,7 +1921,8 @@ workspace_member_root_from_source(std::string_view source, const fs::path& works
     return member_root;
 }
 
-std::vector<fs::path> module_entries_from_lockfile(const ResolvedProjectState& state) {
+std::vector<fs::path> module_entries_from_lockfile(const ResolvedProjectState& state,
+                                                   const char* argv0) {
     std::vector<fs::path> entries;
     std::unordered_set<std::string> seen;
 
@@ -1892,13 +1952,15 @@ std::vector<fs::path> module_entries_from_lockfile(const ResolvedProjectState& s
         }
         add_package_layout_dirs(modules_root / (package.name + "-" + package.version),
                                 std::nullopt,
-                                seen,
-                                entries);
+                                 seen,
+                                 entries);
     }
+    add_stdlib_module_entry(state.project_root, argv0, seen, entries);
     return entries;
 }
 
-std::vector<fs::path> module_entries_from_graph(const ResolvedProjectState& state) {
+std::vector<fs::path> module_entries_from_graph(const ResolvedProjectState& state,
+                                                const char* argv0) {
     std::vector<fs::path> entries;
     std::unordered_set<std::string> seen;
 
@@ -1924,15 +1986,8 @@ std::vector<fs::path> module_entries_from_graph(const ResolvedProjectState& stat
         }
         add_package_layout_dirs(package.package_root, release_override, seen, entries);
     }
+    add_stdlib_module_entry(state.project_root, argv0, seen, entries);
     return entries;
-}
-
-[[nodiscard]] fs::path resolve_self_path(const char* argv0) {
-    if (auto self = eta::util::current_executable_path(); self.has_value()) return *self;
-    if (argv0 != nullptr && argv0[0] != '\0') {
-        return canonicalize_path(fs::absolute(fs::path(argv0)));
-    }
-    return {};
 }
 
 [[nodiscard]] fs::path find_tool_path(const char* argv0,
@@ -2058,7 +2113,7 @@ CliResult<int> compile_project_sources(const char* argv0,
     const fs::path out_root = selected_package_target_profile_root(state, options.profile);
     if (auto mk = ensure_directory(out_root); !mk) return std::unexpected(mk.error());
 
-    auto module_entries = module_entries_from_lockfile(state);
+    auto module_entries = module_entries_from_lockfile(state, argv0);
     const std::string module_path = join_module_path_entries(module_entries);
 
     for (const auto& source : source_files) {
@@ -2106,7 +2161,7 @@ CliResult<int> run_project_suite(const char* argv0,
         return 0;
     }
 
-    auto module_entries = module_entries_from_graph(state);
+    auto module_entries = module_entries_from_graph(state, argv0);
     const std::string module_path = join_module_path_entries(module_entries);
 
     std::vector<std::string> test_args;
@@ -2472,7 +2527,7 @@ CliResult<int> command_run(const char* program,
         return std::unexpected("eta run: entry file not found: " + run_file.string());
     }
 
-    auto module_entries = module_entries_from_lockfile(*state);
+    auto module_entries = module_entries_from_lockfile(*state, argv0);
     const std::string module_path = join_module_path_entries(module_entries);
 
     std::vector<std::string> etai_args;

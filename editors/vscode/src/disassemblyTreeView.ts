@@ -116,21 +116,21 @@ function toIcon(style: TreeStyle): ThemeIcon {
 
 function classifyOpcodeStyle(opcode: string): TreeStyle {
     if (CALL_OPS.has(opcode)) {
-        return { iconId: 'arrow-right', colorId: 'symbolIcon.functionForeground', description: 'call' };
+        return { iconId: 'arrow-right', colorId: 'editorWarning.foreground', description: 'call' };
     }
     if (opcode === 'LoadConst') {
-        return { iconId: 'symbol-number', colorId: 'symbolIcon.numberForeground', description: 'constant' };
+        return { iconId: 'symbol-number', colorId: 'editorWarning.foreground', description: 'constant' };
     }
     if (startsWithAny(opcode, LOAD_STORE_PREFIXES)) {
-        return { iconId: 'symbol-variable', colorId: 'symbolIcon.variableForeground' };
+        return { iconId: 'symbol-variable', colorId: 'editorInfo.foreground' };
     }
     if (startsWithAny(opcode, CONTROL_PREFIXES)) {
-        return { iconId: 'debug-step-over', colorId: 'symbolIcon.keywordForeground' };
+        return { iconId: 'debug-step-over', colorId: 'editorWarning.foreground' };
     }
     if (startsWithAny(opcode, ARITH_PREFIXES)) {
-        return { iconId: 'symbol-operator', colorId: 'symbolIcon.operatorForeground' };
+        return { iconId: 'symbol-operator', colorId: 'editorInfo.foreground' };
     }
-    return { iconId: 'circle-outline', colorId: 'symbolIcon.textForeground' };
+    return { iconId: 'circle-outline', colorId: 'editorInfo.foreground' };
 }
 
 export function styleDisassemblyTreeLine(
@@ -147,22 +147,22 @@ export function styleDisassemblyTreeLine(
 
     const opcode = opcodeFromLine(text);
     if (opts.callTarget !== undefined || (opcode && CALL_OPS.has(opcode))) {
-        return { iconId: 'arrow-right', colorId: 'symbolIcon.functionForeground', description: 'call' };
+        return { iconId: 'arrow-right', colorId: 'editorWarning.foreground', description: 'call' };
     }
     if (opcode) return classifyOpcodeStyle(opcode);
     if (isConstantEntry(text)) {
-        return { iconId: 'symbol-number', colorId: 'symbolIcon.constantForeground' };
+        return { iconId: 'symbol-number', colorId: 'editorWarning.foreground' };
     }
     if (opts.isHeader) {
         if (text.trimStart().startsWith(';')) {
             return { iconId: 'comment', colorId: 'descriptionForeground' };
         }
         if (text.trimStart().startsWith('===')) {
-            return { iconId: 'symbol-function', colorId: 'symbolIcon.functionForeground' };
+            return { iconId: 'symbol-function', colorId: 'editorInfo.foreground' };
         }
-        return { iconId: 'symbol-key', colorId: 'symbolIcon.keywordForeground' };
+        return { iconId: 'symbol-key', colorId: 'editorWarning.foreground' };
     }
-    return { iconId: 'circle-outline', colorId: 'symbolIcon.textForeground' };
+    return { iconId: 'circle-outline', colorId: 'editorInfo.foreground' };
 }
 
 function parseFunctions(text: string, currentPC: number, currentFunction?: string): DisasmFunctionNode[] {
@@ -362,7 +362,7 @@ export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
                 );
                 item.iconPath = element.containsPc
                     ? toIcon({ iconId: 'debug-stackframe', colorId: 'editorInfo.foreground' })
-                    : toIcon({ iconId: 'symbol-function', colorId: 'symbolIcon.functionForeground' });
+                    : toIcon({ iconId: 'symbol-function', colorId: 'editorInfo.foreground' });
                 item.description = `${element.instructions.length} instr` + (element.containsPc ? '  PC' : '');
                 item.tooltip = element.headerLines.join('\n');
                 item.contextValue = 'etaDisasm.function';
@@ -373,7 +373,7 @@ export class DisassemblyTreeProvider implements TreeDataProvider<Node> {
                     `${element.label} (${element.children.length})`,
                     TreeItemCollapsibleState.Collapsed,
                 );
-                item.iconPath = toIcon({ iconId: 'symbol-array', colorId: 'symbolIcon.arrayForeground' });
+                item.iconPath = toIcon({ iconId: 'symbol-array', colorId: 'editorWarning.foreground' });
                 return item;
             }
             case 'line': {

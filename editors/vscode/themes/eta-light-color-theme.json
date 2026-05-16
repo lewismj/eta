@@ -7,22 +7,22 @@
         "editor.foreground": "#000000",
         "editorLineNumber.foreground": "#a8a6a1",
         "editorLineNumber.activeForeground": "#b76b84",
-        "editorCursor.foreground": "#b76b84",
+        "editorCursor.foreground": "#9e5b72",
         "editor.selectionBackground": "#fb8aa755",
         "editor.inactiveSelectionBackground": "#fb8aa733",
         "editor.lineHighlightBackground": "#ebe9e4",
         "editor.lineHighlightBorder": "#ebe9e4",
         "editorWhitespace.foreground": "#d8d6d1",
         "editorIndentGuide.background1": "#e2e0db",
-        "editorIndentGuide.activeBackground1": "#fb8aa7",
+        "editorIndentGuide.activeBackground1": "#caa3af",
         "editorBracketMatch.background": "#fb8aa733",
         "editorBracketMatch.border": "#b76b84",
         "editorBracketHighlight.foreground1": "#b76b84",
-        "editorBracketHighlight.foreground2": "#6a3fb5",
-        "editorBracketHighlight.foreground3": "#b89500",
-        "editorBracketHighlight.foreground4": "#3f7d3f",
-        "editorBracketHighlight.foreground5": "#1f6fb5",
-        "editorBracketHighlight.foreground6": "#c45a2c",
+        "editorBracketHighlight.foreground2": "#9c7aa5",
+        "editorBracketHighlight.foreground3": "#9d8b5f",
+        "editorBracketHighlight.foreground4": "#6d8c6d",
+        "editorBracketHighlight.foreground5": "#6f8ba3",
+        "editorBracketHighlight.foreground6": "#9a7c68",
         "editorBracketHighlight.unexpectedBracket.foreground": "#c0392b",
         "editorWidget.background": "#ffffff",
         "editorWidget.border": "#d8d6d1",
@@ -56,7 +56,7 @@
         "list.activeSelectionForeground": "#000000",
         "list.inactiveSelectionBackground": "#fb8aa733",
         "list.hoverBackground": "#e2e0db",
-        "list.highlightForeground": "#c2185b",
+        "list.highlightForeground": "#6f8ba3",
         "statusBar.background": "#ebe9e4",
         "statusBar.foreground": "#000000",
         "statusBar.border": "#d8d6d1",
@@ -83,7 +83,7 @@
         "terminal.ansiYellow": "#b89500",
         "terminal.ansiBlue": "#1f6fb5",
         "terminal.ansiMagenta": "#b76b84",
-        "terminal.ansiCyan": "#6a3fb5",
+        "terminal.ansiCyan": "#6f8ba3",
         "terminal.ansiWhite": "#f5f5f4",
         "terminal.ansiBrightBlack": "#707070",
         "terminal.ansiBrightRed": "#e74c3c",
@@ -117,6 +117,13 @@
         "gitDecoration.addedResourceForeground": "#3f7d3f",
         "gitDecoration.deletedResourceForeground": "#c0392b",
         "gitDecoration.untrackedResourceForeground": "#1f6fb5",
+        "debugTokenExpression.name": "#6f8ba3",
+        "debugTokenExpression.value": "#000000",
+        "debugTokenExpression.string": "#3f7d3f",
+        "debugTokenExpression.boolean": "#76608f",
+        "debugTokenExpression.number": "#9d8b5f",
+        "debugTokenExpression.error": "#c0392b",
+        "debugView.valueChangedHighlight": "#6f8ba355",
         "debugIcon.breakpointForeground": "#b76b84",
         "debugToolBar.background": "#ebe9e4"
     },
@@ -192,7 +199,7 @@
                 "keyword.control.logic.eta",
                 "keyword.control.relational.eta"
             ],
-            "settings": { "foreground": "#6a3fb5" }
+            "settings": { "foreground": "#76608f" }
         },
         {
             "scope": ["keyword.control.supervisor.eta"],
@@ -209,7 +216,7 @@
                 "support.function.math.eta",
                 "support.function"
             ],
-            "settings": { "foreground": "#b89500" }
+            "settings": { "foreground": "#a87432" }
         },
         {
             "scope": ["support.function.io.eta"],
@@ -221,7 +228,7 @@
         },
         {
             "scope": ["support.function.clp.eta"],
-            "settings": { "foreground": "#6a3fb5" }
+            "settings": { "foreground": "#76608f" }
         },
         {
             "scope": ["support.function.torch.eta"],
@@ -229,7 +236,7 @@
         },
         {
             "scope": ["support.function.nng.eta"],
-            "settings": { "foreground": "#b89500" }
+            "settings": { "foreground": "#a87432" }
         },
         {
             "scope": ["support.function.test.eta"],
@@ -237,7 +244,7 @@
         },
         {
             "scope": ["variable.other.logic.eta"],
-            "settings": { "foreground": "#6a3fb5", "fontStyle": "italic" }
+            "settings": { "foreground": "#76608f", "fontStyle": "italic" }
         },
         {
             "scope": ["variable.other.eta", "variable.other", "variable"],

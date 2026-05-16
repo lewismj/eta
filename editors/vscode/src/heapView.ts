@@ -66,6 +66,9 @@ export class HeapInspectorPanel {
                 case 'inspectObject':
                     await this.inspectObject(msg.objectId);
                     break;
+                case 'inspectObjectMeta':
+                    await this.inspectObjectMeta(msg.objectId, msg.requestId);
+                    break;
                 case 'findPaths':
                     await this.findPaths(msg.objectId);
                     break;
@@ -158,6 +161,43 @@ export class HeapInspectorPanel {
         }
     }
 
+    public async inspectObjectMeta(objectId: number, requestId?: number): Promise<void> {
+        const session = debug.activeDebugSession;
+        if (!session || session.type !== 'eta') {
+            this.panel.webview.postMessage({
+                command: 'inspectMetaResult',
+                requestId,
+                objectId,
+                error: 'No active Eta debug session.',
+            });
+            return;
+        }
+        try {
+            const obj = await session.customRequest(
+                'eta/inspectObject', { objectId },
+            ) as ObjectInspection;
+            this.panel.webview.postMessage({
+                command: 'inspectMetaResult',
+                requestId,
+                objectId,
+                data: {
+                    objectId: obj.objectId,
+                    kind: obj.kind,
+                    size: obj.size,
+                    preview: obj.preview,
+                    nativeTypeName: obj.nativeTypeName,
+                },
+            });
+        } catch (err: any) {
+            this.panel.webview.postMessage({
+                command: 'inspectMetaResult',
+                requestId,
+                objectId,
+                error: err?.message ?? String(err),
+            });
+        }
+    }
+
     /**
      * BFS forward from every GC root recorded in the latest snapshot,
      * memoising children via on-demand `eta/inspectObject` calls.
@@ -169,6 +209,7 @@ export class HeapInspectorPanel {
         if (!session || session.type !== 'eta' || !this.snapshot) {
             this.panel.webview.postMessage({
                 command: 'pathsResult',
+                objectId,
                 data: { paths: [], visited: 0, truncated: false,
                         error: 'No active snapshot — refresh first.' } satisfies PathsResult,
             });
@@ -248,7 +289,7 @@ export class HeapInspectorPanel {
             }
         }
 
-        this.panel.webview.postMessage({ command: 'pathsResult', data: result });
+        this.panel.webview.postMessage({ command: 'pathsResult', objectId, data: result });
     }
 
     public static current(): HeapInspectorPanel | undefined {
