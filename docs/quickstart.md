@@ -11,31 +11,46 @@
 > [How to Build Your First App](app/first_app.md), then run the
 > [Cookbook End-to-End Packaging Example](../cookbook/packaging/end-to-end/README.md).
 
-> [!IMPORTANT]
+> [!TIP]
 > **How to get started with Jupyter:** see
 > [Eta Jupyter Kernel (`eta_jupyter`)](guide/reference/jupyter.md) and
 > [Cookbook Notebooks](../cookbook/notebooks/README.md).
 
-> [!IMPORTANT]
+> [!TIP]
 > **How to profile Eta code:** see
 > [Profiling](guide/profiling.md) for `eta prof`, notebook `%%prof`, REPL
 > `:prof`, and `std.prof`.
 
-## Installing from a Release
+## Release Bundle Quick Start
 
 Download the latest archive for your platform from
 [GitHub Releases](https://github.com/lewismj/eta/releases):
 
-| Platform     | Archive                            |
-|--------------|------------------------------------|
-| Windows x64  | `eta-v0.0.2-win-x64.zip`          |
-| Linux x86_64 | `eta-v0.0.2-linux-x86_64.tar.gz`  |
+| Platform     | Archive                                  |
+|--------------|------------------------------------------|
+| Windows x64  | `eta-v<version>-win-x64.zip`             |
+| Linux x86_64 | `eta-v<version>-linux-x86_64.tar.gz`     |
+
+### Bundle Layout (at a glance)
+
+```text
+eta-v<version>-<platform>/
+  bin/        # etac, etai, eta_repl, eta_lsp, eta_dap, ...
+  stdlib/     # std/*.eta + std/*.etac
+  packages/   # package manifests, modules, and sidecar artifacts
+  cookbook/   # chapter folders (basics/, logic/, numerics/, ...)
+  editors/    # eta-lang-<version>.vsix
+  install.sh / install.cmd
+```
+
+The cookbook is chapter-based. The layout above is intentionally not an
+exhaustive file listing.
 
 ### Linux / macOS
 
 ```bash
-tar xzf eta-v0.0.2-linux-x86_64.tar.gz
-cd eta-v0.0.2-linux-x86_64
+tar xzf eta-v<version>-linux-x86_64.tar.gz
+cd eta-v<version>-linux-x86_64
 ./install.sh                  # adds bin/ to PATH, sets ETA_MODULE_PATH
                               # installs VS Code extension if 'code' is on PATH
 ```
@@ -43,14 +58,14 @@ cd eta-v0.0.2-linux-x86_64
 To install into a custom prefix instead of using the bundle in-place:
 
 ```bash
-./install.sh /usr/local       # copies bin/, stdlib/ ? /usr/local/
+./install.sh /usr/local       # copies bin/, stdlib/, packages/, editors/
 ```
 
 ### Windows
 
 ```powershell
-Expand-Archive eta-v0.0.2-win-x64.zip -DestinationPath .
-cd eta-v0.0.2-win-x64
+Expand-Archive eta-v<version>-win-x64.zip -DestinationPath .
+cd eta-v<version>-win-x64
 .\install.cmd                 # adds bin\ to user PATH, sets ETA_MODULE_PATH
                               # installs VS Code extension if 'code' is on PATH
 ```
@@ -60,6 +75,19 @@ To install into a custom prefix:
 ```powershell
 .\install.cmd "C:\Program Files\Eta"
 ```
+
+> [!TIP]
+> To ensure both stdlib modules and bundled packages resolve in terminals,
+> VS Code, and debugging sessions, set `ETA_MODULE_PATH` to include both roots.
+> On Windows, for example:
+> `C:\tmp\eta-v0.0.4-win-x64\stdlib;C:\tmp\eta-v0.0.4-win-x64\packages`
+
+> [!TIP]
+> VS Code setup from a release bundle:
+> 1. Keep `code` on your `PATH` before running the installer, or install manually with:
+>    `code --install-extension .\editors\eta-lang-<version>.vsix --force`
+> 2. Set `eta.lsp.serverPath` / `eta.dap.executablePath` to the bundle's `bin/`.
+> 3. Set `eta.modulePath` to include both `stdlib` and `packages`.
 
 > [!NOTE]
 > Always use `install.cmd` rather than calling `install.ps1`
@@ -219,27 +247,8 @@ Hello, REPL!
 
 ### Standard Library Modules
 
-| Module               | Description                              |
-|----------------------|------------------------------------------|
-| `std.core`           | `atom?`, `compose`, `flip`, `iota`, —    |
-| `std.math`           | `pi`, `e`, `even?`, `gcd`, `expt`, —     |
-| `std.io`             | `println`, `eprintln`, `read-line`, port helpers |
-| `std.collections`    | `filter`, `foldl`, `sort`, `range`, —     |
-| `std.logic`          | `==`, `copy-term`, `naf`, `findall`, —    |
-| `std.clp`            | `clp:=`, `clp:all-different`, `clp:solve`, — |
-| `std.clpb`           | Boolean CLP → `clp:and`, `clp:sat?`, — *(opt-in)* |
-| `std.clpr`           | Real-interval CLP → `clp:r=`, `clp:r-minimize`, — *(opt-in)* |
-| `std.causal`         | `dag:*`, `do:identify`, `do:estimate-effect` |
-| `std.fact_table`     | `make-fact-table`, `fact-table-query`, —  |
-| `std.db`             | `defrel`, `assert`, `retract`, `call-rel`, `tabled` |
-| `std.stats`          | `stats:mean`, `stats:ols`, distributions, — |
-| `std.time`           | `time:now-ms`, `time:elapsed-ms`, `time:format-iso8601-utc`, ... |
-| `std.net`            | `with-socket`, `request-reply`, `worker-pool`, — |
-| `std.freeze`         | `freeze`, `dif` *(opt-in)*                |
-| `std.supervisor`     | `one-for-one`, `one-for-all` *(opt-in)*   |
-| `std.torch`          | `tensor`, `forward`, `train-step!`, — *(opt-in)* |
-| `std.test`           | `make-test`, `assert-equal`, `run`, — *(opt-in)* |
-| `std.prof`           | `prof/start`, `prof/stop`, `prof/report`, `prof/with` |
+See [Standard Library](stdlib.md) for a complete list of modules.
+
 
 ### Writing a Module
 
@@ -365,7 +374,7 @@ add the following to your `settings.json`:
 {
   "eta.lsp.serverPath":    "/path/to/eta-release/bin/eta_lsp",
   "eta.dap.executablePath": "/path/to/eta-release/bin/eta_dap",
-  "eta.modulePath":        "/path/to/eta-release/stdlib"
+  "eta.modulePath":        "/path/to/eta-release/stdlib:/path/to/eta-release/packages"
 }
 ```
 
@@ -374,7 +383,7 @@ add the following to your `settings.json`:
 | `eta.lsp.serverPath` | Path to the `eta_lsp` executable. If empty, the extension searches bundled paths, workspace build output, then `PATH`. |
 | `eta.lsp.enabled` | Enable/disable the language server (default: `true`). |
 | `eta.dap.executablePath` | Path to the `eta_dap` executable (or the directory containing it). If empty, searches next to `eta_lsp`, then bundled paths, then `PATH`. |
-| `eta.modulePath` | Module search path (`ETA_MODULE_PATH`). Used by both LSP and DAP. Falls back to the `ETA_MODULE_PATH` environment variable. |
+| `eta.modulePath` | Module search path (`ETA_MODULE_PATH`). Use `stdlib` + `packages` (`;` on Windows, `:` on Linux/macOS). Used by both LSP and DAP. Falls back to the `ETA_MODULE_PATH` environment variable. |
 | `eta.debug.autoShowHeap` | Automatically open the Heap Inspector when a debug session starts (default: `true`). |
 
 The extension looks for the LSP binary in the following order:
@@ -386,7 +395,7 @@ The extension looks for the LSP binary in the following order:
 
 ### Running & Debugging
 
-1. Open the `cookbook/` folder from the release bundle (**File ? Open Folder**).
+1. Open the `cookbook/` folder from the release bundle (**File -> Open Folder**). It is organized into chapter directories (for example `basics/`, `logic/`, `numerics/`, `concurrency/`).
 2. Open any `.eta` file — syntax highlighting and diagnostics activate automatically.
 3. **Run from terminal:** `etai hello.eta` in the integrated terminal.
 4. **Debug with F5:** press **F5** (or **Run ? Start Debugging**) — the extension launches `eta_dap` automatically.
@@ -437,32 +446,3 @@ session. It provides an expandable tree of GC root categories:
 - Each root object is expandable — clicking it sends an `eta/inspectObject` request and shows child fields (car/cdr, vector elements, upvalues, etc.).
 - Click any object node to open it in the Heap Inspector.
 - Use the refresh button in the panel title bar, or it auto-refreshes on each VM stop.
-
----
-
-## Bundle Layout
-
-```
-eta-v0.0.2-<platform>/
-  bin/
-    etac(.exe)              # Ahead-of-time bytecode compiler
-    etai(.exe)              # File interpreter (also runs .etac files)
-    eta_repl(.exe)          # Interactive REPL
-    eta_lsp(.exe)           # Language Server (JSON-RPC over stdio)
-    eta_dap(.exe)           # Debug Adapter (DAP over stdio, used by VS Code)
-  stdlib/
-    std/
-      core.eta  math.eta  io.eta  collections.eta  test.eta
-      logic.eta  clp.eta  clpb.eta  clpr.eta  causal.eta
-      db.eta  fact_table.eta  freeze.eta  net.eta  stats.eta  time.eta
-      supervisor.eta  torch.eta
-  cookbook/
-    hello.eta  basics.eta  functions.eta  higher-order.eta  ...
-  editors/
-    eta-lang-<version>.vsix # VS Code extension
-  install.sh / install.cmd  # Post-extract installer
-```
-
-The binaries automatically locate `stdlib/` relative to themselves
-(`<exe>/../stdlib/`), so no environment variables are needed when
-using the installed layout.
