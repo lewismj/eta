@@ -132,9 +132,10 @@ void NativeSidecarManager::set_runtime_context(void* runtime_context) noexcept {
 bool NativeSidecarManager::ensure_package_sidecars_loaded(std::optional<fs::path> start_dir,
                                                           std::span<const fs::path> module_dirs,
                                                           std::string_view etai_path) {
+    (void)etai_path;
     if (sidecar_manifest_key_.has_value()) {
         if (!registry_.extensions().empty()) return true;
-        return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+        return ensure_bundled_sidecars_loaded(module_dirs);
     }
 
     const auto load_non_package_sidecars = [&]() {
@@ -142,7 +143,10 @@ bool NativeSidecarManager::ensure_package_sidecars_loaded(std::optional<fs::path
         if (module_path_sidecars_loaded_ && !sidecar_manifest_key_.has_value()) {
             sidecar_manifest_key_ = std::string(kModulePathSidecarManifestKey);
         }
-        return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+        if (module_path_sidecars_loaded_) {
+            return true;
+        }
+        return ensure_bundled_sidecars_loaded(module_dirs);
     };
 
     fs::path discovery_start;
@@ -187,7 +191,7 @@ bool NativeSidecarManager::ensure_package_sidecars_loaded(std::optional<fs::path
     std::error_code lockfile_ec;
     if (!fs::is_regular_file(lockfile_path, lockfile_ec) || lockfile_ec) {
         sidecar_manifest_key_ = package_manifest_key;
-        return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+        return ensure_bundled_sidecars_loaded(module_dirs);
     }
 
     auto lockfile = package::read_lockfile(lockfile_path);
@@ -221,7 +225,7 @@ bool NativeSidecarManager::ensure_package_sidecars_loaded(std::optional<fs::path
 
     if (active_lock_package == nullptr) {
         sidecar_manifest_key_ = package_manifest_key;
-        return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+        return ensure_bundled_sidecars_loaded(module_dirs);
     }
 
     std::unordered_set<std::string> closure_names;
@@ -274,7 +278,7 @@ bool NativeSidecarManager::ensure_package_sidecars_loaded(std::optional<fs::path
 
     if (sidecar_specs.empty()) {
         sidecar_manifest_key_ = package_manifest_key;
-        return ensure_bundled_sidecars_loaded(module_dirs, etai_path);
+        return ensure_bundled_sidecars_loaded(module_dirs);
     }
 
     auto resolved_sidecars = resolve_native_sidecars(load_context, sidecar_specs);
@@ -488,8 +492,7 @@ bool NativeSidecarManager::ensure_module_path_sidecars_loaded(
     return true;
 }
 
-bool NativeSidecarManager::ensure_bundled_sidecars_loaded(std::span<const fs::path> module_dirs,
-                                                          std::string_view etai_path) {
+bool NativeSidecarManager::ensure_bundled_sidecars_loaded(std::span<const fs::path> module_dirs) {
     if (bundled_sidecars_attempted_) return true;
     bundled_sidecars_attempted_ = true;
     const auto& layout = util::kDefaultRuntimeLayoutConfig;
@@ -509,13 +512,6 @@ bool NativeSidecarManager::ensure_bundled_sidecars_loaded(std::span<const fs::pa
     for (const auto& module_dir : module_dirs) {
         add_candidate_root(util::bundled_stdlib_native_root(module_dir, layout));
         add_candidate_root(util::bundled_stdlib_native_root(module_dir.parent_path(), layout));
-    }
-
-    if (!etai_path.empty()) {
-        const fs::path etai_abs_path = util::canonicalize_path(fs::path(etai_path));
-        add_candidate_root(util::bundled_stdlib_native_root(etai_abs_path.parent_path(), layout));
-        add_candidate_root(util::bundled_stdlib_native_root(
-            etai_abs_path.parent_path().parent_path(), layout));
     }
 
     if (candidate_roots.empty()) return true;

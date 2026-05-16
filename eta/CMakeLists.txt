@@ -214,6 +214,80 @@ endif()
 # Runtime core.
 add_subdirectory("${ETA_CORE_DIR}" core)
 
+if(WIN32)
+    set(ETA_STDLIB_NATIVE_ARTIFACT_SUBDIR "native/windows-x64")
+elseif(APPLE)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        set(ETA_STDLIB_NATIVE_ARTIFACT_SUBDIR "native/macos-arm64")
+    else()
+        set(ETA_STDLIB_NATIVE_ARTIFACT_SUBDIR "native/macos-x64")
+    endif()
+else()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        set(ETA_STDLIB_NATIVE_ARTIFACT_SUBDIR "native/linux-arm64")
+    else()
+        set(ETA_STDLIB_NATIVE_ARTIFACT_SUBDIR "native/linux-x64")
+    endif()
+endif()
+
+function(eta_add_stdlib_native_sidecar target_name output_name package_dir)
+    set(_eta_stdlib_package_root "${ETA_STDLIB_NATIVE_DIR}/${package_dir}")
+    set(_eta_stdlib_artifact_dir
+        "${_eta_stdlib_package_root}/${ETA_STDLIB_NATIVE_ARTIFACT_SUBDIR}")
+    set(_eta_legacy_artifact_dir "${CMAKE_BINARY_DIR}/eta")
+
+    add_library(${target_name} MODULE
+        ${ETA_CORE_DIR}/src/eta/native/stdlib_sidecar_extension.cpp
+    )
+    set_target_properties(${target_name} PROPERTIES
+        CXX_SCAN_FOR_MODULES OFF
+        OUTPUT_NAME ${output_name}
+        # Keep stdlib sidecar outputs in package layout so eta_all produces a
+        # copyable packages/ tree without extra install-time staging.
+        LIBRARY_OUTPUT_DIRECTORY          "${_eta_stdlib_artifact_dir}"
+        RUNTIME_OUTPUT_DIRECTORY          "${_eta_stdlib_artifact_dir}"
+        ARCHIVE_OUTPUT_DIRECTORY          "${_eta_stdlib_artifact_dir}"
+        LIBRARY_OUTPUT_DIRECTORY_RELEASE  "${_eta_stdlib_artifact_dir}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE  "${_eta_stdlib_artifact_dir}"
+        ARCHIVE_OUTPUT_DIRECTORY_RELEASE  "${_eta_stdlib_artifact_dir}"
+        LIBRARY_OUTPUT_DIRECTORY_DEBUG    "${_eta_stdlib_artifact_dir}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG    "${_eta_stdlib_artifact_dir}"
+        ARCHIVE_OUTPUT_DIRECTORY_DEBUG    "${_eta_stdlib_artifact_dir}"
+    )
+    target_include_directories(${target_name} PRIVATE
+        ${ETA_CORE_DIR}/src
+        ${Boost_INCLUDE_DIRS}
+    )
+    if(WIN32 OR APPLE)
+        target_link_libraries(${target_name} PRIVATE eta_core)
+    else()
+        target_link_options(${target_name} PRIVATE
+            -Wl,--allow-shlib-undefined
+        )
+    endif()
+    eta_link_sidecar_builtin_runtime(${target_name})
+    target_compile_definitions(${target_name} PRIVATE
+        ETA_NATIVE_EXPORT_SYMBOLS=1
+    )
+    # Remove stale legacy outputs from older build layouts so incremental
+    # builds do not leave duplicate sidecar artifacts in out/<cfg>/eta/.
+    add_custom_command(TARGET ${target_name} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -f
+            "${_eta_stdlib_artifact_dir}/${output_name}.exp"
+            "${_eta_legacy_artifact_dir}/${output_name}.dll"
+            "${_eta_legacy_artifact_dir}/${output_name}.lib"
+            "${_eta_legacy_artifact_dir}/${output_name}.exp"
+            "${_eta_legacy_artifact_dir}/lib${output_name}.so"
+            "${_eta_legacy_artifact_dir}/lib${output_name}.dylib"
+        VERBATIM
+    )
+endfunction()
+
+eta_add_stdlib_native_sidecar(eta_log_sidecar eta_log log)
+eta_add_stdlib_native_sidecar(eta_stats_sidecar eta_stats stats)
+eta_add_stdlib_native_sidecar(eta_torch_sidecar eta_torch torch)
+eta_add_stdlib_native_sidecar(eta_nng_sidecar eta_nng nng)
+
 # User-facing tools and protocol servers.
 add_subdirectory("${ETA_INTERPRETER_DIR}")
 add_subdirectory("${ETA_COMPILER_DIR}")

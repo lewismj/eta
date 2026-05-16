@@ -28,6 +28,7 @@
  */
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -287,11 +288,17 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    /// Base module path resolver (includes stdlib dir from build-time define)
-    auto base_resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
-#ifdef ETA_STDLIB_DIR
-    base_resolver.add_dir(fs::path(ETA_STDLIB_DIR));
-#endif
+    /// When --path / ETA_MODULE_PATH is explicitly provided, keep it authoritative.
+    std::string effective_module_path = cli_path;
+    if (effective_module_path.empty()) {
+        if (const char* env_path = std::getenv("ETA_MODULE_PATH");
+            env_path && env_path[0] != '\0') {
+            effective_module_path = env_path;
+        }
+    }
+    auto base_resolver = effective_module_path.empty()
+        ? eta::interpreter::ModulePathResolver::from_args_or_env("")
+        : eta::interpreter::ModulePathResolver::from_path_string(effective_module_path);
 
     /// Per-file results
     struct FileResult {
@@ -306,9 +313,8 @@ int main(int argc, char* argv[]) {
         const std::size_t heap_bytes =
             eta::session::Driver::parse_heap_env_var("ETA_HEAP_SOFT_LIMIT");
 
-        /// Fresh resolver per file: includes the file's own directory
+        /// Fresh resolver per file
         auto resolver = base_resolver;
-        resolver.add_dir(fs::absolute(test_file).parent_path());
 
         eta::session::Driver driver(resolver, heap_bytes);
         /// Redirect VM output to a StringPort

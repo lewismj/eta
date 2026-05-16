@@ -82,14 +82,6 @@
                 "path": "./snippets/eta.json"
             }
         ],
-        "configurationDefaults": {
-            "[eta]": {
-                "editor.lineHeight": 1.45
-            },
-            "[eta-bytecode]": {
-                "editor.lineHeight": 1.45
-            }
-        },
         "themes": [
             {
                 "label": "Eta Dark",

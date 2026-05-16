@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cstdlib>
 #include <filesystem>
 #include <regex>
 #include <set>
@@ -596,7 +597,12 @@ void DapServer::start_vm_from_current_launch() {
      */
     resolver.set_prefer_source(!script_is_etac);
     /// Also search the directory containing the script being debugged.
-    if (!script_dir.empty()) resolver.add_dir(script_dir);
+    const char* env_module_path = std::getenv("ETA_MODULE_PATH");
+    const bool explicit_module_path =
+        env_module_path != nullptr && env_module_path[0] != '\0';
+    if (!explicit_module_path && !script_dir.empty()) {
+        resolver.add_dir(script_dir);
+    }
 
     /// Log the module search path so the user can diagnose "module not found"
     {
@@ -1253,8 +1259,26 @@ void DapServer::handle_set_variable(const Value& id, const Value& args) {
  * restart
  */
 
-void DapServer::handle_restart(const Value& id, const Value& /*args*/) {
-    auto program = last_launch_args_.get_string("program");
+void DapServer::handle_restart(const Value& id, const Value& args) {
+    Value restart_launch_args = last_launch_args_;
+    const Value* overlay = nullptr;
+    if (args.is_object()) {
+        if (args.has("arguments") && args["arguments"].is_object()) {
+            overlay = &args["arguments"];
+        } else if (args.has("program") || args.has("profile") || args.has("stopOnEntry")) {
+            overlay = &args;
+        }
+    }
+    if (overlay && overlay->is_object()) {
+        if (!restart_launch_args.is_object()) {
+            restart_launch_args = json::object({});
+        }
+        for (const auto& [key, value] : overlay->as_object()) {
+            restart_launch_args.as_object()[key] = value;
+        }
+    }
+
+    auto program = restart_launch_args.get_string("program");
     if (!program || program->empty()) {
         send_error_response(id, 2019, "restart requested before launch; no previous launch arguments are available");
         return;
@@ -1286,10 +1310,11 @@ void DapServer::handle_restart(const Value& id, const Value& /*args*/) {
         if (!ec) script_path_ = absolute;
         script_path_ = script_path_.lexically_normal();
     }
-    stop_on_entry_ = last_launch_args_.has("stopOnEntry")
-                     && last_launch_args_["stopOnEntry"].is_bool()
-                     && last_launch_args_["stopOnEntry"].as_bool();
-    launch_profile_ = last_launch_args_.get_string("profile").value_or("debug");
+    stop_on_entry_ = restart_launch_args.has("stopOnEntry")
+                     && restart_launch_args["stopOnEntry"].is_bool()
+                     && restart_launch_args["stopOnEntry"].as_bool();
+    launch_profile_ = restart_launch_args.get_string("profile").value_or("debug");
+    last_launch_args_ = restart_launch_args;
     launched_ = true;
 
     send_event("output", json::object({

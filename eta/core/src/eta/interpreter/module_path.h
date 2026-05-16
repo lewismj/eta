@@ -58,10 +58,10 @@ public:
 
     /**
      * Construct from CLI --path argument, falling back to ETA_MODULE_PATH env var.
-     * Injects project-local package roots when the current working directory (or
-     * one of its ancestors) contains `eta.toml`.
-     * Also appends compile-time and bundled stdlib fallbacks as last-resort
-     * search paths so stdlib modules are found automatically.
+     * When either source provides an explicit path list, that list is treated
+     * as authoritative. Otherwise, project-local package roots are discovered
+     * from the current working directory (or one of its ancestors containing
+     * `eta.toml`) and compile-time / bundled stdlib fallbacks are appended.
      */
     static ModulePathResolver from_args_or_env(const std::string& cli_path,
                                                bool strict_shadow_scan = false) {
@@ -303,6 +303,33 @@ public:
             add_unique_dir(canonical_path);
         };
 
+        auto apply_path_list = [&](std::string_view path_list) {
+            for (const auto& raw_entry : split_path_entries(path_list)) {
+                auto parsed_entry = parse_module_path_entry(raw_entry);
+                if (!parsed_entry.has_value()) continue;
+                apply_module_path_entry(*parsed_entry);
+            }
+        };
+
+        std::string explicit_path_list;
+        if (!cli_path.empty()) {
+            explicit_path_list = cli_path;
+        } else {
+            const char* env = std::getenv("ETA_MODULE_PATH");
+            if (env && env[0] != '\0') {
+                explicit_path_list = env;
+            }
+        }
+
+        /**
+         * Explicit --path / ETA_MODULE_PATH is authoritative. Do not inject
+         * workspace/manifest/bundled defaults in that mode.
+         */
+        if (!explicit_path_list.empty()) {
+            apply_path_list(explicit_path_list);
+            return resolver;
+        }
+
         if (discovery_start.empty()) {
             std::error_code ec;
             discovery_start = fs::current_path(ec);
@@ -336,23 +363,6 @@ public:
                     add_package_source_root(project_root);
                     add_modules_from_lockfile(project_root);
                 }
-            }
-        }
-
-        auto apply_path_list = [&](std::string_view path_list) {
-            for (const auto& raw_entry : split_path_entries(path_list)) {
-                auto parsed_entry = parse_module_path_entry(raw_entry);
-                if (!parsed_entry.has_value()) continue;
-                apply_module_path_entry(*parsed_entry);
-            }
-        };
-
-        if (!cli_path.empty()) {
-            apply_path_list(cli_path);
-        } else {
-            const char* env = std::getenv("ETA_MODULE_PATH");
-            if (env && env[0] != '\0') {
-                apply_path_list(env);
             }
         }
 

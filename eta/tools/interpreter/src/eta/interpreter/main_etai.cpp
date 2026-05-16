@@ -222,8 +222,13 @@ int main(int argc, char* argv[]) {
      * Also add the directory containing the input file so sibling
      * modules can be found without an explicit --path.
      */
-    auto parent_dir = fs::absolute(file_path).parent_path();
-    resolver.add_dir(parent_dir);
+    const char* env_module_path = std::getenv("ETA_MODULE_PATH");
+    const bool explicit_module_path =
+        !cli_path.empty() || (env_module_path != nullptr && env_module_path[0] != '\0');
+    if (!explicit_module_path) {
+        auto parent_dir = fs::absolute(file_path).parent_path();
+        resolver.add_dir(parent_dir);
+    }
 
     /// Create driver (pass argv[0] as the etai path)
     std::string self_path = argv[0];

@@ -188,7 +188,7 @@
             const glyph = isOpen ? 'v' : '>';
 
             html += '<section class="env">';
-            html += `<button class="env-header" data-action="toggle-env" data-env="${escapeHtml(key)}">`;
+            html += `<button class="env-header${isOpen ? ' open' : ''}" data-action="toggle-env" data-env="${escapeHtml(key)}">`;
             html += `<span class="chevron">${glyph}</span>`;
             html += `<span class="env-title">${escapeHtml(env.label)}</span>`;
             html += `<span class="badge" title="${env.truncated ? `showing ${shown} of ${env.total}` : `${env.total}`}">${escapeHtml(badge)}</span>`;

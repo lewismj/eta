@@ -82,8 +82,7 @@ private:
         std::string symbol_name,
         void* callable);
 
-    bool ensure_bundled_sidecars_loaded(std::span<const fs::path> module_dirs,
-                                        std::string_view etai_path);
+    bool ensure_bundled_sidecars_loaded(std::span<const fs::path> module_dirs);
     bool ensure_module_path_sidecars_loaded(std::span<const fs::path> module_dirs);
     bool sync_sidecar_extensions_into_environment();
 

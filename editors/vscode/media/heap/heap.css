@@ -1,25 +1,32 @@
 :root {
-    --bg: var(--vscode-editor-background, #0f0f0f);
-    --fg: var(--vscode-editor-foreground, #ece7e1);
-    --muted: var(--vscode-descriptionForeground, #857d77);
-    --border: var(--vscode-panel-border, #2a2826);
-    --accent: var(--vscode-focusBorder, #fb8aa7);
-    --accent-2: var(--vscode-editorWarning-foreground, #b69a76);
-    --accent-3: var(--vscode-editorInfo-foreground, #95a8b8);
-    --button-bg: var(--vscode-button-background, #fb8aa7);
-    --button-fg: var(--vscode-button-foreground, #0f0f0f);
-    --button-hover: var(--vscode-button-hoverBackground, #f7b1c5);
-    --badge: var(--vscode-badge-background, #2a2826);
-    --badge-fg: var(--vscode-badge-foreground, #ece7e1);
-    --bar-bg: var(--vscode-charts-purple, var(--vscode-focusBorder, #fb8aa7));
-    --bar-track: var(--vscode-input-background, #161310);
+    --bg: var(--vscode-editor-background, #1d2128);
+    --bg-panel: var(--vscode-sideBar-background, #171b21);
+    --bg-line: var(--vscode-list-hoverBackground, #252a33);
+    --fg: var(--vscode-editor-foreground, #e7e2dc);
+    --muted: var(--vscode-descriptionForeground, #8a9099);
+    --dim: var(--vscode-disabledForeground, #9aa1ab);
+    --border: var(--vscode-panel-border, #3a4048);
+    --accent: var(--vscode-focusBorder, #cf7c92);
+    --accent-2: var(--vscode-editorWarning-foreground, #9f8668);
+    --accent-3: var(--vscode-editorInfo-foreground, #8ea1b5);
+    --button-bg: var(--vscode-button-background, #879caf);
+    --button-fg: var(--vscode-button-foreground, #1d2128);
+    --button-hover: var(--vscode-button-hoverBackground, #9fb2c3);
+    --badge: var(--vscode-badge-background, #3a4048);
+    --badge-fg: var(--vscode-badge-foreground, #e7e2dc);
+    --bar-bg: var(--vscode-charts-purple, #cf7c92);
+    --bar-track: var(--vscode-input-background, #20252e);
     --error: var(--vscode-errorForeground, #ff6b6b);
-    --warn: var(--vscode-editorWarning-foreground, #b69a76);
+    --warn: var(--vscode-editorWarning-foreground, #9f8668);
     --add: var(--vscode-gitDecoration-addedResourceForeground, #a8c8a8);
     --del: var(--vscode-gitDecoration-deletedResourceForeground, #ff6b6b);
-    --input-bg: var(--vscode-input-background, #161310);
-    --input-fg: var(--vscode-input-foreground, #ece7e1);
-    --input-border: var(--vscode-input-border, #2a2826);
+    --input-bg: var(--vscode-input-background, #20252e);
+    --input-fg: var(--vscode-input-foreground, #e7e2dc);
+    --input-border: var(--vscode-input-border, #3a4048);
+
+    --font-display: "D-DIN", "Arial Narrow", system-ui, sans-serif;
+    --font-body: "D-DIN", var(--vscode-font-family, "Segoe UI"), sans-serif;
+    --font-mono: var(--vscode-editor-font-family, "JetBrains Mono", Consolas, monospace);
 }
 
 @font-face {
@@ -49,15 +56,18 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-    font-family: "D-DIN", var(--vscode-font-family, "Segoe UI", sans-serif);
+    font-family: var(--font-body);
     font-size: var(--vscode-font-size, 13px);
+    line-height: 1.45;
     color: var(--fg);
     background: var(--bg);
     padding: 12px;
+    -webkit-font-smoothing: antialiased;
 }
 
 .top-panel {
     border: 1px solid var(--border);
+    background: var(--bg-panel);
     border-radius: 3px;
     padding: 8px 10px;
     margin-bottom: 12px;
@@ -74,8 +84,24 @@ header {
     flex-wrap: wrap;
 }
 
-h2 { font-size: 1.1em; }
-h3 { font-size: 1em; margin-top: 8px; margin-bottom: 4px; }
+h2 {
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+h3 {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+
 .section { margin-bottom: 16px; }
 
 .toolbar {
@@ -99,7 +125,8 @@ h3 { font-size: 1em; margin-top: 8px; margin-bottom: 4px; }
     border-radius: 3px;
     padding: 3px 8px;
     cursor: pointer;
-    font-size: 0.9em;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
 }
 
 .btn:hover {
@@ -126,8 +153,13 @@ input[type=text] {
     border: 1px solid var(--input-border);
     border-radius: 3px;
     padding: 3px 6px;
-    font-size: 0.9em;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
     min-width: 160px;
+}
+
+input[type=text]::placeholder {
+    color: var(--muted);
 }
 
 /* Memory gauge */
@@ -168,12 +200,14 @@ input[type=text] {
     min-width: 56px;
     text-align: right;
     font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
 }
 
-.gauge-stats { font-size: 0.92em; }
+.gauge-stats { font-size: 0.84rem; color: var(--muted); }
 
 .gauge-panel {
     border: 1px solid var(--border);
+    background: var(--bg-panel);
     border-radius: 3px;
     padding: 6px 8px 8px;
 }
@@ -183,6 +217,7 @@ input[type=text] {
 /* Kind stats table */
 .kinds-panel {
     border: 1px solid var(--border);
+    background: var(--bg-panel);
     border-radius: 3px;
     padding: 6px 8px 8px;
     margin-bottom: 14px;
@@ -192,12 +227,20 @@ input[type=text] {
 
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--border); }
-th { opacity: 0.7; font-weight: 600; user-select: none; }
+th {
+    color: var(--muted);
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    user-select: none;
+}
 th.sortable { cursor: pointer; }
-th.sortable.sorted { color: var(--accent); opacity: 1; }
+th.sortable.sorted { color: var(--accent-3); }
 th.sortable.sorted::after { content: " v"; }
 th.sortable.sorted.asc::after { content: " ^"; }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
+.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
 
 .delta-pos { color: var(--add); }
 .delta-neg { color: var(--del); }
@@ -205,6 +248,7 @@ th.sortable.sorted.asc::after { content: " ^"; }
 tr.row-new td:first-child::before { content: "+ "; color: var(--add); }
 tr.row-removed td:first-child::before { content: "- "; color: var(--del); }
 tr.row-removed { opacity: 0.65; font-style: italic; }
+tbody tr:hover td { background: var(--bg-line); }
 
 /* Roots / object tree */
 .roots-panel { margin-top: 8px; }
@@ -212,6 +256,7 @@ tr.row-removed { opacity: 0.65; font-style: italic; }
 
 .root-group {
     border: 1px solid var(--border);
+    background: var(--bg-panel);
     border-radius: 3px;
     overflow: hidden;
     margin-bottom: 6px;
@@ -222,7 +267,7 @@ tr.row-removed { opacity: 0.65; font-style: italic; }
     width: 100%;
     border: 0;
     border-bottom: 1px solid var(--border);
-    background: var(--input-bg);
+    background: var(--bg);
     color: var(--fg);
     display: grid;
     grid-template-columns: auto 1fr auto;
@@ -233,15 +278,27 @@ tr.row-removed { opacity: 0.65; font-style: italic; }
     cursor: pointer;
 }
 
-.root-row.module { border-top: 1px solid var(--border); }
+.root-row.module {
+    border-top: 1px solid var(--border);
+    background: var(--bg-panel);
+}
 
 .root-header:hover,
 .root-row.module:hover {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
+    background: var(--bg-line);
 }
 
-.root-body { padding: 2px 0; }
+.root-toggle.open {
+    background: rgba(251, 138, 167, 0.06);
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+}
+
+.root-row.module.root-toggle.open {
+    background: rgba(251, 138, 167, 0.04);
+    background: color-mix(in srgb, var(--accent) 4%, var(--bg-panel));
+}
+
+.root-body { padding: 2px 0; background: var(--bg); }
 
 .root-children {
     padding: 2px 0;
@@ -271,7 +328,7 @@ tr.row-removed { opacity: 0.65; font-style: italic; }
 .root-hint {
     padding: 4px 8px;
     color: var(--muted);
-    font-size: 0.92em;
+    font-size: 0.84rem;
 }
 
 .root-link,
@@ -288,7 +345,8 @@ tr.row-removed { opacity: 0.65; font-style: italic; }
     display: inline-block;
     padding: 0 6px;
     border-radius: 8px;
-    font-size: 0.85em;
+    font-size: 0.74rem;
+    font-family: var(--font-mono);
     background: var(--badge);
     color: var(--badge-fg);
 }
@@ -301,7 +359,7 @@ tr.row-removed { opacity: 0.65; font-style: italic; }
 }
 
 .detail-row { margin: 2px 0; }
-.detail-label { opacity: 0.7; }
+.detail-label { color: var(--muted); }
 .detail-actions { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
 
 .tree { list-style: none; padding-left: 0; }
@@ -311,11 +369,11 @@ tr.row-removed { opacity: 0.65; font-style: italic; }
 .path-list { list-style: none; padding-left: 0; margin-top: 4px; }
 .path-list li { padding: 2px 0; }
 .path-arrow { opacity: 0.6; padding: 0 4px; }
-.path-status { opacity: 0.75; font-size: 0.92em; margin-top: 4px; }
+.path-status { color: var(--muted); font-size: 0.84rem; margin-top: 4px; }
 
 .error { color: var(--error); margin: 8px 0; }
-#placeholder { opacity: 0.6; margin-top: 32px; text-align: center; }
-.muted { opacity: 0.65; }
+#placeholder { color: var(--dim); margin-top: 32px; text-align: center; }
+.muted { color: var(--muted); }
 
 .spinner {
     display: inline-block;

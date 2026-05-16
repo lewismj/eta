@@ -22,35 +22,35 @@
 
 /* ── Site design tokens (dark) ── */
 :root {
-    --bg:        #0f0f0f;
-    --bg-panel:  #0a0908;
-    --bg-line:   #1a1714;
-    --fg:        #ece7e1;
-    --muted:     #857d77;
-    --dim:       #8a847e;
-    --border:    #2a2826;
-    --accent:    #fb8aa7;   /* site --accent   */
-    --accent-2:  #b69a76;   /* site --accent-2 */
-    --accent-3:  #95a8b8;   /* site --accent-3 */
+    --bg:        #1d2128;
+    --bg-panel:  #171b21;
+    --bg-line:   #252a33;
+    --fg:        #e7e2dc;
+    --muted:     #8a9099;
+    --dim:       #9aa1ab;
+    --border:    #3a4048;
+    --accent:    #cf7c92;   /* site --accent   */
+    --accent-2:  #9f8668;   /* site --accent-2 */
+    --accent-3:  #8ea1b5;   /* site --accent-3 */
 
     /* token colours */
-    --tok-comment:   #857d77;
-    --tok-string:    #d7b0bb;
+    --tok-comment:   #8a9099;
+    --tok-string:    #e6d3d8;
     --tok-escape:    #e4c1ca;
     --tok-number:    #e4c1ca;
-    --tok-keyword:   #fb8aa7;
-    --tok-keyword-2: #f0a4bc;
-    --tok-fn-name:   #f0a4bc;
-    --tok-fn:        #f0a4bc;
-    --tok-io:        #95a8b8;
-    --tok-logic:     #95a8b8;
-    --tok-sup:       #b69a76;
+    --tok-keyword:   #c97b8f;
+    --tok-keyword-2: #b98c9c;
+    --tok-fn-name:   #c7ced8;
+    --tok-fn:        #c7ced8;
+    --tok-io:        #8ea1b5;
+    --tok-logic:     #8ea1b5;
+    --tok-sup:       #9f8668;
     --tok-op:        #a19a94;
-    --tok-var:       #ece7e1;
-    --tok-punct:     #8a847e;
+    --tok-var:       #e7e2dc;
+    --tok-punct:     #9aa1ab;
     --tok-error:     #ff6b6b;
-    --tok-opcode:    #fb8aa7;
-    --tok-section:   #fb8aa7;
+    --tok-opcode:    #8ea1b5;
+    --tok-section:   #8ea1b5;
 
     --font-display: "D-DIN", "Arial Narrow", system-ui, sans-serif;
     --font-mono:    "JetBrains Mono", "Fira Code", Consolas, monospace;
@@ -176,8 +176,8 @@ pre {
 }
 
 .line.current-pc {
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-    border-left: 2px solid var(--accent);
+    background: color-mix(in srgb, var(--accent-3) 16%, transparent);
+    border-left: 2px solid var(--accent-3);
     padding-left: 42px;
 }
 
@@ -189,7 +189,7 @@ pre {
 .kw { color: var(--tok-keyword); }                        /* keyword         */
 .k2 { color: var(--tok-keyword-2); }                      /* secondary kw    */
 .fn { color: var(--tok-fn);      }                        /* function name   */
-.fh { color: var(--tok-fn-name); font-weight: 700; }      /* func header     */
+.fh { color: var(--tok-fn-name); font-weight: 400; }      /* func header     */
 .bi { color: var(--tok-fn);      }                        /* builtin         */
 .io { color: var(--tok-io);      }                        /* io fn           */
 .lg { color: var(--tok-logic);   }                        /* logic           */
@@ -341,7 +341,7 @@ pre {
 
 .hbtn {
     background: var(--accent);
-    color: #0f0f0f;
+    color: #1d2128;
     border: 1px solid transparent;
     border-radius: 3px;
     padding: 3px 9px;
@@ -432,7 +432,7 @@ pre {
     cursor: pointer;
     user-select: none;
 }
-.heap-table th.sorted { color: var(--accent); }
+.heap-table th.sorted { color: var(--accent-3); }
 .heap-table td {
     padding: 3px 8px;
     border-bottom: 1px solid var(--border);
@@ -507,15 +507,15 @@ pre {
     <!-- ── Colour palette ── -->
     <div class="section-label">Colour palette</div>
     <div class="swatches">
-        <div class="swatch"><div class="swatch-dot" style="background:#fb8aa7"></div><span class="swatch-label">#fb8aa7 — accent · opcodes · keywords</span></div>
-        <div class="swatch"><div class="swatch-dot" style="background:#f0a4bc"></div><span class="swatch-label">#f0a4bc — function names · secondary kw</span></div>
-        <div class="swatch"><div class="swatch-dot" style="background:#d7b0bb"></div><span class="swatch-label">#d7b0bb — strings</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#c97b8f"></div><span class="swatch-label">#c97b8f — source keywords</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#b98c9c"></div><span class="swatch-label">#b98c9c — secondary keywords</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#e6d3d8"></div><span class="swatch-label">#e6d3d8 — strings</span></div>
         <div class="swatch"><div class="swatch-dot" style="background:#e4c1ca"></div><span class="swatch-label">#e4c1ca — numbers · constants</span></div>
-        <div class="swatch"><div class="swatch-dot" style="background:#b69a76"></div><span class="swatch-label">#b69a76 — accent-2 · supervisor · logic vars</span></div>
-        <div class="swatch"><div class="swatch-dot" style="background:#95a8b8"></div><span class="swatch-label">#95a8b8 — accent-3 · IO · logic kw</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#9f8668"></div><span class="swatch-label">#9f8668 — accent-2 · supervisor · logic vars</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#8ea1b5"></div><span class="swatch-label">#8ea1b5 — accent-3 · opcodes · sections · IO</span></div>
         <div class="swatch"><div class="swatch-dot" style="background:#a19a94"></div><span class="swatch-label">#a19a94 — operators</span></div>
-        <div class="swatch"><div class="swatch-dot" style="background:#857d77"></div><span class="swatch-label">#857d77 — comments · muted</span></div>
-        <div class="swatch"><div class="swatch-dot" style="background:#ece7e1"></div><span class="swatch-label">#ece7e1 — foreground</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#8a9099"></div><span class="swatch-label">#8a9099 — comments · muted</span></div>
+        <div class="swatch"><div class="swatch-dot" style="background:#e7e2dc"></div><span class="swatch-label">#e7e2dc — foreground</span></div>
         <div class="swatch"><div class="swatch-dot" style="background:#ff6b6b"></div><span class="swatch-label">#ff6b6b — errors · exceptions</span></div>
     </div>
 

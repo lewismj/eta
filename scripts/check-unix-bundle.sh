@@ -191,8 +191,7 @@ if [ -n "$SOURCE_PACKAGES_DIR" ]; then
                 fi
             fi
 
-            if [[ "$rel_path" != stdlib/* ]] \
-               && grep -Eq '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"sidecar"[[:space:]]*$' "$bundle_manifest"; then
+            if grep -Eq '^[[:space:]]*kind[[:space:]]*=[[:space:]]*"sidecar"[[:space:]]*$' "$bundle_manifest"; then
                 if [ -z "$host_target_triple" ]; then
                     missing_package_sidecars+=("packages/${rel_path} -> unsupported host triple")
                 else

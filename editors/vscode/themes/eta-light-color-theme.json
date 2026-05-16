@@ -6,8 +6,8 @@
         "editor.background": "#f5f5f4",
         "editor.foreground": "#000000",
         "editorLineNumber.foreground": "#a8a6a1",
-        "editorLineNumber.activeForeground": "#c2185b",
-        "editorCursor.foreground": "#c2185b",
+        "editorLineNumber.activeForeground": "#b76b84",
+        "editorCursor.foreground": "#b76b84",
         "editor.selectionBackground": "#fb8aa755",
         "editor.inactiveSelectionBackground": "#fb8aa733",
         "editor.lineHighlightBackground": "#ebe9e4",
@@ -16,8 +16,8 @@
         "editorIndentGuide.background1": "#e2e0db",
         "editorIndentGuide.activeBackground1": "#fb8aa7",
         "editorBracketMatch.background": "#fb8aa733",
-        "editorBracketMatch.border": "#c2185b",
-        "editorBracketHighlight.foreground1": "#c2185b",
+        "editorBracketMatch.border": "#b76b84",
+        "editorBracketHighlight.foreground1": "#b76b84",
         "editorBracketHighlight.foreground2": "#6a3fb5",
         "editorBracketHighlight.foreground3": "#b89500",
         "editorBracketHighlight.foreground4": "#3f7d3f",
@@ -31,19 +31,19 @@
         "editorSuggestWidget.background": "#ffffff",
         "editorSuggestWidget.border": "#d8d6d1",
         "editorSuggestWidget.selectedBackground": "#fb8aa733",
-        "editorSuggestWidget.highlightForeground": "#c2185b",
+        "editorSuggestWidget.highlightForeground": "#b76b84",
         "editorGroupHeader.tabsBackground": "#ebe9e4",
         "editorGroupHeader.border": "#d8d6d1",
         "tab.activeBackground": "#f5f5f4",
         "tab.activeForeground": "#000000",
-        "tab.activeBorderTop": "#fb8aa7",
+        "tab.activeBorderTop": "#95a8b8",
         "tab.inactiveBackground": "#ebe9e4",
         "tab.inactiveForeground": "#5b5b5b",
         "tab.border": "#d8d6d1",
         "activityBar.background": "#ebe9e4",
         "activityBar.foreground": "#000000",
         "activityBar.inactiveForeground": "#707070",
-        "activityBar.activeBorder": "#c2185b",
+        "activityBar.activeBorder": "#95a8b8",
         "activityBarBadge.background": "#fb8aa7",
         "activityBarBadge.foreground": "#000000",
         "sideBar.background": "#ebe9e4",
@@ -63,7 +63,7 @@
         "statusBar.debuggingBackground": "#fb8aa7",
         "statusBar.debuggingForeground": "#000000",
         "statusBar.noFolderBackground": "#ebe9e4",
-        "statusBarItem.remoteBackground": "#fb8aa7",
+        "statusBarItem.remoteBackground": "#95a8b8",
         "statusBarItem.remoteForeground": "#000000",
         "titleBar.activeBackground": "#ebe9e4",
         "titleBar.activeForeground": "#000000",
@@ -73,7 +73,7 @@
         "panel.background": "#ebe9e4",
         "panel.border": "#d8d6d1",
         "panelTitle.activeForeground": "#000000",
-        "panelTitle.activeBorder": "#fb8aa7",
+        "panelTitle.activeBorder": "#95a8b8",
         "panelTitle.inactiveForeground": "#5b5b5b",
         "terminal.background": "#f5f5f4",
         "terminal.foreground": "#000000",
@@ -82,7 +82,7 @@
         "terminal.ansiGreen": "#3f7d3f",
         "terminal.ansiYellow": "#b89500",
         "terminal.ansiBlue": "#1f6fb5",
-        "terminal.ansiMagenta": "#c2185b",
+        "terminal.ansiMagenta": "#b76b84",
         "terminal.ansiCyan": "#6a3fb5",
         "terminal.ansiWhite": "#f5f5f4",
         "terminal.ansiBrightBlack": "#707070",
@@ -93,20 +93,20 @@
         "terminal.ansiBrightMagenta": "#fb8aa7",
         "terminal.ansiBrightCyan": "#8a5fd6",
         "terminal.ansiBrightWhite": "#ffffff",
-        "button.background": "#fb8aa7",
+        "button.background": "#95a8b8",
         "button.foreground": "#000000",
-        "button.hoverBackground": "#c2185b",
+        "button.hoverBackground": "#b0c4d0",
         "input.background": "#ffffff",
         "input.foreground": "#000000",
         "input.border": "#d8d6d1",
-        "inputOption.activeBorder": "#fb8aa7",
-        "focusBorder": "#fb8aa7",
-        "scrollbarSlider.background": "#fb8aa755",
-        "scrollbarSlider.hoverBackground": "#fb8aa777",
-        "scrollbarSlider.activeBackground": "#fb8aa799",
-        "badge.background": "#fb8aa7",
+        "inputOption.activeBorder": "#95a8b8",
+        "focusBorder": "#95a8b8",
+        "scrollbarSlider.background": "#95a8b855",
+        "scrollbarSlider.hoverBackground": "#95a8b877",
+        "scrollbarSlider.activeBackground": "#95a8b899",
+        "badge.background": "#95a8b8",
         "badge.foreground": "#000000",
-        "progressBar.background": "#fb8aa7",
+        "progressBar.background": "#95a8b8",
         "errorForeground": "#c0392b",
         "editorError.foreground": "#c0392b",
         "editorWarning.foreground": "#b89500",
@@ -117,7 +117,7 @@
         "gitDecoration.addedResourceForeground": "#3f7d3f",
         "gitDecoration.deletedResourceForeground": "#c0392b",
         "gitDecoration.untrackedResourceForeground": "#1f6fb5",
-        "debugIcon.breakpointForeground": "#c2185b",
+        "debugIcon.breakpointForeground": "#b76b84",
         "debugToolBar.background": "#ebe9e4"
     },
     "tokenColors": [
@@ -172,7 +172,7 @@
                 "keyword.control",
                 "keyword"
             ],
-            "settings": { "foreground": "#c2185b" }
+            "settings": { "foreground": "#b76b84" }
         },
         {
             "scope": [
@@ -181,7 +181,7 @@
                 "keyword.control.sugar.eta",
                 "keyword.control.advanced.eta"
             ],
-            "settings": { "foreground": "#d6447f" }
+            "settings": { "foreground": "#c9859a" }
         },
         {
             "scope": ["keyword.control.exception.eta"],
@@ -200,7 +200,7 @@
         },
         {
             "scope": ["keyword.operator.quote.eta", "keyword.operator"],
-            "settings": { "foreground": "#c2185b", "fontStyle": "italic" }
+            "settings": { "foreground": "#b76b84", "fontStyle": "italic" }
         },
         {
             "scope": [
@@ -217,7 +217,7 @@
         },
         {
             "scope": ["support.function.ad.eta"],
-            "settings": { "foreground": "#c2185b", "fontStyle": "bold" }
+            "settings": { "foreground": "#b76b84", "fontStyle": "bold" }
         },
         {
             "scope": ["support.function.clp.eta"],

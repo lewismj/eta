@@ -71,6 +71,9 @@ public:
         std::lock_guard<std::mutex> lk(debug_mutex_);
         step_mode_  = StepMode::None;
         step_skip_current_ = false;
+        /// If a pause was requested but not yet observed by the VM thread,
+        /// resume should cancel it (important for disconnect/restart races).
+        should_pause_.store(false, std::memory_order_relaxed);
         is_paused_  = false;
         last_bp_file_ = 0;
         last_bp_line_ = 0;

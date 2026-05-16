@@ -1,19 +1,26 @@
 :root {
-    --bg: var(--vscode-editor-background, #0f0f0f);
-    --fg: var(--vscode-editor-foreground, #ece7e1);
-    --muted: var(--vscode-descriptionForeground, #857d77);
-    --border: var(--vscode-panel-border, #2a2826);
-    --button-bg: var(--vscode-button-background, #fb8aa7);
-    --button-fg: var(--vscode-button-foreground, #0f0f0f);
-    --button-hover: var(--vscode-button-hoverBackground, #f7b1c5);
-    --accent: var(--vscode-focusBorder, #fb8aa7);
-    --accent-2: var(--vscode-editorWarning-foreground, #b69a76);
-    --accent-3: var(--vscode-editorInfo-foreground, #95a8b8);
-    --badge-bg: var(--vscode-badge-background, #2a2826);
-    --badge-fg: var(--vscode-badge-foreground, #ece7e1);
+    --bg: var(--vscode-editor-background, #1d2128);
+    --bg-panel: var(--vscode-sideBar-background, #171b21);
+    --bg-line: var(--vscode-list-hoverBackground, #252a33);
+    --fg: var(--vscode-editor-foreground, #e7e2dc);
+    --muted: var(--vscode-descriptionForeground, #8a9099);
+    --dim: var(--vscode-disabledForeground, #9aa1ab);
+    --border: var(--vscode-panel-border, #3a4048);
+    --button-bg: var(--vscode-button-background, #879caf);
+    --button-fg: var(--vscode-button-foreground, #1d2128);
+    --button-hover: var(--vscode-button-hoverBackground, #9fb2c3);
+    --accent: var(--vscode-focusBorder, #cf7c92);
+    --accent-2: var(--vscode-editorWarning-foreground, #9f8668);
+    --accent-3: var(--vscode-editorInfo-foreground, #8ea1b5);
+    --badge-bg: var(--vscode-badge-background, #3a4048);
+    --badge-fg: var(--vscode-badge-foreground, #e7e2dc);
     --error-bg: var(--vscode-inputValidation-errorBackground, rgba(255, 107, 107, 0.12));
     --error-fg: var(--vscode-errorForeground, #ff6b6b);
-    --input-bg: var(--vscode-input-background, #161310);
+    --input-bg: var(--vscode-input-background, #20252e);
+
+    --font-display: "D-DIN", "Arial Narrow", system-ui, sans-serif;
+    --font-body: "D-DIN", var(--vscode-font-family, "Segoe UI"), sans-serif;
+    --font-mono: var(--vscode-editor-font-family, "JetBrains Mono", Consolas, monospace);
 }
 
 @font-face {
@@ -47,10 +54,12 @@
 body {
     margin: 0;
     padding: 10px;
-    font-family: "D-DIN", var(--vscode-font-family, sans-serif);
+    font-family: var(--font-body);
     font-size: var(--vscode-font-size, 13px);
+    line-height: 1.45;
     color: var(--fg);
     background: var(--bg);
+    -webkit-font-smoothing: antialiased;
 }
 
 .header {
@@ -62,8 +71,11 @@ body {
 
 h2 {
     margin: 0;
-    font-size: 14px;
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
 }
 
 .toolbar {
@@ -77,6 +89,7 @@ h2 {
     flex-wrap: wrap;
     gap: 8px 12px;
     color: var(--muted);
+    font-size: 0.84rem;
 }
 
 .filters label {
@@ -86,6 +99,10 @@ h2 {
     white-space: nowrap;
 }
 
+.filters input[type="checkbox"] {
+    accent-color: var(--accent);
+}
+
 .btn {
     border: 1px solid transparent;
     background: var(--button-bg);
@@ -93,6 +110,8 @@ h2 {
     border-radius: 3px;
     padding: 3px 8px;
     cursor: pointer;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
 }
 
 .btn:hover {
@@ -122,13 +141,14 @@ h2 {
 .tree {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 6px;
 }
 
 .env {
     border: 1px solid var(--border);
     border-radius: 3px;
     overflow: hidden;
+    background: var(--bg-panel);
 }
 
 .env-header {
@@ -136,9 +156,10 @@ h2 {
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 6px;
-    padding: 4px 6px;
-    background: var(--input-bg);
+    padding: 4px 8px;
+    background: var(--bg-panel);
     border: 0;
+    border-bottom: 1px solid var(--border);
     width: 100%;
     text-align: left;
     color: var(--fg);
@@ -146,8 +167,13 @@ h2 {
 }
 
 .env-header:hover {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
+    background: rgba(251, 138, 167, 0.07);
+    background: color-mix(in srgb, var(--accent) 7%, var(--bg-panel));
+}
+
+.env-header.open {
+    background: rgba(251, 138, 167, 0.09);
+    background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
 }
 
 .chevron {
@@ -158,6 +184,9 @@ h2 {
 
 .env-title {
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .badge {
@@ -165,12 +194,14 @@ h2 {
     padding: 0 6px;
     line-height: 18px;
     font-size: 11px;
+    font-family: var(--font-mono);
     color: var(--badge-fg);
     background: var(--badge-bg);
 }
 
 .env-body {
     padding: 2px 0;
+    background: var(--bg);
 }
 
 .row {
@@ -180,9 +211,11 @@ h2 {
     gap: 6px;
     padding: 2px 6px;
     min-height: 24px;
+    font-size: 0.84rem;
 }
 
 .row.changed {
+    background: rgba(149, 168, 184, 0.12);
     background: color-mix(in srgb, var(--accent-3) 12%, transparent);
     border-left: 2px solid var(--accent-3);
 }
@@ -223,6 +256,7 @@ h2 {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-family: var(--font-mono);
 }
 
 .actions {
@@ -237,15 +271,17 @@ h2 {
     border-radius: 3px;
     padding: 0 6px;
     line-height: 18px;
+    font-size: 11px;
     cursor: pointer;
 }
 
 .icon-btn:hover {
     border-color: var(--accent);
+    color: var(--accent);
 }
 
 .hint {
-    color: var(--muted);
+    color: var(--dim);
     font-style: italic;
     padding: 4px 6px;
 }

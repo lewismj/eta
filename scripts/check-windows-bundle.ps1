@@ -217,8 +217,7 @@ if ($SourcePackagesDir) {
                 }
             }
 
-            $isSidecar = ($relPath -notmatch '^(stdlib[\\/])') -and
-                (Select-String -Path $bundleManifest -Pattern '^\s*kind\s*=\s*"sidecar"\s*$' -Quiet)
+            $isSidecar = Select-String -Path $bundleManifest -Pattern '^\s*kind\s*=\s*"sidecar"\s*$' -Quiet
             if ($isSidecar) {
                 $artifactRel = Get-NativeArtifactForTriple -ManifestPath $bundleManifest -HostTriple $hostTriple
                 if (-not $artifactRel) {

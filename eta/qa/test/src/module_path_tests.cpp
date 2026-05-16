@@ -348,6 +348,7 @@ BOOST_AUTO_TEST_CASE(from_args_or_env_cli_path_overrides_env) {
     auto r = ModulePathResolver::from_args_or_env(cli_dir.path.string());
     /// First dir should come from cli
     BOOST_REQUIRE(!r.empty());
+    BOOST_REQUIRE_EQUAL(r.dirs().size(), 1u);
     BOOST_TEST(r.dirs()[0] == cli_dir.path);
 }
 
@@ -363,6 +364,7 @@ BOOST_AUTO_TEST_CASE(from_args_or_env_empty_cli_uses_env) {
 
     auto r = ModulePathResolver::from_args_or_env("");
     BOOST_REQUIRE(!r.empty());
+    BOOST_REQUIRE_EQUAL(r.dirs().size(), 1u);
     BOOST_TEST(r.dirs()[0] == d.path);
 }
 

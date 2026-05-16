@@ -1765,6 +1765,52 @@ BOOST_AUTO_TEST_CASE(restart_before_launch_returns_error) {
 }
 
 /**
+ * 38b. restart can override launch arguments (program/profile/stopOnEntry)
+ */
+BOOST_AUTO_TEST_CASE(restart_merges_updated_launch_arguments) {
+    ScopedTempDir tmp;
+    const auto first = tmp.path / "first.eta";
+    const auto second = tmp.path / "second.eta";
+    {
+        std::ofstream out(first);
+        out << "(module first)\n";
+    }
+    {
+        std::ofstream out(second);
+        out << "(module second)\n";
+    }
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(first) + R"(","profile":"debug"})";
+    const std::string restart_args =
+        std::string(R"({"arguments":{"program":")") + json_path(second)
+        + R"(","profile":"release","stopOnEntry":true}})";
+
+    std::string input =
+        frame(request(1, "initialize", "{}"))
+      + frame(request(2, "launch", launch_args))
+      + frame(request(3, "restart", restart_args))
+      + frame(request(4, "disconnect", "{}"));
+
+    auto msgs = run_server(input);
+
+    auto restart_resp = find_msg(msgs, "response", "restart");
+    BOOST_REQUIRE(!restart_resp.is_null());
+    BOOST_TEST(restart_resp["success"].as_bool() == true);
+
+    const auto console_lines = collect_output(msgs, "console");
+    bool saw_restart_second = false;
+    for (const auto& line : console_lines) {
+        if (line.find("[eta_dap] Restart: " + second.string() + " (profile=release)")
+            != std::string::npos) {
+            saw_restart_second = true;
+            break;
+        }
+    }
+    BOOST_TEST(saw_restart_second);
+}
+
+/**
  * 39. cancel request is acknowledged
  */
 BOOST_AUTO_TEST_CASE(cancel_request_is_acknowledged) {

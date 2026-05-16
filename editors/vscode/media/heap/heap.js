@@ -356,6 +356,7 @@
                 if (!body) return;
                 const opening = body.style.display === 'none';
                 body.style.display = opening ? '' : 'none';
+                el.classList.toggle('open', opening);
                 const chev = el.querySelector('.root-chevron');
                 if (chev) chev.textContent = opening ? 'v' : '>';
             });

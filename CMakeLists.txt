@@ -158,6 +158,10 @@ foreach(_t IN ITEMS
     etai
     eta_repl
     etac
+    eta_log_sidecar
+    eta_stats_sidecar
+    eta_torch_sidecar
+    eta_nng_sidecar
     eta_lsp
     eta_dap
     eta_jupyter

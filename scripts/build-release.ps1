@@ -261,6 +261,21 @@ foreach ($manifest in $requiredSidecarManifests) {
     }
 }
 
+# Verify host sidecar artifacts declared by stdlib native manifests.
+Write-Host "  Verifying native sidecar package artifacts..."
+$requiredSidecarArtifacts = @(
+    "packages\stdlib\native\log\native\windows-x64\eta_log.dll",
+    "packages\stdlib\native\stats\native\windows-x64\eta_stats.dll",
+    "packages\stdlib\native\torch\native\windows-x64\eta_torch.dll",
+    "packages\stdlib\native\nng\native\windows-x64\eta_nng.dll"
+)
+foreach ($artifact in $requiredSidecarArtifacts) {
+    $path = Join-Path $Prefix $artifact
+    if (-not (Test-Path $path)) {
+        throw "Missing required native sidecar package artifact after install: $path"
+    }
+}
+
 # Bundle the MSVC runtime DLLs into bin/ for clean-machine execution.
 $BinPath = Join-Path $Prefix "bin"
 Copy-VsRuntimeDllsToBin -BuildDir $BuildDir -BinDir $BinPath
