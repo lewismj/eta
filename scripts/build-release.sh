@@ -5,6 +5,7 @@
 # Usage:
 #   ./scripts/build-release.sh                          # auto version + dir
 #   ./scripts/build-release.sh -v v0.3.0                # explicit version
+#   ETA_INCLUDE_HTTP=1 ./scripts/build-release.sh       # require eta-http artifact
 #   ./scripts/build-release.sh /opt/eta                 # explicit dir
 #   ./scripts/build-release.sh -v v0.3.0 /opt/eta      # both
 #
@@ -28,14 +29,16 @@ VERSION=""
 INSTALL_DIR=""
 ENABLE_TORCH=0
 TORCH_BACKEND="cpu"
+INCLUDE_HTTP="${ETA_INCLUDE_HTTP:-0}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         -v|--version) VERSION="$2"; shift 2 ;;
         -t|--torch) ENABLE_TORCH=1; shift ;;
         --torch-backend) TORCH_BACKEND="$2"; shift 2 ;;
+        --include-http) INCLUDE_HTTP=1; shift ;;
         -h|--help)
-            echo "Usage: $0 [-v VERSION] [-t|--torch] [--torch-backend BACKEND] [install-dir]"
+            echo "Usage: $0 [-v VERSION] [-t|--torch] [--torch-backend BACKEND] [--include-http] [install-dir]"
             echo ""
             echo "  -v, --version TAG       Version tag (e.g. v0.3.0)."
             echo "                          Auto-detected from git / CMakeLists.txt."
@@ -44,6 +47,8 @@ while [ $# -gt 0 ]; do
             echo "  --torch-backend BACK    cpu (default), cu126, cu128, or cu130."
             echo "                          CUDA variants need an NVIDIA driver ≥ that CUDA"
             echo "                          version but do NOT need the CUDA toolkit."
+            echo "  --include-http          Require eta-http sidecar artifact in bundle."
+            echo "                          Equivalent to ETA_INCLUDE_HTTP=1."
             echo "  install-dir             Directory for the bundle."
             echo "                          Defaults to dist/eta-<version>-<platform>."
             exit 0 ;;
@@ -123,6 +128,33 @@ if [ -d "${PROJECT_ROOT}/packages" ]; then
     mkdir -p "${PREFIX}/packages"
     cp -a "${PROJECT_ROOT}/packages/." "${PREFIX}/packages/"
     find "${PREFIX}/packages" -type d \( -name __pycache__ -o -name .ipynb_checkpoints -o -name .git \) -prune -exec rm -rf {} +
+fi
+
+if [ "$INCLUDE_HTTP" = "1" ]; then
+    echo "  Verifying optional eta-http sidecar package artifact..."
+    http_manifest="${PREFIX}/packages/net/native/http/eta.toml"
+    if [ ! -f "$http_manifest" ]; then
+        echo "error: ETA_INCLUDE_HTTP=1 but package manifest is missing: $http_manifest" >&2
+        exit 1
+    fi
+    case "$(uname -s):$(uname -m)" in
+        Linux:aarch64|Linux:arm64)
+            http_artifact="${PREFIX}/packages/net/native/http/libs/arm64/libeta_http.so"
+            ;;
+        Darwin:arm64|Darwin:aarch64)
+            http_artifact="${PREFIX}/packages/net/native/http/libs/arm64/libeta_http.dylib"
+            ;;
+        Darwin:x86_64)
+            http_artifact="${PREFIX}/packages/net/native/http/libs/amd64/libeta_http.dylib"
+            ;;
+        *)
+            http_artifact="${PREFIX}/packages/net/native/http/libs/amd64/libeta_http.so"
+            ;;
+    esac
+    if [ ! -f "$http_artifact" ]; then
+        echo "error: ETA_INCLUDE_HTTP=1 but eta-http artifact is missing: $http_artifact" >&2
+        exit 1
+    fi
 fi
 
 # Keep Jupyter kernelspec logos next to eta_jupyter so `eta_jupyter --install`

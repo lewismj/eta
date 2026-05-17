@@ -4,6 +4,89 @@
 
 ---
 
+## 2026-05-17
+
+### eta-http Sidecar M4 (libcurl)
+
+Implemented M4 for `packages/net/native/http` as package-local sidecar
+integration (no core Eta runtime or bundle dependency changes required):
+
+- added JSON convenience wrappers in `net.http`: `body-json` and `get-json`,
+  and tightened `post-json` error normalization for JSON encode failures;
+- expanded eta-http loopback fixture and package-local Eta smoke coverage for
+  JSON GET decode and cookbook example execution;
+- added cookbook networking examples:
+  `cookbook/net/http-quickstart.eta`,
+  `cookbook/net/rest-client.eta`,
+  `cookbook/net/download-large-file.eta`,
+  and `cookbook/net/README.md`;
+- wired package-local smoke tests to execute these cookbook examples against
+  the offline loopback fixture;
+- documented the package in `docs/stdlib/net-http.md` and updated
+  `docs/stdlib.md`, `docs/architecture.md`, and `docs/build.md`;
+- updated cookbook integration test filtering so examples requiring package
+  sidecars (`ml.lightgbm`, `net.http`) are validated in package-local suites.
+
+## 2026-05-16
+
+### eta-http Sidecar M2 (libcurl)
+
+Implemented M2 for `packages/net/native/http` as a package-local sidecar
+slice (no core Eta build/bundle flow changes required):
+
+- added session/request option plumbing via
+  `http/session-set-option!`, `http/session-get-option`, and
+  `http/request-set-option!` for redirect, timeout, TLS, auth, proxy,
+  cookie, and protocol controls;
+- added request mutators for headers and bodies:
+  `http/request-set-header!`,
+  `http/request-set-body-bytes!`,
+  `http/request-set-body-string!`,
+  `http/request-set-body-file!`,
+  `http/request-set-body-form!`,
+  `http/request-set-body-multipart!`;
+- added handle lifecycle/predicate primitives:
+  `http/session-close!`, `http/session?`, `http/request?`, `http/response?`;
+- added URL helper primitives:
+  `http/url-encode`, `http/url-decode`, `http/url-parse`, `http/url-build`;
+- expanded `net.http` Eta wrappers for M2, including session lifecycle,
+  option setters/getters, body/header helpers, one-shot `post` / `post-json`,
+  and URL helpers;
+- expanded the loopback fixture and package-local tests for M2 coverage:
+  C++ unit cases for bytes body, multipart, headers, redirects, and cookies,
+  plus Eta smoke coverage for session lifecycle, `post-json`, and
+  URL encode/decode;
+- updated fetched-libcurl configuration to fall back to `CURL_ZLIB=OFF`
+  when zlib dev headers/libs are unavailable locally, so package build
+  remains deterministic on this workstation.
+
+### eta-http Sidecar M1 (libcurl)
+
+Implemented M1 for `packages/net/native/http` as an out-of-tree sidecar (no
+core Eta rebuild path changes):
+
+- added fetch wiring for pinned upstream libcurl (`ETA_HTTP_FETCH_UPSTREAM`)
+  while keeping system-libcurl fallback;
+- added native session/request/response runtime with `curl_global_init`
+  lifecycle and M1 primitive surface:
+  `http/version`, `http/session-new`, `http/request-new`,
+  `http/request-set-url!`, `http/perform`, `http/response-status`,
+  `http/response-body-bytes`, `http/response-headers`,
+  `http/response-effective-url`;
+- added `net.http` Eta wrappers for M1 (`make-session`, `make-request`,
+  `request-set-url!`, `perform`, `status`, `body-bytes`, `body-string`,
+  `headers`, `header`, `get`);
+- added loopback-fixture-backed package tests for M1 (`version`, `get 200`,
+  `get 404`) via `tests/fixtures/loopback_server.py`;
+- aligned sidecar runtime linkage to depend on `eta_core` (in-tree target or
+  prebuilt `ETA_CORE_LIBRARY`) rather than local runtime stubs;
+- updated the fetched libcurl build to static-link into `eta_http` so the
+  package does not depend on an external `libcurl.dll` at load time;
+- updated package build scripts so `http` follows the same fetch toggle flow
+  as other native sidecars.
+
+---
+
 ## 2026-05-14
 
 ### Runtime Cleanup: Unused Prelude Compatibility Code

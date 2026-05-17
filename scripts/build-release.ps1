@@ -29,6 +29,11 @@
     -DCMAKE_TOOLCHAIN_FILE=<VcpkgRoot>\scripts\buildsystems\vcpkg.cmake
     to CMake so Boost is located automatically.
 
+.PARAMETER IncludeHttp
+    Optional. Require the eta-http sidecar artifact in the copied
+    `packages/net/native/http` tree. Equivalent to setting
+    `ETA_INCLUDE_HTTP=1`.
+
 .EXAMPLE
     .\scripts\build-release.cmd
     .\scripts\build-release.cmd -Version v0.3.0
@@ -36,6 +41,7 @@
     .\scripts\build-release.cmd "C:\eta-release" -VcpkgRoot C:\src\vcpkg
     .\scripts\build-release.cmd -EnableTorch
     .\scripts\build-release.cmd -EnableTorch -TorchBackend cu126
+    .\scripts\build-release.cmd -IncludeHttp
 #>
 [CmdletBinding()]
 param(
@@ -52,6 +58,9 @@ param(
     [switch]$EnableTorch,
 
     [Parameter()]
+    [switch]$IncludeHttp,
+
+    [Parameter()]
     [ValidateSet("cpu", "cu126", "cu128", "cu130")]
     [string]$TorchBackend = "cpu"
 )
@@ -61,6 +70,10 @@ $ErrorActionPreference = "Stop"
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = (Resolve-Path "$ScriptDir\..").Path
 $BuildDir    = Join-Path $ProjectRoot "build-release"
+
+if (-not $PSBoundParameters.ContainsKey("IncludeHttp")) {
+    $IncludeHttp = ($env:ETA_INCLUDE_HTTP -eq "1")
+}
 
 function Copy-VsRuntimeDllsToBin {
     param(
@@ -188,6 +201,9 @@ Write-Host "|  vcpkg    : $VcpkgRoot"
 if ($EnableTorch) {
 Write-Host "|  Torch    : Enabled ($TorchBackend)"
 }
+if ($IncludeHttp) {
+Write-Host "|  HTTP pkg : Enabled (ETA_INCLUDE_HTTP=1)"
+}
 Write-Host "+==============================================================+"
 Write-Host ""
 
@@ -273,6 +289,24 @@ foreach ($artifact in $requiredSidecarArtifacts) {
     $path = Join-Path $Prefix $artifact
     if (-not (Test-Path $path)) {
         throw "Missing required native sidecar package artifact after install: $path"
+    }
+}
+
+if ($IncludeHttp) {
+    Write-Host "  Verifying optional eta-http sidecar package artifact..."
+    $httpManifest = Join-Path $Prefix "packages\net\native\http\eta.toml"
+    if (-not (Test-Path $httpManifest)) {
+        throw "ETA_INCLUDE_HTTP=1 but package manifest is missing: $httpManifest"
+    }
+
+    if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") {
+        $httpArtifactRel = "packages\net\native\http\libs\arm64\eta_http.dll"
+    } else {
+        $httpArtifactRel = "packages\net\native\http\libs\amd64\eta_http.dll"
+    }
+    $httpArtifact = Join-Path $Prefix $httpArtifactRel
+    if (-not (Test-Path $httpArtifact)) {
+        throw "ETA_INCLUDE_HTTP=1 but eta-http artifact is missing: $httpArtifact"
     }
 }
 

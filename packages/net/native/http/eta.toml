@@ -1,0 +1,38 @@
+[package]
+name = "eta-http"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.0, <0.8"
+
+[native]
+kind = "sidecar"
+abi = "eta-native-v1"
+id = "eta.http.sidecar"
+entry = "eta_register_http_extension_v1"
+
+[[native.targets]]
+triple = "x86_64-pc-windows-msvc"
+artifact = "libs/amd64/eta_http.dll"
+sha256 = "f1610c69afde32f4380390409523253f6a9f5242ef6a5e0ca08fea1fed6d0f96"
+
+[[native.targets]]
+triple = "x86_64-unknown-linux-gnu"
+artifact = "libs/amd64/libeta_http.so"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[native.targets]]
+triple = "aarch64-unknown-linux-gnu"
+artifact = "libs/arm64/libeta_http.so"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[native.targets]]
+triple = "x86_64-apple-darwin"
+artifact = "libs/amd64/libeta_http.dylib"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[[native.targets]]
+triple = "aarch64-apple-darwin"
+artifact = "libs/arm64/libeta_http.dylib"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

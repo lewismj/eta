@@ -1,0 +1,22 @@
+(module cookbook.net.http-quickstart
+  (import net.http)
+  (export run-http-quickstart)
+  (begin
+    (defun run-http-quickstart (base-url)
+      (let ((root-response (get (string-append base-url "/")))
+            (post-response (post (string-append base-url "/echo") "eta-http"))
+            (session (make-session)))
+        (let ((header-request (make-request session 'get)))
+          (request-set-url! header-request (string-append base-url "/headers-echo"))
+          (request-set-header! header-request "X-Eta-Test" "quickstart")
+          (let ((header-response (perform header-request)))
+            (close-session! session)
+            (list
+              (cons 'get-status (status root-response))
+              (cons 'post-status (status post-response))
+              (cons 'header-status (status header-response))
+              (cons 'header-body (body-string header-response)))))))
+
+    ;; Example for public internet usage:
+    ;; (run-http-quickstart "https://example.com")
+    ))

@@ -300,6 +300,7 @@ static bool requires_external_package_sidecar(const fs::path& file) {
         auto pos = line.find_first_not_of(" \t");
         if (pos != std::string::npos && line[pos] == ';') continue;
         if (line.find("(import ml.lightgbm)") != std::string::npos) return true;
+        if (line.find("(import net.http)") != std::string::npos) return true;
     }
     return false;
 }

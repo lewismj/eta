@@ -83,6 +83,7 @@ host_triple() {
 resolve_sidecar_binary() {
   local build_dir="$1"
   local base_name="$2"
+  local package_root="${3:-}"
   local file_name=""
   case "$(uname -s)" in
     Linux) file_name="lib${base_name}.so" ;;
@@ -105,6 +106,13 @@ resolve_sidecar_binary() {
     echo "${found}"
     return
   fi
+  if [ -n "${package_root}" ] && [ -d "${package_root}/libs" ]; then
+    found="$(find "${package_root}/libs" -type f -name "${file_name}" | head -n 1 || true)"
+    if [ -n "${found}" ]; then
+      echo "${found}"
+      return
+    fi
+  fi
   echo "Could not locate sidecar binary ${file_name} under ${build_dir}" >&2
   exit 1
 }
@@ -116,8 +124,8 @@ invoke_native_build() {
   local target_name="$4"
   local base_name="$5"
   local stage_script="$6"
-  local fetch_arg_name="$7"
-  local tests_arg_name="$8"
+  local fetch_arg_name="${7:-}"
+  local tests_arg_name="${8:-}"
   local cmake_prefix_arg="${9:-}"
   local boost_dir_arg="${10:-}"
   local boost_include_arg="${11:-}"
@@ -127,9 +135,13 @@ invoke_native_build() {
   local configure_args=(
     -S "${package_root}"
     -B "${native_build_dir}"
-    "-D${fetch_arg_name}=${fetch_upstream}"
-    "-D${tests_arg_name}=OFF"
   )
+  if [ -n "${fetch_arg_name}" ]; then
+    configure_args+=("-D${fetch_arg_name}=${fetch_upstream}")
+  fi
+  if [ -n "${tests_arg_name}" ]; then
+    configure_args+=("-D${tests_arg_name}=OFF")
+  fi
   if [ -n "${cmake_prefix_arg}" ]; then
     configure_args+=("-DCMAKE_PREFIX_PATH=${cmake_prefix_arg}")
   fi
@@ -145,7 +157,7 @@ invoke_native_build() {
   cmake --build "${native_build_dir}" --config "${config}" --target "${target_name}"
 
   local sidecar_binary
-  sidecar_binary="$(resolve_sidecar_binary "${native_build_dir}" "${base_name}")"
+  sidecar_binary="$(resolve_sidecar_binary "${native_build_dir}" "${base_name}" "${package_root}")"
 
   local triple
   triple="$(host_triple)"
@@ -165,6 +177,19 @@ invoke_native_build() {
 
 if [ "${skip_native}" != "ON" ]; then
   invoke_native_build \
+    "http" \
+    "${project_root}/packages/net/native/http" \
+    "${build_root}/http" \
+    "eta_http" \
+    "eta_http" \
+    "${project_root}/packages/net/native/http/cmake/StageHttpSidecar.cmake" \
+    "ETA_HTTP_FETCH_UPSTREAM" \
+    "ETA_HTTP_ENABLE_TESTS" \
+    "${cmake_prefix_path}" \
+    "" \
+    ""
+
+  invoke_native_build \
     "duckdb" \
     "${project_root}/packages/db/native/duckdb" \
     "${build_root}/duckdb" \
@@ -173,9 +198,9 @@ if [ "${skip_native}" != "ON" ]; then
     "${project_root}/packages/db/native/duckdb/cmake/StageDuckDBSidecar.cmake" \
     "ETA_DUCKDB_FETCH_UPSTREAM" \
     "ETA_DUCKDB_ENABLE_TESTS" \
-    "" \
-    "" \
-    ""
+    "${cmake_prefix_path}" \
+    "${boost_dir}" \
+    "${boost_include_dir}"
 
   invoke_native_build \
     "lightgbm" \
@@ -193,18 +218,11 @@ fi
 
 echo "> Building Eta package artifacts (.etac) for non-stdlib packages"
 stdlib_module_path="${project_root}/stdlib"
-effective_module_path="${ETA_MODULE_PATH:-}"
+effective_module_path=""
 if [ -d "${stdlib_module_path}" ]; then
-  case ":${effective_module_path}:" in
-    *":${stdlib_module_path}:"*) ;;
-    *)
-      if [ -n "${effective_module_path}" ]; then
-        effective_module_path="${stdlib_module_path}:${effective_module_path}"
-      else
-        effective_module_path="${stdlib_module_path}"
-      fi
-      ;;
-  esac
+  effective_module_path="${stdlib_module_path}"
+elif [ -n "${ETA_MODULE_PATH:-}" ]; then
+  effective_module_path="${ETA_MODULE_PATH}"
 fi
 
 if [ -n "${effective_module_path}" ]; then

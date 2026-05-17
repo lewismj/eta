@@ -9,6 +9,7 @@ rem   build-release.cmd -Version v0.3.0
 rem   build-release.cmd -VcpkgRoot C:\src\vcpkg
 rem   build-release.cmd "C:\eta-release" -VcpkgRoot C:\src\vcpkg
 rem   build-release.cmd -EnableTorch
+rem   set ETA_INCLUDE_HTTP=1 && build-release.cmd
 rem
 rem VcpkgRoot can also be set via the VCPKG_ROOT environment variable.
 rem -EnableTorch builds with libtorch bindings (CPU or CUDA).

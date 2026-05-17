@@ -88,6 +88,7 @@ tutorials and longer examples see the [Language Guide](language_guide.md).
 ### Concurrency and networking
 
 - [std.net](stdlib/net.md) - Networking patterns over NNG.
+- [net.http](stdlib/net-http.md) - HTTP/HTTPS client helpers via the eta-http sidecar package.
 - [std.supervisor](stdlib/supervisor.md) - Actor supervision strategies.
 
 ### Tooling

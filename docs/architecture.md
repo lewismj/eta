@@ -78,6 +78,20 @@ flowchart TD
 
 ---
 
+## Networking Surfaces
+
+Eta has two separate networking surfaces:
+
+- `std.net` uses NNG for actor/message-passing patterns (Eta-to-Eta style
+  communication).
+- `net.http` (from the `eta-http` sidecar package) uses libcurl for HTTP/HTTPS
+  client requests to external services.
+
+The runtime keeps these concerns separate: message-passing stays in `std.net`,
+while web client traffic lives in `net.http`.
+
+---
+
 ## Stage-by-Stage Walkthrough
 
 ### 1. Lexer
