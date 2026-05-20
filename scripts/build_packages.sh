@@ -80,6 +80,64 @@ host_triple() {
   esac
 }
 
+vcpkg_host_triplet() {
+  local os arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "${os}" in
+    Linux)
+      case "${arch}" in
+        x86_64) echo "x64-linux" ;;
+        aarch64|arm64) echo "arm64-linux" ;;
+        *) echo "unsupported-linux-arch:${arch}" ;;
+      esac
+      ;;
+    Darwin)
+      case "${arch}" in
+        x86_64) echo "x64-osx" ;;
+        arm64|aarch64) echo "arm64-osx" ;;
+        *) echo "unsupported-macos-arch:${arch}" ;;
+      esac
+      ;;
+    *)
+      echo "unsupported-os:${os}"
+      ;;
+  esac
+}
+
+vcpkg_root=""
+if [ -n "${VCPKG_ROOT:-}" ] && [ -d "${VCPKG_ROOT}" ]; then
+  vcpkg_root="${VCPKG_ROOT}"
+elif [ -n "${VCPKG_DIR:-}" ] && [ -d "${VCPKG_DIR}" ]; then
+  vcpkg_root="${VCPKG_DIR}"
+fi
+
+if [ -n "${vcpkg_root}" ]; then
+  vcpkg_triplet="$(vcpkg_host_triplet)"
+  case "${vcpkg_triplet}" in
+    unsupported-*)
+      ;;
+    *)
+      vcpkg_installed="${vcpkg_root}/installed/${vcpkg_triplet}"
+      if [ -d "${vcpkg_installed}" ]; then
+        if [ -z "${cmake_prefix_path}" ]; then
+          cmake_prefix_path="${vcpkg_installed}"
+        fi
+        if [ -z "${boost_dir}" ]; then
+          if [ -d "${vcpkg_installed}/share/boost" ]; then
+            boost_dir="${vcpkg_installed}/share/boost"
+          elif [ -d "${vcpkg_installed}/share/boost-headers" ]; then
+            boost_dir="${vcpkg_installed}/share/boost-headers"
+          fi
+        fi
+        if [ -z "${boost_include_dir}" ] && [ -d "${vcpkg_installed}/include" ]; then
+          boost_include_dir="${vcpkg_installed}/include"
+        fi
+      fi
+      ;;
+  esac
+fi
+
 resolve_sidecar_binary() {
   local build_dir="$1"
   local base_name="$2"
@@ -186,8 +244,8 @@ if [ "${skip_native}" != "ON" ]; then
     "ETA_HTTP_FETCH_UPSTREAM" \
     "ETA_HTTP_ENABLE_TESTS" \
     "${cmake_prefix_path}" \
-    "" \
-    ""
+    "${boost_dir}" \
+    "${boost_include_dir}"
 
   invoke_native_build \
     "duckdb" \

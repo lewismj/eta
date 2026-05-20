@@ -67,4 +67,28 @@ function(eta_http_fetch_libcurl)
         message(FATAL_ERROR
             "Fetched libcurl did not expose the expected CURL::libcurl target.")
     endif()
+
+    # eta_http is a MODULE target, so any statically linked curl objects must
+    # be position-independent on ELF/Mach-O toolchains.
+    set(_eta_http_pic_targets libcurl_static libcurl_object)
+    get_target_property(_eta_http_curl_alias CURL::libcurl ALIASED_TARGET)
+    if(_eta_http_curl_alias)
+        list(APPEND _eta_http_pic_targets "${_eta_http_curl_alias}")
+    endif()
+    list(REMOVE_DUPLICATES _eta_http_pic_targets)
+    foreach(_eta_http_pic_target IN LISTS _eta_http_pic_targets)
+        if(TARGET "${_eta_http_pic_target}")
+            get_target_property(_eta_http_pic_type "${_eta_http_pic_target}" TYPE)
+            if(_eta_http_pic_type STREQUAL "STATIC_LIBRARY"
+               OR _eta_http_pic_type STREQUAL "OBJECT_LIBRARY")
+                set_target_properties("${_eta_http_pic_target}" PROPERTIES
+                    POSITION_INDEPENDENT_CODE ON
+                )
+            endif()
+        endif()
+    endforeach()
+    unset(_eta_http_pic_targets)
+    unset(_eta_http_curl_alias)
+    unset(_eta_http_pic_target)
+    unset(_eta_http_pic_type)
 endfunction()

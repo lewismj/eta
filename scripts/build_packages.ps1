@@ -81,6 +81,31 @@ function Get-HostTargetTriple {
     throw "Unsupported host OS for build_packages.ps1"
 }
 
+function Get-VcpkgHostTriplet {
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+            [System.Runtime.InteropServices.OSPlatform]::Windows)) {
+        if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") {
+            return "arm64-windows"
+        }
+        return "x64-windows"
+    }
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+            [System.Runtime.InteropServices.OSPlatform]::Linux)) {
+        $arch = (& uname -m).Trim()
+        if ($arch -eq "x86_64") { return "x64-linux" }
+        if ($arch -eq "aarch64" -or $arch -eq "arm64") { return "arm64-linux" }
+        throw "Unsupported Linux architecture for vcpkg triplet: $arch"
+    }
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+            [System.Runtime.InteropServices.OSPlatform]::OSX)) {
+        $arch = (& uname -m).Trim()
+        if ($arch -eq "x86_64") { return "x64-osx" }
+        if ($arch -eq "aarch64" -or $arch -eq "arm64") { return "arm64-osx" }
+        throw "Unsupported macOS architecture for vcpkg triplet: $arch"
+    }
+    throw "Unsupported host OS for vcpkg triplet resolution"
+}
+
 function Get-CMakeCacheValue {
     param(
         [Parameter(Mandatory = $true)] [string]$CachePath,
@@ -111,22 +136,34 @@ if (-not $BoostDir) {
 if (-not $BoostIncludeDir) {
     $BoostIncludeDir = Get-CMakeCacheValue -CachePath $cachePath -Key "Boost_INCLUDE_DIR"
 }
-if (-not $CMakePrefixPath -and $env:VCPKG_ROOT) {
-    $candidate = Join-Path $env:VCPKG_ROOT "installed\x64-windows"
-    if (Test-Path -LiteralPath $candidate) {
-        $CMakePrefixPath = $candidate
-    }
+$vcpkgRoot = ""
+if (-not [string]::IsNullOrWhiteSpace($env:VCPKG_ROOT) -and (Test-Path -LiteralPath $env:VCPKG_ROOT)) {
+    $vcpkgRoot = [System.IO.Path]::GetFullPath($env:VCPKG_ROOT)
+} elseif (-not [string]::IsNullOrWhiteSpace($env:VCPKG_DIR) -and (Test-Path -LiteralPath $env:VCPKG_DIR)) {
+    $vcpkgRoot = [System.IO.Path]::GetFullPath($env:VCPKG_DIR)
 }
-if (-not $BoostDir -and $env:VCPKG_ROOT) {
-    $candidate = Join-Path $env:VCPKG_ROOT "installed\x64-windows\share\boost"
-    if (Test-Path -LiteralPath $candidate) {
-        $BoostDir = $candidate
-    }
-}
-if (-not $BoostIncludeDir -and $env:VCPKG_ROOT) {
-    $candidate = Join-Path $env:VCPKG_ROOT "installed\x64-windows\include"
-    if (Test-Path -LiteralPath $candidate) {
-        $BoostIncludeDir = $candidate
+if ($vcpkgRoot) {
+    $vcpkgTriplet = Get-VcpkgHostTriplet
+    $vcpkgInstalled = Join-Path $vcpkgRoot "installed\$vcpkgTriplet"
+    if (Test-Path -LiteralPath $vcpkgInstalled) {
+        if (-not $CMakePrefixPath) {
+            $CMakePrefixPath = $vcpkgInstalled
+        }
+        if (-not $BoostDir) {
+            $boostShare = Join-Path $vcpkgInstalled "share\boost"
+            $boostHeadersShare = Join-Path $vcpkgInstalled "share\boost-headers"
+            if (Test-Path -LiteralPath $boostShare) {
+                $BoostDir = $boostShare
+            } elseif (Test-Path -LiteralPath $boostHeadersShare) {
+                $BoostDir = $boostHeadersShare
+            }
+        }
+        if (-not $BoostIncludeDir) {
+            $candidate = Join-Path $vcpkgInstalled "include"
+            if (Test-Path -LiteralPath $candidate) {
+                $BoostIncludeDir = $candidate
+            }
+        }
     }
 }
 
@@ -236,6 +273,12 @@ if (-not $SkipNative) {
     )
     if ($CMakePrefixPath) {
         $HttpConfigureArgs += "-DCMAKE_PREFIX_PATH=$CMakePrefixPath"
+    }
+    if ($BoostDir) {
+        $HttpConfigureArgs += "-DBoost_DIR=$BoostDir"
+    }
+    if ($BoostIncludeDir) {
+        $HttpConfigureArgs += "-DBoost_INCLUDE_DIR=$BoostIncludeDir"
     }
 
     Invoke-NativeBuild `

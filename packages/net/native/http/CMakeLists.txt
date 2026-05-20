@@ -84,6 +84,27 @@ if(NOT TARGET CURL::libcurl)
         "or install libcurl >=8.0 and ensure CURLConfig.cmake is on CMAKE_PREFIX_PATH.")
 endif()
 
+if(ETA_HTTP_FETCH_UPSTREAM)
+    get_target_property(_eta_http_curl_target CURL::libcurl ALIASED_TARGET)
+    if(NOT _eta_http_curl_target)
+        set(_eta_http_curl_target CURL::libcurl)
+    endif()
+
+    get_target_property(_eta_http_curl_type "${_eta_http_curl_target}" TYPE)
+    if(_eta_http_curl_type STREQUAL "STATIC_LIBRARY")
+        get_target_property(_eta_http_curl_pic
+            "${_eta_http_curl_target}" POSITION_INDEPENDENT_CODE)
+        if(NOT _eta_http_curl_pic)
+            message(FATAL_ERROR
+                "Fetched libcurl must be built with POSITION_INDEPENDENT_CODE=ON "
+                "because eta_http is linked as a MODULE shared library.")
+        endif()
+    endif()
+    unset(_eta_http_curl_target)
+    unset(_eta_http_curl_type)
+    unset(_eta_http_curl_pic)
+endif()
+
 if(WIN32)
     find_package(ZLIB QUIET)
     if(ZLIB_FOUND)
