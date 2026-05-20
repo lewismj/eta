@@ -1,0 +1,11 @@
+(module blackjack.tests.smoke
+  (import std.test blackjack)
+  (begin
+    (define suite
+      (make-group "blackjack"
+        (list
+          (make-test "scaffold-message"
+            (lambda ()
+              (assert-equal "Blackjack demo scaffold ready."
+                            (scaffold-message)))))))
+    (print-tap (run suite))))

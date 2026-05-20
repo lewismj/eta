@@ -1,0 +1,11 @@
+[package]
+name = "blackjack-demo"
+version = "0.1.0"
+license = "MIT"
+description = "Blackjack demo application package."
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+blackjack = { path = "../blackjack" }

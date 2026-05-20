@@ -1,0 +1,42 @@
+(module blackjack.tests.rules
+  (import std.test blackjack)
+  (begin
+    (define suite
+      (make-group "blackjack rules"
+        (list
+          (make-test "bust detects totals above 21"
+            (lambda ()
+              (assert-true (bust '(10 6 8)))))
+
+          (make-test "bust allows soft hand below 21"
+            (lambda ()
+              (assert-false (bust '(1 9 9)))))
+
+          (make-test "blackjack requires two cards totaling 21"
+            (lambda ()
+              (assert-true (blackjack '(1 13)))
+              (assert-false (blackjack '(7 7 7)))))
+
+          (make-test "dealer hits on 16"
+            (lambda ()
+              (assert-true (dealer-hits '(10 6)))
+              (assert-false (dealer-stands '(10 6)))))
+
+          (make-test "dealer stands on hard and soft 17 under S17"
+            (lambda ()
+              (assert-true (dealer-stands '(10 7)))
+              (assert-true (dealer-stands '(1 6)))
+              (assert-false (dealer-hits '(1 6)))))
+
+          (make-test "player-wins covers dealer bust and total comparison"
+            (lambda ()
+              (assert-true (player-wins '(10 9) '(10 6 8)))
+              (assert-true (player-wins '(10 9) '(10 8)))
+              (assert-false (player-wins '(10 8) '(10 9)))))
+
+          (make-test "push requires equal best totals without bust"
+            (lambda ()
+              (assert-true (push '(10 8) '(9 9)))
+              (assert-false (push '(10 8 5) '(9 9))))))))
+
+    (print-tap (run suite))))
