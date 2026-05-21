@@ -64,6 +64,7 @@ jobs:
 
       - name: Build package artifacts
         run: |
+          export ETA_CORE_LIBRARY="${{ github.workspace }}/build/eta/core/libeta_core.a"
           bash scripts/build_packages.sh \
             --eta-exe "${{ github.workspace }}/build/eta/cli/eta"
 
@@ -179,7 +180,8 @@ jobs:
         shell: pwsh
         run: |
           & "${{ github.workspace }}\scripts\build_packages.ps1" `
-              -EtaExecutable "${{ github.workspace }}\build\eta\cli\Release\eta.exe"
+              -EtaExecutable "${{ github.workspace }}\build\eta\cli\Release\eta.exe" `
+              -EtaCoreLibrary "${{ github.workspace }}\build\eta\core\Release\eta_core.lib"
           if ($LASTEXITCODE -ne 0) { throw "build_packages.ps1 failed (exit $LASTEXITCODE)" }
 
       - name: Install

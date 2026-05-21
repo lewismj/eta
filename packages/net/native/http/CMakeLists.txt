@@ -34,38 +34,20 @@ function(eta_http_resolve_core_target out_target)
         return()
     endif()
 
-    set(_eta_core_candidates "")
-    if(NOT "${ETA_CORE_LIBRARY}" STREQUAL "")
-        list(APPEND _eta_core_candidates "${ETA_CORE_LIBRARY}")
-    endif()
-    if(WIN32)
-        list(APPEND _eta_core_candidates
-            "${ETA_REPO_ROOT_DIR}/out/msvc-release/eta/core/eta_core.lib"
-            "${ETA_REPO_ROOT_DIR}/out/release/eta/core/eta_core.lib"
-        )
-    else()
-        list(APPEND _eta_core_candidates
-            "${ETA_REPO_ROOT_DIR}/out/release/eta/core/libeta_core.a"
-            "${ETA_REPO_ROOT_DIR}/out/msvc-release/eta/core/libeta_core.a"
-        )
-    endif()
-
-    foreach(_candidate IN LISTS _eta_core_candidates)
-        if(EXISTS "${_candidate}")
-            if(NOT TARGET eta_core_imported)
-                add_library(eta_core_imported UNKNOWN IMPORTED)
-                set_target_properties(eta_core_imported PROPERTIES
-                    IMPORTED_LOCATION "${_candidate}"
-                )
-            endif()
-            set(${out_target} eta_core_imported PARENT_SCOPE)
-            return()
+    if(NOT "${ETA_CORE_LIBRARY}" STREQUAL "" AND EXISTS "${ETA_CORE_LIBRARY}")
+        if(NOT TARGET eta_core_imported)
+            add_library(eta_core_imported UNKNOWN IMPORTED)
+            set_target_properties(eta_core_imported PROPERTIES
+                IMPORTED_LOCATION "${ETA_CORE_LIBRARY}"
+            )
         endif()
-    endforeach()
+        set(${out_target} eta_core_imported PARENT_SCOPE)
+        return()
+    endif()
 
     message(FATAL_ERROR
         "Could not resolve eta_core for eta_http. "
-        "Build eta_core first or pass -DETA_CORE_LIBRARY=/abs/path/to/eta_core.lib")
+        "Build eta_core first or pass -DETA_CORE_LIBRARY=/abs/path/to/libeta_core.{a,lib}")
 endfunction()
 
 eta_http_resolve_core_target(ETA_HTTP_CORE_TARGET)

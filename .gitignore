@@ -76,6 +76,8 @@ packages/**/eta.lock
 
 *.log
 
+gha_build_logs/*
+
 
 
 

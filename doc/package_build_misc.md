@@ -82,3 +82,35 @@ Fix applied in this repo:
 2. Treat `VCPKG_ROOT` and `VCPKG_DIR` as equivalent roots for CI compatibility.
 3. Resolve package-manager install paths from the current host architecture, not from unrelated env defaults.
 4. If a sidecar includes `eta_core` runtime headers, assume Boost headers are required unless proven otherwise.
+
+## Incident: package build script resolved `eta_core` from hardcoded `out/...`
+
+Date: 2026-05-21
+
+Failure signature:
+
+```text
+Could not resolve eta_core for eta_http. Build eta_core first or pass -DETA_CORE_LIBRARY=...
+```
+
+Root cause:
+
+- Sidecar package CMake files had hardcoded fallback paths rooted at `out/...`.
+- CI layout used `build/...`, so package-local configure could not locate `eta_core`.
+- `build_packages.{ps1,sh}` did not pass `ETA_CORE_LIBRARY` explicitly.
+
+Fix applied in this repo:
+
+1. `scripts/build_packages.ps1`
+   - resolve `ETA_CORE_LIBRARY` from `-EtaExecutable` path (with optional explicit override),
+   - pass `-DETA_CORE_LIBRARY=...` to `http`, `duckdb`, and `lightgbm`.
+2. `scripts/build_packages.sh`
+   - same explicit `ETA_CORE_LIBRARY` resolution and wiring for all native packages.
+3. package CMake files (`http`, `duckdb`, `lightgbm`)
+   - removed hardcoded `out/...` fallback lookup for `eta_core`,
+   - now use either in-tree `eta_core` target or explicit `ETA_CORE_LIBRARY`.
+
+## Core-library resolution rule
+
+Native package builds must not assume a specific top-level build directory name (`out`, `build`, etc.).
+Always pass `-DETA_CORE_LIBRARY` from the packaging script.

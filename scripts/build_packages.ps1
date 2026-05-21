@@ -33,7 +33,10 @@ param(
     [string]$BoostDir,
 
     [Parameter()]
-    [string]$BoostIncludeDir
+    [string]$BoostIncludeDir,
+
+    [Parameter()]
+    [string]$EtaCoreLibrary
 )
 
 $ErrorActionPreference = "Stop"
@@ -124,6 +127,55 @@ function Get-CMakeCacheValue {
         return $Matches[1]
     }
     return ""
+}
+
+function Resolve-EtaCoreLibrary {
+    param(
+        [Parameter(Mandatory = $true)] [string]$ProjectRoot,
+        [Parameter(Mandatory = $true)] [string]$EtaExecutable,
+        [Parameter(Mandatory = $true)] [string]$Config,
+        [Parameter()] [string]$ExplicitPath = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        $explicitFull = [System.IO.Path]::GetFullPath($ExplicitPath)
+        if (-not (Test-Path -LiteralPath $explicitFull)) {
+            throw "ETA_CORE_LIBRARY does not exist: $explicitFull"
+        }
+        return $explicitFull
+    }
+
+    $etaExeDir = Split-Path -Parent $EtaExecutable
+    $isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+        [System.Runtime.InteropServices.OSPlatform]::Windows)
+    $fileName = if ($isWindows) { "eta_core.lib" } else { "libeta_core.a" }
+
+    $candidates = @()
+    if ($isWindows) {
+        $candidates += (Join-Path $etaExeDir "..\..\core\$Config\$fileName")
+        $candidates += (Join-Path $etaExeDir "..\..\core\$fileName")
+        $candidates += (Join-Path $etaExeDir "..\core\$Config\$fileName")
+        $candidates += (Join-Path $etaExeDir "..\core\$fileName")
+        $candidates += (Join-Path $ProjectRoot "build\eta\core\$Config\$fileName")
+        $candidates += (Join-Path $ProjectRoot "build\eta\core\$fileName")
+    } else {
+        $candidates += (Join-Path $etaExeDir "../core/$fileName")
+        $candidates += (Join-Path $etaExeDir "../../core/$fileName")
+        $candidates += (Join-Path $etaExeDir "../core/$Config/$fileName")
+        $candidates += (Join-Path $etaExeDir "../../core/$Config/$fileName")
+        $candidates += (Join-Path $ProjectRoot "build/eta/core/$fileName")
+        $candidates += (Join-Path $ProjectRoot "build/eta/core/$Config/$fileName")
+    }
+
+    foreach ($candidate in $candidates) {
+        $full = [System.IO.Path]::GetFullPath($candidate)
+        if (Test-Path -LiteralPath $full) {
+            return $full
+        }
+    }
+
+    throw "Could not resolve eta_core library from eta executable path. " +
+        "Pass -EtaCoreLibrary explicitly."
 }
 
 $cachePath = Join-Path $ProjectRoot "out\msvc-release\CMakeCache.txt"
@@ -266,10 +318,17 @@ if (-not $SkipNative) {
     $DuckdbRoot = Join-Path $ProjectRoot "packages\db\native\duckdb"
     $LightgbmRoot = Join-Path $ProjectRoot "packages\ml\native\lightgbm"
     $HttpRoot = Join-Path $ProjectRoot "packages\net\native\http"
+    $EtaCoreLibrary = Resolve-EtaCoreLibrary `
+        -ProjectRoot $ProjectRoot `
+        -EtaExecutable $EtaExecutable `
+        -Config $Config `
+        -ExplicitPath $EtaCoreLibrary
+    Write-Host "  using ETA_CORE_LIBRARY=$EtaCoreLibrary"
 
     $HttpConfigureArgs = @(
         "-DETA_HTTP_FETCH_UPSTREAM={FETCH_UPSTREAM}",
-        "-DETA_HTTP_ENABLE_TESTS=OFF"
+        "-DETA_HTTP_ENABLE_TESTS=OFF",
+        "-DETA_CORE_LIBRARY=$EtaCoreLibrary"
     )
     if ($CMakePrefixPath) {
         $HttpConfigureArgs += "-DCMAKE_PREFIX_PATH=$CMakePrefixPath"
@@ -292,7 +351,8 @@ if (-not $SkipNative) {
 
     $DuckdbConfigureArgs = @(
         "-DETA_DUCKDB_FETCH_UPSTREAM={FETCH_UPSTREAM}",
-        "-DETA_DUCKDB_ENABLE_TESTS=OFF"
+        "-DETA_DUCKDB_ENABLE_TESTS=OFF",
+        "-DETA_CORE_LIBRARY=$EtaCoreLibrary"
     )
     if ($CMakePrefixPath) {
         $DuckdbConfigureArgs += "-DCMAKE_PREFIX_PATH=$CMakePrefixPath"
@@ -315,7 +375,8 @@ if (-not $SkipNative) {
 
     $LightgbmConfigureArgs = @(
         "-DETA_LIGHTGBM_FETCH_UPSTREAM={FETCH_UPSTREAM}",
-        "-DETA_LIGHTGBM_ENABLE_TESTS=OFF"
+        "-DETA_LIGHTGBM_ENABLE_TESTS=OFF",
+        "-DETA_CORE_LIBRARY=$EtaCoreLibrary"
     )
     if ($CMakePrefixPath) {
         $LightgbmConfigureArgs += "-DCMAKE_PREFIX_PATH=$CMakePrefixPath"

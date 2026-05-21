@@ -12,6 +12,7 @@ skip_native="${SKIP_NATIVE:-OFF}"
 cmake_prefix_path="${CMAKE_PREFIX_PATH:-}"
 boost_dir="${BOOST_DIR:-}"
 boost_include_dir="${BOOST_INCLUDE_DIR:-}"
+eta_core_library="${ETA_CORE_LIBRARY:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -175,6 +176,48 @@ resolve_sidecar_binary() {
   exit 1
 }
 
+resolve_eta_core_library() {
+  local eta_exe="$1"
+  local config_name="$2"
+  local explicit="${3:-}"
+  local core_name=""
+  case "$(uname -s)" in
+    Linux|Darwin) core_name="libeta_core.a" ;;
+    *) echo "Unsupported host OS for eta_core resolution: $(uname -s)" >&2; exit 1 ;;
+  esac
+
+  if [ -n "${explicit}" ]; then
+    if [ -f "${explicit}" ]; then
+      echo "${explicit}"
+      return
+    fi
+    echo "ETA_CORE_LIBRARY does not exist: ${explicit}" >&2
+    exit 1
+  fi
+
+  local eta_dir
+  eta_dir="$(cd "$(dirname "${eta_exe}")" && pwd)"
+  local candidates=(
+    "${eta_dir}/../core/${core_name}"
+    "${eta_dir}/../../core/${core_name}"
+    "${eta_dir}/../core/${config_name}/${core_name}"
+    "${eta_dir}/../../core/${config_name}/${core_name}"
+    "${project_root}/build/eta/core/${core_name}"
+    "${project_root}/build/eta/core/${config_name}/${core_name}"
+  )
+
+  local candidate=""
+  for candidate in "${candidates[@]}"; do
+    if [ -f "${candidate}" ]; then
+      echo "${candidate}"
+      return
+    fi
+  done
+
+  echo "Could not resolve eta_core library from eta executable path. Pass ETA_CORE_LIBRARY explicitly." >&2
+  exit 1
+}
+
 invoke_native_build() {
   local name="$1"
   local package_root="$2"
@@ -187,6 +230,7 @@ invoke_native_build() {
   local cmake_prefix_arg="${9:-}"
   local boost_dir_arg="${10:-}"
   local boost_include_arg="${11:-}"
+  local eta_core_library_arg="${12:-}"
 
   echo "> Building native package: ${name}"
 
@@ -208,6 +252,9 @@ invoke_native_build() {
   fi
   if [ -n "${boost_include_arg}" ]; then
     configure_args+=("-DBoost_INCLUDE_DIR=${boost_include_arg}")
+  fi
+  if [ -n "${eta_core_library_arg}" ]; then
+    configure_args+=("-DETA_CORE_LIBRARY=${eta_core_library_arg}")
   fi
 
   cmake "${configure_args[@]}"
@@ -234,6 +281,9 @@ invoke_native_build() {
 }
 
 if [ "${skip_native}" != "ON" ]; then
+  eta_core_library="$(resolve_eta_core_library "${eta_executable}" "${config}" "${eta_core_library}")"
+  echo "  using ETA_CORE_LIBRARY=${eta_core_library}"
+
   invoke_native_build \
     "http" \
     "${project_root}/packages/net/native/http" \
@@ -245,7 +295,8 @@ if [ "${skip_native}" != "ON" ]; then
     "ETA_HTTP_ENABLE_TESTS" \
     "${cmake_prefix_path}" \
     "${boost_dir}" \
-    "${boost_include_dir}"
+    "${boost_include_dir}" \
+    "${eta_core_library}"
 
   invoke_native_build \
     "duckdb" \
@@ -258,7 +309,8 @@ if [ "${skip_native}" != "ON" ]; then
     "ETA_DUCKDB_ENABLE_TESTS" \
     "${cmake_prefix_path}" \
     "${boost_dir}" \
-    "${boost_include_dir}"
+    "${boost_include_dir}" \
+    "${eta_core_library}"
 
   invoke_native_build \
     "lightgbm" \
@@ -271,7 +323,8 @@ if [ "${skip_native}" != "ON" ]; then
     "ETA_LIGHTGBM_ENABLE_TESTS" \
     "${cmake_prefix_path}" \
     "${boost_dir}" \
-    "${boost_include_dir}"
+    "${boost_include_dir}" \
+    "${eta_core_library}"
 fi
 
 echo "> Building Eta package artifacts (.etac) for non-stdlib packages"
