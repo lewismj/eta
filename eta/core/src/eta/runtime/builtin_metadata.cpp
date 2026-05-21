@@ -38,6 +38,10 @@ namespace {
         || name == "enable-heartbeat";
 }
 
+[[nodiscard]] bool is_actor_builtin(std::string_view name) {
+    return name.starts_with("%actor-");
+}
+
 [[nodiscard]] std::optional<std::string_view> native_sidecar_from_owner(
     std::string_view owner) {
     constexpr std::string_view prefix = "sidecar:";
@@ -112,6 +116,7 @@ namespace {
         || name == "write-u8") {
         return "Port";
     }
+    if (is_actor_builtin(name)) return "Actor";
     if (is_nng_builtin(name)) return "NNG";
     return "Builtin";
 }
@@ -131,6 +136,24 @@ namespace {
     if (name == "nng-socket") return "(nng-socket type-symbol)";
     if (name == "send!") return "(send! sock value [flag])";
     if (name == "recv!") return "(recv! sock [flag])";
+    if (name == "%actor-self") return "(%actor-self)";
+    if (name == "%actor-pid?") return "(%actor-pid? value)";
+    if (name == "%actor-alive?") return "(%actor-alive? pid)";
+    if (name == "%actor-spawn") return "(%actor-spawn thunk)";
+    if (name == "%actor-send") return "(%actor-send pid payload)";
+    if (name == "%actor-receive") return "(%actor-receive matcher timeout)";
+    if (name == "%actor-mailbox-len") return "(%actor-mailbox-len)";
+    if (name == "%actor-trap-exit!") return "(%actor-trap-exit! enabled?)";
+    if (name == "%actor-link") return "(%actor-link pid)";
+    if (name == "%actor-unlink") return "(%actor-unlink pid)";
+    if (name == "%actor-monitor") return "(%actor-monitor pid)";
+    if (name == "%actor-demonitor") return "(%actor-demonitor ref [flush?])";
+    if (name == "%actor-exit") return "(%actor-exit pid reason)";
+    if (name == "%actor-kill") return "(%actor-kill pid)";
+    if (name == "%actor-register") return "(%actor-register name pid)";
+    if (name == "%actor-unregister") return "(%actor-unregister name)";
+    if (name == "%actor-whereis") return "(%actor-whereis name)";
+    if (name == "%actor-registered") return "(%actor-registered)";
     return {};
 }
 
@@ -142,6 +165,7 @@ namespace {
     if (name == "write") return "Write a machine-readable representation to a port.";
     if (name == "newline") return "Write a newline to a port.";
     if (name == "error") return "Raise a runtime error.";
+    if (is_actor_builtin(name)) return "Local actor runtime primitive.";
     if (is_nng_builtin(name)) return "NNG/message-passing primitive.";
     return "Builtin primitive.";
 }

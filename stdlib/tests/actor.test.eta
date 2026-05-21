@@ -1,0 +1,203 @@
+;;; stdlib/tests/actor.test.eta - Unit tests for std.actor.
+
+(module actor.tests
+  (import std.test std.actor std.actor.supervisor)
+  (begin
+
+    (define suite
+      (make-group "std.actor"
+        (list
+
+          (make-test "self returns pid and mailbox starts empty"
+            (lambda ()
+              (assert-true (pid? (self)))
+              (assert-equal 0 (mailbox-length))))
+
+          (make-test "alive reports pid lifecycle"
+            (lambda ()
+              (let* ((child (spawn (lambda () (receive-after 10000))))
+                     (ref (monitor child)))
+                (assert-true (alive? child))
+                (assert-true (exit child 'shutdown))
+                (let ((msg (receive-after 1000)))
+                  (assert-true (pair? msg))
+                  (assert-equal 'DOWN (car msg))
+                  (assert-equal ref (car (cdr msg)))
+                  (assert-equal 'shutdown
+                                (car (cdr (cdr (cdr (cdr msg))))))
+                  (assert-equal #f (alive? child))))))
+
+          (make-test "send and receive preserve fifo order"
+            (lambda ()
+              (let ((me (self)))
+                (send me 10)
+                (send me 20)
+                (assert-equal 2 (mailbox-length))
+                (assert-equal 10 (receive-after 0))
+                (assert-equal 1 (mailbox-length))
+                (assert-equal 20 (receive-after 0))
+                (assert-equal 0 (mailbox-length)))))
+
+          (make-test "spawn child and receive pid-tagged reply"
+            (lambda ()
+              (let* ((me (self))
+                     (child
+                       (spawn
+                         (lambda ()
+                           (let ((msg (receive-after 1000)))
+                             (send (car (cdr msg))
+                                   (list 'pong (self))))))))
+                (assert-true (pid? child))
+                (send child (list 'ping me))
+                (let ((reply (receive-after 1000)))
+                  (assert-true (pair? reply))
+                  (assert-equal 'pong (car reply))
+                  (assert-true (pid? (car (cdr reply))))))))
+
+          (make-test "receive timeout returns false"
+            (lambda ()
+              (assert-equal #f (receive-after 5))))
+
+          (make-test "selective receive preserves unmatched message order"
+            (lambda ()
+              (let ((me (self)))
+                (send me (list 'a 1))
+                (send me (list 'b 2))
+                (send me (list 'a 3))
+                (assert-equal '(b 2) (receive-match (match-list 'b 1) 0))
+                (assert-equal '(a 1) (receive-after 0))
+                (assert-equal '(a 3) (receive-after 0))
+                (assert-equal #f (receive-after 0)))))
+
+          (make-test "receive handles clauses and timeout thunk"
+            (lambda ()
+              (let ((me (self)))
+                (send me 7)
+                (assert-equal 14
+                  (receive
+                    (list
+                      (match-case (match-predicate number?)
+                                  (lambda (n) (* n 2)))
+                      (match-case (match-predicate (lambda (x) #t))
+                                  (lambda (x) 0)))
+                    50
+                    (lambda () 'timeout)))
+                (send me '(pong 42))
+                (assert-equal 42
+                  (receive
+                    (list
+                      (match-case (match-list 'pong 1)
+                                  (lambda (msg) (car (cdr msg)))))
+                    50
+                    (lambda () 'timeout)))
+                (assert-equal 'timeout
+                  (receive
+                    (list
+                      (match-case (match-list 'ping 1)
+                                  (lambda (msg) (car (cdr msg)))))
+                    1
+                    (lambda () 'timeout))))))
+
+          (make-test "trap-exit receives EXIT for linked actor"
+            (lambda ()
+              (trap-exit! #t)
+              (let* ((child (spawn (lambda () (receive-after 10000))))
+                     (linked (link child))
+                     (exited (exit child 'shutdown))
+                     (msg (receive-after 1000)))
+                (trap-exit! #f)
+                (assert-true linked)
+                (assert-true exited)
+                (assert-true (pair? msg))
+                (assert-equal 'EXIT (car msg))
+                (assert-true (pid? (car (cdr msg))))
+                (assert-equal 'shutdown (car (cdr (cdr msg)))))))
+
+          (make-test "monitor receives one DOWN message"
+            (lambda ()
+              (let* ((child (spawn (lambda () (receive-after 10000))))
+                     (ref (monitor child)))
+                (assert-true ref)
+                (assert-true (exit child 'shutdown))
+                (let ((msg (receive-after 1000))
+                      (next (receive-after 0)))
+                  (assert-true (pair? msg))
+                  (assert-equal 'DOWN (car msg))
+                  (assert-equal ref (car (cdr msg)))
+                  (assert-equal 'process (car (cdr (cdr msg))))
+                  (assert-true (pid? (car (cdr (cdr (cdr msg))))))
+                  (assert-equal 'shutdown
+                                (car (cdr (cdr (cdr (cdr msg))))))
+                  (assert-equal #f next)))))
+
+          (make-test "demonitor flush removes queued DOWN"
+            (lambda ()
+              (let* ((child (spawn (lambda () (receive-after 10000))))
+                     (ref (monitor child)))
+                (assert-true (exit child 'shutdown))
+                (assert-true (> (mailbox-length) 0))
+                (demonitor ref #t)
+                (assert-equal #f (receive-after 0)))))
+
+          (make-test "registry supports register/whereis/unregister and name send"
+            (lambda ()
+              (let ((me (self)))
+                (assert-true (register 'main me))
+                (assert-true (pid? (whereis 'main)))
+                (assert-equal 99 (send 'main 99))
+                (assert-equal 99 (receive-after 100))
+                (assert-true (member 'main (registered)))
+                (assert-true (unregister 'main))
+                (assert-equal #f (whereis 'main)))))
+
+          (make-test "one-for-one restarts only the failed child"
+            (lambda ()
+              (let ((parent (self)))
+                (let* ((spec-a
+                         (make-child-spec
+                           'a
+                           (lambda ()
+                             (send parent (list 'started 'a (self)))
+                             (receive-after 5000))))
+                       (spec-b
+                         (make-child-spec
+                           'b
+                           (lambda ()
+                             (send parent (list 'started 'b (self)))
+                             (receive-after 5000))))
+                       (sup
+                         (one-for-one
+                           (list spec-a spec-b)
+                           'max-restarts 10
+                           'max-seconds 5))
+                       (s1 (receive-after 1000))
+                       (s2 (receive-after 1000)))
+                  (assert-true (pair? s1))
+                  (assert-true (pair? s2))
+                  (let ((pid-a
+                          (if (eq? (car (cdr s1)) 'a)
+                              (car (cdr (cdr s1)))
+                              (car (cdr (cdr s2)))))
+                        (pid-b
+                          (if (eq? (car (cdr s1)) 'b)
+                              (car (cdr (cdr s1)))
+                              (car (cdr (cdr s2))))))
+                    (assert-true (pid? sup))
+                    (assert-true (pid? pid-a))
+                    (assert-true (pid? pid-b))
+                    (assert-true (exit pid-b 'shutdown))
+                    (let ((r (receive-after 2000)))
+                      (assert-true (pair? r))
+                      (assert-equal 'started (car r))
+                      (assert-equal 'b (car (cdr r)))
+                      (assert-true (pid? (car (cdr (cdr r)))))
+                      (assert-not-equal pid-b (car (cdr (cdr r))))
+                      (assert-equal #f (receive-after 250))
+                      (assert-true (kill sup))
+                      (assert-true (exit pid-a 'shutdown))
+                      (assert-true (exit (car (cdr (cdr r))) 'shutdown)))
+                    ))))))
+
+          )))
+
+    (print-tap (run suite)))

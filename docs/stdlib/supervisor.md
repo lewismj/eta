@@ -1,7 +1,6 @@
 # std.supervisor
 
-Erlang-inspired actor supervision strategies.
-Available only when Eta is built with `-DETA_BUILD_NNG=ON`.
+Compatibility shim for `std.actor.supervisor`.
 
 ```scheme
 (import std.supervisor)
@@ -9,9 +8,10 @@ Available only when Eta is built with `-DETA_BUILD_NNG=ON`.
 
 | Symbol | Description |
 | --- | --- |
-| `(one-for-one specs)` | Restart only the failed child. |
-| `(one-for-all specs)` | Restart every child when any one fails. |
+| `(one-for-one specs . opts)` | Start a local one-for-one supervisor. |
+| `(one-for-all specs . opts)` | Start a local one-for-all supervisor. |
+| `(rest-for-one specs . opts)` | Start a local rest-for-one supervisor. |
 
-Each `spec` is a list `(id start-thunk . opts)` describing how to (re)start
-a child.
+This module re-exports `std.actor.supervisor` entry points for existing code.
+Prefer importing `std.actor.supervisor` directly for new code.
 

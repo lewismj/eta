@@ -17,12 +17,19 @@
 (module std.net
   (export
     ;; High-level patterns
+    nng-monitor       ; explicit socket monitor wrapper
+    nng-demonitor     ; explicit socket demonitor wrapper
     with-socket        ; dynamic-wind wrapper for safe socket lifetime
     request-reply      ; synchronous single request/reply round-trip
     worker-pool        ; distribute tasks across N spawned workers
     pub-sub            ; subscribe and drive an event loop
     survey)            ; scatter-gather query via SURVEYOR/RESPONDENT
   (begin
+
+    ;; Explicit socket monitor wrappers.
+    ;; std.actor exports monitor/demonitor for PID monitoring.
+    (define nng-monitor monitor)
+    (define nng-demonitor demonitor)
 
     ;;@doc (with-socket type thunk)
     ;;@category Net

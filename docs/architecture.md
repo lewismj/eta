@@ -19,6 +19,12 @@ Pipeline:  Source → Lex → Parse → Expand → Link → Analyze → Emit →
 
 ---
 
+## Architecture Decision Records
+
+- [ADR 0001: Actors Use VM Mailboxes; NNG Is Distribution Transport](./adr/0001-actors-vm-mailboxes-and-nng-transport.md)
+
+---
+
 ## System Diagram
 
 ```mermaid

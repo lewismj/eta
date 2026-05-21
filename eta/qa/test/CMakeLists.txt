@@ -57,6 +57,7 @@ set(SOURCES
         src/log_tests.cpp
         src/nng_tests.cpp
         src/nng_session_runtime_tests.cpp
+        src/actor_runtime_tests.cpp
         src/clp_linear_tests.cpp
         src/clp_qp_linearize_tests.cpp
         src/clp_qp_matrix_tests.cpp

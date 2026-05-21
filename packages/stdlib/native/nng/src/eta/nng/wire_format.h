@@ -106,6 +106,7 @@ enum BinaryTag : uint8_t {
     BT_HeapVec  =  9,   ///< u32 len + elements (recursive)
     BT_False    = 12,
     BT_ByteVec  = 13,   ///< u32 len + raw bytes
+    BT_Pid      = 14,   ///< node_id u64 + actor_id u64 + incarnation u32
 };
 
 /// Internal: buffered binary writer
@@ -134,6 +135,11 @@ struct BinaryWriter {
         uint64_t u = static_cast<uint64_t>(v);
         for (int i = 0; i < 8; ++i)
             buf.push_back(static_cast<uint8_t>(u >> (8 * i)));
+    }
+
+    void write_u64(uint64_t v) {
+        for (int i = 0; i < 8; ++i)
+            buf.push_back(static_cast<uint8_t>(v >> (8 * i)));
     }
 
     void write_f64(double v) {
@@ -195,6 +201,14 @@ struct BinaryWriter {
             write_u8(BT_ByteVec);
             write_u32(static_cast<uint32_t>(bv->data.size()));
             buf.insert(buf.end(), bv->data.begin(), bv->data.end());
+            return true;
+        }
+        /// Actor PID
+        if (auto* pid = heap.try_get_as<ObjectKind::Pid, types::Pid>(id)) {
+            write_u8(BT_Pid);
+            write_u64(pid->node_id);
+            write_u64(pid->actor_id);
+            write_u32(pid->incarnation);
             return true;
         }
         if (!fail_non_serializable(v)) return false;
@@ -288,6 +302,15 @@ struct BinaryReader {
         for (int i = 0; i < 8; ++i)
             u |= (static_cast<uint64_t>(data[pos + i]) << (8 * i));
         v = static_cast<int64_t>(u);
+        pos += 8;
+        return true;
+    }
+    bool read_u64(uint64_t& v) {
+        if (pos + 8 > data.size()) return false;
+        uint64_t u = 0;
+        for (int i = 0; i < 8; ++i)
+            u |= (static_cast<uint64_t>(data[pos + i]) << (8 * i));
+        v = u;
         pos += 8;
         return true;
     }
@@ -390,6 +413,17 @@ struct BinaryReader {
                 std::vector<uint8_t> bytes(data.begin() + pos, data.begin() + pos + len);
                 pos += len;
                 auto res = make_bytevector(heap, std::move(bytes));
+                if (!res) return std::unexpected(res.error());
+                return *res;
+            }
+            case BT_Pid: {
+                std::uint64_t node_id = 0;
+                std::uint64_t actor_id = 0;
+                std::uint32_t incarnation = 0;
+                if (!read_u64(node_id)) return err("truncated pid node id");
+                if (!read_u64(actor_id)) return err("truncated pid actor id");
+                if (!read_u32(incarnation)) return err("truncated pid incarnation");
+                auto res = make_pid(heap, types::Pid{node_id, actor_id, incarnation});
                 if (!res) return std::unexpected(res.error());
                 return *res;
             }

@@ -75,6 +75,7 @@ sections build on each other and culminate in
 
 | Example                                                       | Pattern                              |
 | :------------------------------------------------------------ | :----------------------------------- |
+| [`gen-server-counter.eta`](../../cookbook/concurrency/gen-server-counter.eta) | OTP-style counter service (`std.actor.gen_server`) |
 | [`message-passing.eta`](../../cookbook/concurrency/message-passing.eta)   | Parent / child via PAIR              |
 | [`inproc.eta`](../../cookbook/concurrency/inproc.eta)                     | `spawn-thread` with closure capture  |
 | [`worker-pool.eta`](../../cookbook/concurrency/worker-pool.eta)           | Parallel fan-out                     |

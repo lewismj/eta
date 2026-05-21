@@ -363,6 +363,24 @@ inline void register_builtin_specs_seed(BuiltinEnvironment& env) {
      */
     r("register-prop-attr!",   1, false);
     r("%clp-prop-queue-size",  0, false);
+    r("%actor-self",           0, false);
+    r("%actor-pid?",           1, false);
+    r("%actor-alive?",         1, false);
+    r("%actor-spawn",          1, false);
+    r("%actor-send",           2, false);
+    r("%actor-receive",        2, false);
+    r("%actor-mailbox-len",    0, false);
+    r("%actor-trap-exit!",     1, false);
+    r("%actor-link",           1, false);
+    r("%actor-unlink",         1, false);
+    r("%actor-monitor",        1, false);
+    r("%actor-demonitor",      1, true);
+    r("%actor-exit",           2, false);
+    r("%actor-kill",           1, true);
+    r("%actor-register",       2, false);
+    r("%actor-unregister",     1, false);
+    r("%actor-whereis",        1, false);
+    r("%actor-registered",     0, false);
     r("eval",                  1, false);
 
     /**

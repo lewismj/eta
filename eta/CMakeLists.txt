@@ -388,6 +388,23 @@ set_tests_properties(builtin_catalog_docs_guard_tests PROPERTIES
     WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
 
 add_test(
+    NAME actor_m0_design_lock_guard
+    COMMAND ${Python3_EXECUTABLE}
+        "${ETA_REPO_ROOT_DIR}/scripts/tests/check_actor_m0_design_lock.py"
+        --root "${ETA_REPO_ROOT_DIR}"
+)
+set_tests_properties(actor_m0_design_lock_guard PROPERTIES
+    WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
+
+add_test(
+    NAME actor_m0_design_lock_guard_tests
+    COMMAND ${Python3_EXECUTABLE}
+        "${ETA_REPO_ROOT_DIR}/scripts/tests/test_check_actor_m0_design_lock.py"
+)
+set_tests_properties(actor_m0_design_lock_guard_tests PROPERTIES
+    WORKING_DIRECTORY "${ETA_REPO_ROOT_DIR}")
+
+add_test(
     NAME legacy_builtin_names_symbol_guard
     COMMAND ${Python3_EXECUTABLE}
         "${ETA_REPO_ROOT_DIR}/scripts/tests/check_legacy_builtin_names_symbol.py"

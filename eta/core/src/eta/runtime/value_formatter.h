@@ -32,7 +32,7 @@ enum class FormatMode { Display, Write };
  *
  * Handles all value types: nil, booleans, characters, fixnums, flonums,
  * strings, symbols, pairs/lists, vectors, bytevectors, closures, primitives,
- * continuations, ports, and other heap objects.
+ * continuations, ports, pids, and other heap objects.
  */
 std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& intern_table);
 

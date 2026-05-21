@@ -801,6 +801,13 @@ optimisers, and (when built with CUDA) device transfer.
 
 ## 24. Concurrency & Distribution
 
+> **Warning (Transition):**
+> The current concurrency primitives in this section are socket-based
+> compatibility APIs over NNG (`spawn`, `spawn-thread`,
+> `current-mailbox`, `send!`, `recv!`, `monitor`). The planned actor
+> runtime moves local actors to VM mailboxes addressed by PIDs, with NNG
+> retained as transport/distribution infrastructure.
+
 Eta's actor model is built on **nng**: every actor owns a mailbox
 socket; messages are arbitrary Eta values serialised by the runtime.
 The same `send!` / `recv!` API works for in-process threads, OS

@@ -22,6 +22,7 @@
 #include "eta/runtime/port.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/vm/vm.h"
+#include "eta/runtime/actor/actor_system.h"
 #include "eta/semantics/emitter.h"
 #include "eta/semantics/optimization_pipeline.h"
 #include "eta/session/compilation_session.h"
@@ -378,6 +379,18 @@ private:
     [[nodiscard]] std::string diagnostics_to_string() const override;
     [[nodiscard]] std::vector<std::string> discover_module_names() const override;
     void collect_garbage_with_registry_roots();
+    std::expected<runtime::types::Pid, runtime::error::RuntimeError> spawn_actor_for_vm(
+        runtime::vm::VM& source_vm,
+        runtime::nanbox::LispVal thunk);
+    std::expected<runtime::types::Pid, runtime::error::RuntimeError> spawn_actor_for_vm(
+        runtime::vm::VM& source_vm,
+        runtime::nanbox::LispVal thunk,
+        const semantics::BytecodeFunctionRegistry& source_registry,
+        std::size_t primitive_global_ref_slot_limit);
+    void run_spawned_actor(
+        runtime::types::Pid pid,
+        std::vector<std::uint8_t> funcs_bytes,
+        std::vector<std::uint8_t> captures_bytes);
 
     /**
      * Auto-detect the path to the etai binary at startup.
@@ -406,6 +419,7 @@ private:
     native::NativeSidecarManager sidecar_manager_;
     native::SidecarRuntimeBindingV1 sidecar_runtime_binding_{};
     runtime::vm::VM vm_;
+    std::shared_ptr<runtime::actor::ActorSystem> actor_system_;
 
     diagnostic::DiagnosticEngine diag_engine_;
 

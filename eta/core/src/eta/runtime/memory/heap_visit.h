@@ -64,6 +64,7 @@ namespace eta::runtime::memory::heap {
             case Regex:
             case LogSink:
             case LogLogger:
+            case Pid:
             case NngSocket:   ///< leaf: holds only OS handle + raw bytes, no GC refs
             case NativeObject:
             case Unknown:

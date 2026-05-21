@@ -117,8 +117,12 @@ void PrimReg::register_sequences() {
         if (args.empty()) return nanbox::Nil;
         if (args.size() == 1) return args[0];
 
+        auto roots = heap.make_external_root_frame();
+        for (auto value : args) roots.push(value);
+
         /// Start from the last argument (which doesn't need to be a list)
         LispVal result = args.back();
+        roots.push(result);
 
         /// Process arguments right-to-left (all but the last must be proper lists)
         for (auto it = args.rbegin() + 1; it != args.rend(); ++it) {
@@ -138,13 +142,17 @@ void PrimReg::register_sequences() {
                 auto cons = make_cons(heap, *rit, result);
                 if (!cons) return cons;
                 result = *cons;
+                roots.push(result);
             }
         }
         return result;
     });
 
     env.register_builtin("reverse", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
+        auto roots = heap.make_external_root_frame();
+        roots.push(args[0]);
         LispVal result = nanbox::Nil;
+        roots.push(result);
         LispVal cur = args[0];
         while (cur != nanbox::Nil) {
             if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject)
@@ -154,6 +162,7 @@ void PrimReg::register_sequences() {
             auto new_cons = make_cons(heap, cons->car, result);
             if (!new_cons) return new_cons;
             result = *new_cons;
+            roots.push(result);
             cur = cons->cdr;
         }
         return result;
@@ -317,6 +326,10 @@ void PrimReg::register_sequences_higher_order_bridge() {
         if (!ops::is_boxed(proc) || ops::tag(proc) != Tag::HeapObject)
             return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "map: first argument must be a procedure"}});
 
+        auto roots = heap.make_external_root_frame();
+        roots.push(proc);
+        roots.push(args[1]);
+
         std::vector<LispVal> results;
         LispVal cur = args[1];
         while (cur != nanbox::Nil) {
@@ -338,14 +351,17 @@ void PrimReg::register_sequences_higher_order_bridge() {
             }
             if (!res) return res;
             results.push_back(*res);
+            roots.push(*res);
             cur = cons->cdr;
         }
         /// Build result list in order
         LispVal result = nanbox::Nil;
+        roots.push(result);
         for (auto it = results.rbegin(); it != results.rend(); ++it) {
             auto cons_val = make_cons(heap, *it, result);
             if (!cons_val) return cons_val;
             result = *cons_val;
+            roots.push(result);
         }
         return result;
     });

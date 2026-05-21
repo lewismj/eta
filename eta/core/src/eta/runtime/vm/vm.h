@@ -15,6 +15,7 @@
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/error.h"
+#include "eta/runtime/types/pid.h"
 #include "eta/reader/lexer.h"
 #include "eta/runtime/clp/constraint_store.h"
 #include "eta/runtime/clp/real_store.h"
@@ -23,6 +24,7 @@
 #include "debug_state.h"   ///< DebugState, BreakLocation, StopEvent, StopReason
 
 namespace eta::runtime::memory::gc { class MarkSweepGC; }
+namespace eta::runtime::actor { class ActorSystem; }
 
 namespace eta::runtime::vm {
 
@@ -167,6 +169,8 @@ using FunctionResolver = std::function<const BytecodeFunction*(uint32_t)>;
 
 class VM {
 public:
+    using ActorSpawnHook = std::function<std::expected<types::Pid, RuntimeError>(VM&, LispVal)>;
+
     struct ExecutionSnapshot {
         std::vector<LispVal> stack;
         std::vector<Frame> frames;
@@ -323,6 +327,38 @@ public:
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
 
     std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);
+
+    /**
+     * @brief Shared actor system bound to this VM.
+     */
+    void set_actor_system(std::shared_ptr<actor::ActorSystem> actor_system) {
+        actor_system_ = std::move(actor_system);
+    }
+
+    [[nodiscard]] const std::shared_ptr<actor::ActorSystem>& actor_system() const noexcept {
+        return actor_system_;
+    }
+
+    /**
+     * @brief Install actor spawn callback used by `%actor-spawn`.
+     */
+    void set_actor_spawn_hook(ActorSpawnHook hook) {
+        actor_spawn_hook_ = std::move(hook);
+    }
+
+    [[nodiscard]] std::expected<types::Pid, RuntimeError> spawn_actor(LispVal thunk) {
+        if (!actor_spawn_hook_) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InternalError,
+                "actor spawn hook is not installed"}});
+        }
+        return actor_spawn_hook_(*this, thunk);
+    }
+
+    [[nodiscard]] Heap& heap() noexcept { return heap_; }
+    [[nodiscard]] const Heap& heap() const noexcept { return heap_; }
+    [[nodiscard]] InternTable& intern_table() noexcept { return intern_table_; }
+    [[nodiscard]] const InternTable& intern_table() const noexcept { return intern_table_; }
 
     void save_execution_state();
     void restore_execution_state();
@@ -483,6 +519,8 @@ private:
 
     Heap& heap_;
     InternTable& intern_table_;
+    std::shared_ptr<actor::ActorSystem> actor_system_{};
+    ActorSpawnHook actor_spawn_hook_{};
     FunctionResolver func_resolver_;
     std::vector<LispVal> stack_;
     std::vector<Frame> frames_;

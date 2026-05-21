@@ -4,14 +4,20 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <sstream>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 
 #include "eta/interpreter/all_primitives.h"
+#include "eta/nng/nng_primitives.h"
 #include "eta/nng/session_actor_runtime.h"
+#include "eta/nng/spawn_capture_format.h"
 #include "eta/runtime/builtin_catalog.h"
 #include "eta/runtime/factory.h"
+#include "eta/runtime/types/closure.h"
+#include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/session/repl_input.h"
 #include "eta/session/runtime_config.h"
 #include "eta/util/path.h"
@@ -38,6 +44,7 @@ Driver::Driver(ModulePathResolver resolver,
       primitive_installer_(heap_, builtins_, extensions_),
       sidecar_manager_(*this),
       vm_(heap_, intern_table_),
+      actor_system_(std::make_shared<runtime::actor::ActorSystem>()),
       diag_engine_(),
       actor_runtime_(eta::nng::make_session_actor_runtime()),
       command_line_arguments_(std::move(command_line_arguments)),
@@ -53,6 +60,20 @@ Driver::Driver(ModulePathResolver resolver,
      * heap-backed constants long before they are executed or serialized.
      */
     heap_.set_gc_callback([this]() { collect_garbage_with_registry_roots(); });
+
+    if (actor_system_) {
+        vm_.set_actor_system(actor_system_);
+        vm_.set_actor_spawn_hook(
+            [this](runtime::vm::VM& source_vm, runtime::nanbox::LispVal thunk)
+                -> std::expected<runtime::types::Pid, runtime::error::RuntimeError> {
+                return spawn_actor_for_vm(
+                    source_vm,
+                    thunk,
+                    registry_,
+                    primitive_installer_.builtin_count());
+            });
+        (void)actor_system_->register_current_thread_actor();
+    }
 
     /**
      * Register all core primitives and native-sidecar placeholders.
@@ -127,6 +148,10 @@ Driver::Driver(ModulePathResolver resolver,
 }
 
 Driver::~Driver() {
+    if (actor_system_) {
+        actor_system_->shutdown();
+    }
+
     const auto log_shutdown_idx = builtins_.lookup("%log-shutdown!");
     if (!log_shutdown_idx.has_value()) {
         return;
@@ -603,6 +628,263 @@ void Driver::collect_garbage_with_registry_roots() {
         }
     }
     vm_.collect_garbage();
+}
+
+std::expected<runtime::types::Pid, runtime::error::RuntimeError> Driver::spawn_actor_for_vm(
+    runtime::vm::VM& source_vm,
+    runtime::nanbox::LispVal thunk) {
+    return spawn_actor_for_vm(
+        source_vm,
+        thunk,
+        registry_,
+        primitive_installer_.builtin_count());
+}
+
+std::expected<runtime::types::Pid, runtime::error::RuntimeError> Driver::spawn_actor_for_vm(
+    runtime::vm::VM& source_vm,
+    runtime::nanbox::LispVal thunk,
+    const semantics::BytecodeFunctionRegistry& source_registry,
+    std::size_t primitive_global_ref_slot_limit) {
+    using runtime::error::RuntimeError;
+    using runtime::error::RuntimeErrorCode;
+    using runtime::error::VMError;
+    using runtime::memory::heap::ObjectKind;
+    using runtime::nanbox::Tag;
+    using runtime::nanbox::ops::is_boxed;
+    using runtime::nanbox::ops::payload;
+    using runtime::nanbox::ops::tag;
+
+    if (!actor_system_) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "actor system is not available"}});
+    }
+
+    if (!is_boxed(thunk) || tag(thunk) != Tag::HeapObject) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            "%actor-spawn: argument must be a 0-argument closure"}});
+    }
+
+    auto& source_heap = source_vm.heap();
+    auto* closure = source_heap.try_get_as<ObjectKind::Closure, runtime::types::Closure>(
+        payload(thunk));
+    if (!closure) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            "%actor-spawn: argument must be a closure"}});
+    }
+
+    if (closure->func->arity != 0 || closure->func->has_rest) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            "%actor-spawn: thunk must accept exactly 0 arguments"}});
+    }
+
+    std::uint32_t entry_idx = UINT32_MAX;
+    {
+        const auto function_count = static_cast<std::uint32_t>(source_registry.size());
+        for (std::uint32_t i = 0; i < function_count; ++i) {
+            if (source_registry.get(i) == closure->func) {
+                entry_idx = i;
+                break;
+            }
+        }
+    }
+    if (entry_idx == UINT32_MAX) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "%actor-spawn: closure function is not present in the registry"}});
+    }
+
+    auto serialized = eta::nng::build_serialized_closure(
+        entry_idx,
+        closure->upvals,
+        source_vm.globals(),
+        source_registry,
+        source_heap,
+        source_vm.intern_table(),
+        primitive_global_ref_slot_limit);
+    if (!serialized) {
+        return std::unexpected(serialized.error());
+    }
+
+    auto serialized_ptr =
+        std::make_shared<eta::nng::ProcessManager::SerializedClosure>(
+            std::move(*serialized));
+
+    auto spawned = actor_system_->spawn(
+        [this, serialized_ptr](const runtime::types::Pid& pid) {
+            run_spawned_actor(pid, serialized_ptr->funcs_bytes, serialized_ptr->captures_bytes);
+        });
+
+    if (!spawned) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "%actor-spawn: failed to create actor thread: " + spawned.error()}});
+    }
+
+    return *spawned;
+}
+
+void Driver::run_spawned_actor(runtime::types::Pid pid,
+                               std::vector<std::uint8_t> funcs_bytes,
+                               std::vector<std::uint8_t> captures_bytes) {
+    if (actor_system_) {
+        (void)actor_system_->bind_current_thread_pid(pid);
+    }
+
+    const auto child_heap_bytes = Driver::parse_heap_env_var(
+        "ETA_HEAP_SOFT_LIMIT_CHILD_THREADS",
+        Driver::parse_heap_env_var(
+            "ETA_HEAP_SOFT_LIMIT",
+            Driver::DEFAULT_CHILD_HEAP_SOFT_LIMIT_BYTES));
+
+    runtime::memory::heap::Heap child_heap(child_heap_bytes);
+    runtime::memory::intern::InternTable child_intern;
+    runtime::vm::VM child_vm(child_heap, child_intern);
+
+    child_vm.set_actor_system(actor_system_);
+
+    runtime::BuiltinEnvironment child_builtins;
+    runtime::register_builtin_specs(child_builtins);
+    child_builtins.begin_patching();
+    eta::interpreter::register_all_primitives(
+        child_builtins,
+        child_heap,
+        child_intern,
+        child_vm,
+        command_line_arguments_);
+    child_builtins.verify_all_patched();
+
+    runtime::ExtensionEnvironment child_extensions;
+    RuntimePrimitiveInstaller child_primitive_installer(
+        child_heap, child_builtins, child_extensions);
+
+    auto& child_globals = child_vm.globals();
+    const auto primitive_slots = child_primitive_installer.total_primitive_count();
+    if (child_globals.size() < primitive_slots) {
+        child_globals.resize(primitive_slots, runtime::nanbox::Nil);
+    }
+
+    auto primitive_install = child_primitive_installer.install_into(
+        child_globals, primitive_slots);
+    if (!primitive_install) {
+        std::cerr << "[actor-spawn] primitive_install failed\n";
+        return;
+    }
+
+    semantics::BytecodeFunctionRegistry child_registry;
+    runtime::vm::BytecodeSerializer serializer(child_heap, child_intern);
+    std::istringstream bytecode_stream(
+        std::string(funcs_bytes.begin(), funcs_bytes.end()),
+        std::ios::binary);
+    auto etac_payload = serializer.deserialize(bytecode_stream, /*expected_builtins=*/0);
+    if (!etac_payload) {
+        std::cerr << "[actor-spawn] bytecode deserialize failed\n";
+        return;
+    }
+
+    const std::uint32_t base_idx = static_cast<std::uint32_t>(child_registry.size());
+    for (const auto& func : etac_payload->registry.all()) {
+        runtime::vm::BytecodeFunction copy = func;
+        copy.rebase_func_indices(static_cast<std::int32_t>(base_idx));
+        child_registry.add(std::move(copy));
+    }
+
+    child_vm.set_function_resolver([&child_registry](std::uint32_t idx) {
+        return child_registry.get(idx);
+    });
+    child_vm.set_actor_spawn_hook(
+        [this, &child_registry, primitive_slots](runtime::vm::VM& vm,
+                                                 runtime::nanbox::LispVal thunk)
+            -> std::expected<runtime::types::Pid, runtime::error::RuntimeError> {
+            return spawn_actor_for_vm(
+                vm,
+                thunk,
+                child_registry,
+                primitive_slots);
+        });
+
+    auto capture_payload = eta::nng::deserialize_spawn_capture(
+        std::span<const std::uint8_t>(captures_bytes),
+        child_heap,
+        child_intern,
+        [&child_registry, base_idx](std::uint32_t remapped_idx)
+            -> const runtime::vm::BytecodeFunction* {
+            return child_registry.get(base_idx + remapped_idx);
+        },
+        [&child_vm](std::uint32_t slot) -> std::optional<runtime::nanbox::LispVal> {
+            const auto& globals = child_vm.globals();
+            if (slot >= globals.size()) return std::nullopt;
+            return globals[slot];
+        });
+    if (!capture_payload) {
+        std::visit(
+            [](const auto& err) {
+                using Err = std::decay_t<decltype(err)>;
+                if constexpr (std::is_same_v<Err, runtime::error::VMError>) {
+                    std::cerr << "[actor-spawn] capture deserialize failed: "
+                              << err.message << "\n";
+                } else if constexpr (std::is_same_v<Err, runtime::nanbox::NaNBoxError>) {
+                    std::cerr << "[actor-spawn] capture deserialize failed: "
+                              << runtime::nanbox::to_string(err) << "\n";
+                } else if constexpr (std::is_same_v<Err, runtime::memory::heap::HeapError>) {
+                    std::cerr << "[actor-spawn] capture deserialize failed: "
+                              << runtime::memory::heap::to_string(err) << "\n";
+                } else if constexpr (
+                    std::is_same_v<Err, runtime::memory::intern::InternTableError>) {
+                    std::cerr << "[actor-spawn] capture deserialize failed: "
+                              << runtime::memory::intern::to_string(err) << "\n";
+                }
+            },
+            capture_payload.error());
+        return;
+    }
+
+    for (const auto& captured_global : capture_payload->globals) {
+        if (child_globals.size() <= captured_global.slot) {
+            child_globals.resize(captured_global.slot + 1, runtime::nanbox::Nil);
+        }
+        child_globals[captured_global.slot] = captured_global.value;
+    }
+
+    const auto* entry_function = child_registry.get(base_idx);
+    if (!entry_function) {
+        std::cerr << "[actor-spawn] missing entry function\n";
+        return;
+    }
+
+    auto closure = runtime::memory::factory::make_closure(
+        child_heap,
+        entry_function,
+        std::move(capture_payload->upvals));
+    if (!closure) {
+        std::cerr << "[actor-spawn] make_closure failed\n";
+        return;
+    }
+
+    auto child_result = child_vm.call_value(*closure, {});
+    if (!child_result) {
+        std::visit(
+            [](const auto& err) {
+                using Err = std::decay_t<decltype(err)>;
+                if constexpr (std::is_same_v<Err, runtime::error::VMError>) {
+                    std::cerr << "[actor-spawn] child runtime error: " << err.message << "\n";
+                } else if constexpr (std::is_same_v<Err, runtime::nanbox::NaNBoxError>) {
+                    std::cerr << "[actor-spawn] child runtime error: "
+                              << runtime::nanbox::to_string(err) << "\n";
+                } else if constexpr (std::is_same_v<Err, runtime::memory::heap::HeapError>) {
+                    std::cerr << "[actor-spawn] child runtime error: "
+                              << runtime::memory::heap::to_string(err) << "\n";
+                } else if constexpr (
+                    std::is_same_v<Err, runtime::memory::intern::InternTableError>) {
+                    std::cerr << "[actor-spawn] child runtime error: "
+                              << runtime::memory::intern::to_string(err) << "\n";
+                }
+            },
+            child_result.error());
+    }
 }
 
 std::string Driver::detect_etai_path() {

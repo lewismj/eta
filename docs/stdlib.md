@@ -20,7 +20,7 @@ tutorials and longer examples see the [Language Guide](language_guide.md).
   `%regex-*`). Those built-ins are implementation detail and are not
   documented here.
 - Some modules require optional build flags:
-  - `std.net`, `std.supervisor` need `-DETA_BUILD_NNG=ON`.
+  - `std.net` needs `-DETA_BUILD_NNG=ON`.
   - `std.torch` needs `-DETA_BUILD_TORCH=ON`.
 
 ## Modules
@@ -87,9 +87,12 @@ tutorials and longer examples see the [Language Guide](language_guide.md).
 
 ### Concurrency and networking
 
+- [std.actor](stdlib/actor.md) - Local PID/mailbox actor runtime wrappers.
+- [std.actor.gen_server](stdlib/actor-gen-server.md) - OTP-style server behaviour on top of `std.actor`.
+- [std.actor.supervisor](stdlib/actor-supervisor.md) - Local actor supervisor helpers (strategies, child specs, restart intensity).
 - [std.net](stdlib/net.md) - Networking patterns over NNG.
 - [net.http](stdlib/net-http.md) - HTTP/HTTPS client helpers via the eta-http sidecar package.
-- [std.supervisor](stdlib/supervisor.md) - Actor supervision strategies.
+- [std.supervisor](stdlib/supervisor.md) - Compatibility shim that re-exports `std.actor.supervisor`.
 
 ### Tooling
 

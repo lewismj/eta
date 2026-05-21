@@ -18,6 +18,7 @@ Worker processes are launched automatically by `spawn` or `worker-pool`.
 
 ## Contents
 
+- [Gen-Server Counter](#gen-server-counter)
 - [Message Passing](#message-passing)
 - [Worker Pool](#worker-pool)
 - [Parallel Fibonacci](#parallel-fibonacci)
@@ -28,6 +29,28 @@ Worker processes are launched automatically by `spawn` or `worker-pool`.
 - [In-Process Messaging](#in-process-messaging)
 - [Echo Server / Client](#echo-server--client)
 - [Distributed Compute](#distributed-compute)
+
+---
+
+## Gen-Server Counter
+
+`cookbook/concurrency/gen-server-counter.eta` · [source](https://github.com/lewismj/eta/blob/main/cookbook/concurrency/gen-server-counter.eta)
+
+OTP-style counter service built on `std.actor.gen_server`.
+
+```scheme
+(module gen-server-counter
+  (import std.io std.actor.gen_server)
+  (begin
+    (define server
+      (gen-server-start counter-module 5 '(name counter-server)))
+
+    (println (gen-server-call 'counter-server 'get 1000))
+    (gen-server-cast 'counter-server '(inc 4))
+    (println (gen-server-call server 'get 1000))
+    (println (gen-server-call 'counter-server '(add 10) 1000))
+    (gen-server-stop 'counter-server 'shutdown 1000)))
+```
 
 ---
 
