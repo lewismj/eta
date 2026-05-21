@@ -39,6 +39,10 @@ function(eta_http_fetch_libcurl)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
     set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
+    # Package builds do not consume curl's manpages/tools; disable docs to
+    # avoid install-time references to generated files when only eta_http is built.
+    set(BUILD_LIBCURL_DOCS OFF CACHE BOOL "" FORCE)
+    set(BUILD_MISC_DOCS OFF CACHE BOOL "" FORCE)
     set(ENABLE_CURL_MANUAL OFF CACHE BOOL "" FORCE)
 
     if(WIN32)

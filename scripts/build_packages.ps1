@@ -227,14 +227,14 @@ function Resolve-SidecarBinary {
         [Parameter()] [string]$PackageRoot = ""
     )
 
-    $isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+    $hostIsWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
         [System.Runtime.InteropServices.OSPlatform]::Windows)
-    $isLinux = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+    $hostIsLinux = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
         [System.Runtime.InteropServices.OSPlatform]::Linux)
 
-    if ($isWindows) {
+    if ($hostIsWindows) {
         $fileName = "${BaseName}.dll"
-    } elseif ($isLinux) {
+    } elseif ($hostIsLinux) {
         $fileName = "lib${BaseName}.so"
     } else {
         $fileName = "lib${BaseName}.dylib"
