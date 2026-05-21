@@ -172,7 +172,7 @@
     ;; pair whose car is equal? to key, or #f if not found.
     (defun assoc-ref (key alist)
       (let ((p (assoc key alist)))
-        (and p (cdr p))))
+        (if (non-pair? p) #f (cdr p))))
 
     ;;  Platform 
 

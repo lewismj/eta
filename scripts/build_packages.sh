@@ -12,6 +12,7 @@ skip_native="${SKIP_NATIVE:-OFF}"
 cmake_prefix_path="${CMAKE_PREFIX_PATH:-}"
 boost_dir="${BOOST_DIR:-}"
 boost_include_dir="${BOOST_INCLUDE_DIR:-}"
+eta_core_library="${ETA_CORE_LIBRARY:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -80,9 +81,68 @@ host_triple() {
   esac
 }
 
+vcpkg_host_triplet() {
+  local os arch
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "${os}" in
+    Linux)
+      case "${arch}" in
+        x86_64) echo "x64-linux" ;;
+        aarch64|arm64) echo "arm64-linux" ;;
+        *) echo "unsupported-linux-arch:${arch}" ;;
+      esac
+      ;;
+    Darwin)
+      case "${arch}" in
+        x86_64) echo "x64-osx" ;;
+        arm64|aarch64) echo "arm64-osx" ;;
+        *) echo "unsupported-macos-arch:${arch}" ;;
+      esac
+      ;;
+    *)
+      echo "unsupported-os:${os}"
+      ;;
+  esac
+}
+
+vcpkg_root=""
+if [ -n "${VCPKG_ROOT:-}" ] && [ -d "${VCPKG_ROOT}" ]; then
+  vcpkg_root="${VCPKG_ROOT}"
+elif [ -n "${VCPKG_DIR:-}" ] && [ -d "${VCPKG_DIR}" ]; then
+  vcpkg_root="${VCPKG_DIR}"
+fi
+
+if [ -n "${vcpkg_root}" ]; then
+  vcpkg_triplet="$(vcpkg_host_triplet)"
+  case "${vcpkg_triplet}" in
+    unsupported-*)
+      ;;
+    *)
+      vcpkg_installed="${vcpkg_root}/installed/${vcpkg_triplet}"
+      if [ -d "${vcpkg_installed}" ]; then
+        if [ -z "${cmake_prefix_path}" ]; then
+          cmake_prefix_path="${vcpkg_installed}"
+        fi
+        if [ -z "${boost_dir}" ]; then
+          if [ -d "${vcpkg_installed}/share/boost" ]; then
+            boost_dir="${vcpkg_installed}/share/boost"
+          elif [ -d "${vcpkg_installed}/share/boost-headers" ]; then
+            boost_dir="${vcpkg_installed}/share/boost-headers"
+          fi
+        fi
+        if [ -z "${boost_include_dir}" ] && [ -d "${vcpkg_installed}/include" ]; then
+          boost_include_dir="${vcpkg_installed}/include"
+        fi
+      fi
+      ;;
+  esac
+fi
+
 resolve_sidecar_binary() {
   local build_dir="$1"
   local base_name="$2"
+  local package_root="${3:-}"
   local file_name=""
   case "$(uname -s)" in
     Linux) file_name="lib${base_name}.so" ;;
@@ -105,7 +165,56 @@ resolve_sidecar_binary() {
     echo "${found}"
     return
   fi
+  if [ -n "${package_root}" ] && [ -d "${package_root}/libs" ]; then
+    found="$(find "${package_root}/libs" -type f -name "${file_name}" | head -n 1 || true)"
+    if [ -n "${found}" ]; then
+      echo "${found}"
+      return
+    fi
+  fi
   echo "Could not locate sidecar binary ${file_name} under ${build_dir}" >&2
+  exit 1
+}
+
+resolve_eta_core_library() {
+  local eta_exe="$1"
+  local config_name="$2"
+  local explicit="${3:-}"
+  local core_name=""
+  case "$(uname -s)" in
+    Linux|Darwin) core_name="libeta_core.a" ;;
+    *) echo "Unsupported host OS for eta_core resolution: $(uname -s)" >&2; exit 1 ;;
+  esac
+
+  if [ -n "${explicit}" ]; then
+    if [ -f "${explicit}" ]; then
+      echo "${explicit}"
+      return
+    fi
+    echo "ETA_CORE_LIBRARY does not exist: ${explicit}" >&2
+    exit 1
+  fi
+
+  local eta_dir
+  eta_dir="$(cd "$(dirname "${eta_exe}")" && pwd)"
+  local candidates=(
+    "${eta_dir}/../core/${core_name}"
+    "${eta_dir}/../../core/${core_name}"
+    "${eta_dir}/../core/${config_name}/${core_name}"
+    "${eta_dir}/../../core/${config_name}/${core_name}"
+    "${project_root}/build/eta/core/${core_name}"
+    "${project_root}/build/eta/core/${config_name}/${core_name}"
+  )
+
+  local candidate=""
+  for candidate in "${candidates[@]}"; do
+    if [ -f "${candidate}" ]; then
+      echo "${candidate}"
+      return
+    fi
+  done
+
+  echo "Could not resolve eta_core library from eta executable path. Pass ETA_CORE_LIBRARY explicitly." >&2
   exit 1
 }
 
@@ -116,20 +225,25 @@ invoke_native_build() {
   local target_name="$4"
   local base_name="$5"
   local stage_script="$6"
-  local fetch_arg_name="$7"
-  local tests_arg_name="$8"
+  local fetch_arg_name="${7:-}"
+  local tests_arg_name="${8:-}"
   local cmake_prefix_arg="${9:-}"
   local boost_dir_arg="${10:-}"
   local boost_include_arg="${11:-}"
+  local eta_core_library_arg="${12:-}"
 
   echo "> Building native package: ${name}"
 
   local configure_args=(
     -S "${package_root}"
     -B "${native_build_dir}"
-    "-D${fetch_arg_name}=${fetch_upstream}"
-    "-D${tests_arg_name}=OFF"
   )
+  if [ -n "${fetch_arg_name}" ]; then
+    configure_args+=("-D${fetch_arg_name}=${fetch_upstream}")
+  fi
+  if [ -n "${tests_arg_name}" ]; then
+    configure_args+=("-D${tests_arg_name}=OFF")
+  fi
   if [ -n "${cmake_prefix_arg}" ]; then
     configure_args+=("-DCMAKE_PREFIX_PATH=${cmake_prefix_arg}")
   fi
@@ -139,13 +253,16 @@ invoke_native_build() {
   if [ -n "${boost_include_arg}" ]; then
     configure_args+=("-DBoost_INCLUDE_DIR=${boost_include_arg}")
   fi
+  if [ -n "${eta_core_library_arg}" ]; then
+    configure_args+=("-DETA_CORE_LIBRARY=${eta_core_library_arg}")
+  fi
 
   cmake "${configure_args[@]}"
 
   cmake --build "${native_build_dir}" --config "${config}" --target "${target_name}"
 
   local sidecar_binary
-  sidecar_binary="$(resolve_sidecar_binary "${native_build_dir}" "${base_name}")"
+  sidecar_binary="$(resolve_sidecar_binary "${native_build_dir}" "${base_name}" "${package_root}")"
 
   local triple
   triple="$(host_triple)"
@@ -164,6 +281,23 @@ invoke_native_build() {
 }
 
 if [ "${skip_native}" != "ON" ]; then
+  eta_core_library="$(resolve_eta_core_library "${eta_executable}" "${config}" "${eta_core_library}")"
+  echo "  using ETA_CORE_LIBRARY=${eta_core_library}"
+
+  invoke_native_build \
+    "http" \
+    "${project_root}/packages/net/native/http" \
+    "${build_root}/http" \
+    "eta_http" \
+    "eta_http" \
+    "${project_root}/packages/net/native/http/cmake/StageHttpSidecar.cmake" \
+    "ETA_HTTP_FETCH_UPSTREAM" \
+    "ETA_HTTP_ENABLE_TESTS" \
+    "${cmake_prefix_path}" \
+    "${boost_dir}" \
+    "${boost_include_dir}" \
+    "${eta_core_library}"
+
   invoke_native_build \
     "duckdb" \
     "${project_root}/packages/db/native/duckdb" \
@@ -173,9 +307,10 @@ if [ "${skip_native}" != "ON" ]; then
     "${project_root}/packages/db/native/duckdb/cmake/StageDuckDBSidecar.cmake" \
     "ETA_DUCKDB_FETCH_UPSTREAM" \
     "ETA_DUCKDB_ENABLE_TESTS" \
-    "" \
-    "" \
-    ""
+    "${cmake_prefix_path}" \
+    "${boost_dir}" \
+    "${boost_include_dir}" \
+    "${eta_core_library}"
 
   invoke_native_build \
     "lightgbm" \
@@ -188,23 +323,17 @@ if [ "${skip_native}" != "ON" ]; then
     "ETA_LIGHTGBM_ENABLE_TESTS" \
     "${cmake_prefix_path}" \
     "${boost_dir}" \
-    "${boost_include_dir}"
+    "${boost_include_dir}" \
+    "${eta_core_library}"
 fi
 
 echo "> Building Eta package artifacts (.etac) for non-stdlib packages"
 stdlib_module_path="${project_root}/stdlib"
-effective_module_path="${ETA_MODULE_PATH:-}"
+effective_module_path=""
 if [ -d "${stdlib_module_path}" ]; then
-  case ":${effective_module_path}:" in
-    *":${stdlib_module_path}:"*) ;;
-    *)
-      if [ -n "${effective_module_path}" ]; then
-        effective_module_path="${stdlib_module_path}:${effective_module_path}"
-      else
-        effective_module_path="${stdlib_module_path}"
-      fi
-      ;;
-  esac
+  effective_module_path="${stdlib_module_path}"
+elif [ -n "${ETA_MODULE_PATH:-}" ]; then
+  effective_module_path="${ETA_MODULE_PATH}"
 fi
 
 if [ -n "${effective_module_path}" ]; then

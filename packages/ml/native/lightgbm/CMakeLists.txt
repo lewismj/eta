@@ -9,6 +9,8 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 get_filename_component(ETA_REPO_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(ETA_CORE_SRC_DIR "${ETA_REPO_ROOT_DIR}/eta/core/src")
+set(ETA_CORE_LIBRARY "" CACHE FILEPATH
+    "Path to prebuilt eta_core static library for standalone sidecar builds.")
 set(ETA_STDLIB_DIR "${ETA_REPO_ROOT_DIR}/stdlib" CACHE PATH
     "Path to the Eta stdlib source directory.")
 set(ETA_ETAI_EXECUTABLE "" CACHE FILEPATH
@@ -30,6 +32,30 @@ if(ETA_LIGHTGBM_FETCH_UPSTREAM)
 endif()
 
 find_package(Boost 1.88 REQUIRED)
+
+function(eta_lightgbm_resolve_core_target out_target)
+    if(TARGET eta_core)
+        set(${out_target} eta_core PARENT_SCOPE)
+        return()
+    endif()
+
+    if(NOT "${ETA_CORE_LIBRARY}" STREQUAL "" AND EXISTS "${ETA_CORE_LIBRARY}")
+        if(NOT TARGET eta_core_imported)
+            add_library(eta_core_imported UNKNOWN IMPORTED)
+            set_target_properties(eta_core_imported PROPERTIES
+                IMPORTED_LOCATION "${ETA_CORE_LIBRARY}"
+            )
+        endif()
+        set(${out_target} eta_core_imported PARENT_SCOPE)
+        return()
+    endif()
+
+    message(FATAL_ERROR
+        "Could not resolve eta_core for eta_lightgbm. "
+        "Build eta_core first or pass -DETA_CORE_LIBRARY=/abs/path/to/libeta_core.{a,lib}")
+endfunction()
+
+eta_lightgbm_resolve_core_target(ETA_LIGHTGBM_CORE_TARGET)
 
 set(ETA_LIGHTGBM_LIBRARY_TARGET "")
 set(ETA_LIGHTGBM_INCLUDE_DIR "")
@@ -101,14 +127,8 @@ target_include_directories(eta_lightgbm PRIVATE
 )
 target_link_libraries(eta_lightgbm PRIVATE
     ${ETA_LIGHTGBM_LIBRARY_TARGET}
+    ${ETA_LIGHTGBM_CORE_TARGET}
 )
-if(TARGET eta_core)
-    target_link_libraries(eta_lightgbm PRIVATE eta_core)
-elseif(EXISTS "${ETA_CORE_SRC_DIR}/eta/runtime/memory/intern_table.cpp")
-    target_sources(eta_lightgbm PRIVATE
-        "${ETA_CORE_SRC_DIR}/eta/runtime/memory/intern_table.cpp"
-    )
-endif()
 
 if(ETA_LIGHTGBM_ENABLE_TESTS)
     enable_testing()

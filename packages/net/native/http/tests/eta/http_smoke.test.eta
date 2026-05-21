@@ -1,0 +1,122 @@
+(module net.http.tests.smoke
+  (import std.test)
+  (import std.os)
+  (import std.fs)
+  (import net.http)
+  (import cookbook.net.http-quickstart)
+  (import cookbook.net.rest-client)
+  (import cookbook.net.download-large-file)
+  (begin
+    (define fixture-base-url
+      (let ((value (os:getenv "ETA_HTTP_FIXTURE_BASE_URL")))
+        (if value
+            value
+            (error "net.http smoke: ETA_HTTP_FIXTURE_BASE_URL is not set"))))
+
+    (define (read-file-string path)
+      (let ((input-port (open-input-file path))
+            (output-port (open-output-string)))
+        (letrec ((loop (lambda ()
+                         (let ((ch (read-char input-port)))
+                           (if ch
+                               (begin
+                                 (write-char ch output-port)
+                                 (loop))
+                               (begin
+                                 (close-input-port input-port)
+                                 (get-output-string output-port)))))))
+          (loop))))
+
+    (define (all-char? text ch)
+      (letrec ((loop (lambda (index)
+                       (if (= index (string-length text))
+                           #t
+                           (and (eqv? (string-ref text index) ch)
+                                (loop (+ index 1)))))))
+        (loop 0)))
+
+    (define suite
+      (make-group "net.http"
+        (list
+          (make-test "session-lifecycle"
+            (lambda ()
+              (let ((s (make-session)))
+                (assert-true (session? s))
+                (assert-equal #t (close-session! s))
+                (assert-equal #f (session? s)))))
+
+          (make-test "one-shot-get-200"
+            (lambda ()
+              (let ((resp (get (string-append fixture-base-url "/"))))
+                (assert-true (response? resp))
+                (assert-equal 200 (status resp))
+                (assert-equal "eta-http-loopback-body\n" (body-string resp))
+                (assert-equal "loopback" (header resp "X-Fixture")))))
+
+          (make-test "post-json-roundtrip"
+            (lambda ()
+              (let* ((payload 42)
+                     (resp (post-json (string-append fixture-base-url "/json") payload))
+                     (decoded (body-json resp)))
+                (assert-equal 200 (status resp))
+                (assert-true (number? decoded))
+                (assert-true (= payload decoded)))))
+
+          (make-test "get-json-roundtrip"
+            (lambda ()
+              (let ((decoded (get-json (string-append fixture-base-url "/json-get"))))
+                (assert-true (number? decoded))
+                (assert-true (= decoded 42)))))
+
+          (make-test "download-1k"
+            (lambda ()
+              (let* ((out-path (fs:path-join (os:current-directory) "eta-http-download-1k.bin"))
+                     (resp (download (string-append fixture-base-url "/download/1k") out-path))
+                     (text (read-file-string out-path)))
+                (assert-equal 200 (status resp))
+                (assert-equal 1024 (fs:file-size out-path))
+                (assert-equal 1024 (string-length text))
+                (assert-true (all-char? text #\A))
+                (fs:delete-file out-path))))
+
+          (make-test "raise-for-status-500"
+            (lambda ()
+              (let ((payload
+                      (catch 'runtime.error
+                        (raise-for-status! (get (string-append fixture-base-url "/error-500"))))))
+                (assert-true (pair? payload))
+                (assert-equal 'runtime-error (car payload)))))
+
+          (make-test "url-encode-decode"
+            (lambda ()
+              (let* ((raw "alpha beta/%eta?")
+                     (encoded (url-encode raw))
+                     (decoded (url-decode encoded)))
+                (assert-equal raw decoded))))
+
+          (make-test "cookbook-http-quickstart"
+            (lambda ()
+              (let ((result (run-http-quickstart fixture-base-url)))
+                (assert-equal 200 (cdr (assoc 'get-status result)))
+                (assert-equal 200 (cdr (assoc 'post-status result)))
+                (assert-equal 200 (cdr (assoc 'header-status result)))
+                (assert-equal "quickstart" (cdr (assoc 'header-body result))))))
+
+          (make-test "cookbook-rest-client"
+            (lambda ()
+              (let ((result (run-rest-client fixture-base-url "test-token")))
+                (assert-true (= 42 (cdr (assoc 'get-value result))))
+                (assert-equal 200 (cdr (assoc 'post-status result)))
+                (assert-true (= 42 (cdr (assoc 'post-value result)))))))
+
+          (make-test "cookbook-download-large-file"
+            (lambda ()
+              (let* ((out-path (fs:path-join (os:current-directory) "eta-http-cookbook-download.bin"))
+                     (resp (run-download-example
+                             (string-append fixture-base-url "/download/1k")
+                             out-path)))
+                (assert-equal 200 (status resp))
+                (assert-equal 1024 (fs:file-size out-path))
+                (cleanup-file! out-path)))))))
+
+    (print-tap (run suite))))

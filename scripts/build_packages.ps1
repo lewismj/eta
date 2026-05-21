@@ -33,7 +33,10 @@ param(
     [string]$BoostDir,
 
     [Parameter()]
-    [string]$BoostIncludeDir
+    [string]$BoostIncludeDir,
+
+    [Parameter()]
+    [string]$EtaCoreLibrary
 )
 
 $ErrorActionPreference = "Stop"
@@ -81,6 +84,31 @@ function Get-HostTargetTriple {
     throw "Unsupported host OS for build_packages.ps1"
 }
 
+function Get-VcpkgHostTriplet {
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+            [System.Runtime.InteropServices.OSPlatform]::Windows)) {
+        if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") {
+            return "arm64-windows"
+        }
+        return "x64-windows"
+    }
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+            [System.Runtime.InteropServices.OSPlatform]::Linux)) {
+        $arch = (& uname -m).Trim()
+        if ($arch -eq "x86_64") { return "x64-linux" }
+        if ($arch -eq "aarch64" -or $arch -eq "arm64") { return "arm64-linux" }
+        throw "Unsupported Linux architecture for vcpkg triplet: $arch"
+    }
+    if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+            [System.Runtime.InteropServices.OSPlatform]::OSX)) {
+        $arch = (& uname -m).Trim()
+        if ($arch -eq "x86_64") { return "x64-osx" }
+        if ($arch -eq "aarch64" -or $arch -eq "arm64") { return "arm64-osx" }
+        throw "Unsupported macOS architecture for vcpkg triplet: $arch"
+    }
+    throw "Unsupported host OS for vcpkg triplet resolution"
+}
+
 function Get-CMakeCacheValue {
     param(
         [Parameter(Mandatory = $true)] [string]$CachePath,
@@ -101,21 +129,112 @@ function Get-CMakeCacheValue {
     return ""
 }
 
+function Resolve-EtaCoreLibrary {
+    param(
+        [Parameter(Mandatory = $true)] [string]$ProjectRoot,
+        [Parameter(Mandatory = $true)] [string]$EtaExecutable,
+        [Parameter(Mandatory = $true)] [string]$Config,
+        [Parameter()] [string]$ExplicitPath = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        $explicitFull = [System.IO.Path]::GetFullPath($ExplicitPath)
+        if (-not (Test-Path -LiteralPath $explicitFull)) {
+            throw "ETA_CORE_LIBRARY does not exist: $explicitFull"
+        }
+        return $explicitFull
+    }
+
+    $etaExeDir = Split-Path -Parent $EtaExecutable
+    $isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+        [System.Runtime.InteropServices.OSPlatform]::Windows)
+    $fileName = if ($isWindows) { "eta_core.lib" } else { "libeta_core.a" }
+
+    $candidates = @()
+    if ($isWindows) {
+        $candidates += (Join-Path $etaExeDir "..\..\core\$Config\$fileName")
+        $candidates += (Join-Path $etaExeDir "..\..\core\$fileName")
+        $candidates += (Join-Path $etaExeDir "..\core\$Config\$fileName")
+        $candidates += (Join-Path $etaExeDir "..\core\$fileName")
+        $candidates += (Join-Path $ProjectRoot "build\eta\core\$Config\$fileName")
+        $candidates += (Join-Path $ProjectRoot "build\eta\core\$fileName")
+    } else {
+        $candidates += (Join-Path $etaExeDir "../core/$fileName")
+        $candidates += (Join-Path $etaExeDir "../../core/$fileName")
+        $candidates += (Join-Path $etaExeDir "../core/$Config/$fileName")
+        $candidates += (Join-Path $etaExeDir "../../core/$Config/$fileName")
+        $candidates += (Join-Path $ProjectRoot "build/eta/core/$fileName")
+        $candidates += (Join-Path $ProjectRoot "build/eta/core/$Config/$fileName")
+    }
+
+    foreach ($candidate in $candidates) {
+        $full = [System.IO.Path]::GetFullPath($candidate)
+        if (Test-Path -LiteralPath $full) {
+            return $full
+        }
+    }
+
+    throw "Could not resolve eta_core library from eta executable path. " +
+        "Pass -EtaCoreLibrary explicitly."
+}
+
+$cachePath = Join-Path $ProjectRoot "out\msvc-release\CMakeCache.txt"
+if (-not $CMakePrefixPath) {
+    $CMakePrefixPath = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_PREFIX_PATH"
+}
+if (-not $BoostDir) {
+    $BoostDir = Get-CMakeCacheValue -CachePath $cachePath -Key "Boost_DIR"
+}
+if (-not $BoostIncludeDir) {
+    $BoostIncludeDir = Get-CMakeCacheValue -CachePath $cachePath -Key "Boost_INCLUDE_DIR"
+}
+$vcpkgRoot = ""
+if (-not [string]::IsNullOrWhiteSpace($env:VCPKG_ROOT) -and (Test-Path -LiteralPath $env:VCPKG_ROOT)) {
+    $vcpkgRoot = [System.IO.Path]::GetFullPath($env:VCPKG_ROOT)
+} elseif (-not [string]::IsNullOrWhiteSpace($env:VCPKG_DIR) -and (Test-Path -LiteralPath $env:VCPKG_DIR)) {
+    $vcpkgRoot = [System.IO.Path]::GetFullPath($env:VCPKG_DIR)
+}
+if ($vcpkgRoot) {
+    $vcpkgTriplet = Get-VcpkgHostTriplet
+    $vcpkgInstalled = Join-Path $vcpkgRoot "installed\$vcpkgTriplet"
+    if (Test-Path -LiteralPath $vcpkgInstalled) {
+        if (-not $CMakePrefixPath) {
+            $CMakePrefixPath = $vcpkgInstalled
+        }
+        if (-not $BoostDir) {
+            $boostShare = Join-Path $vcpkgInstalled "share\boost"
+            $boostHeadersShare = Join-Path $vcpkgInstalled "share\boost-headers"
+            if (Test-Path -LiteralPath $boostShare) {
+                $BoostDir = $boostShare
+            } elseif (Test-Path -LiteralPath $boostHeadersShare) {
+                $BoostDir = $boostHeadersShare
+            }
+        }
+        if (-not $BoostIncludeDir) {
+            $candidate = Join-Path $vcpkgInstalled "include"
+            if (Test-Path -LiteralPath $candidate) {
+                $BoostIncludeDir = $candidate
+            }
+        }
+    }
+}
+
 function Resolve-SidecarBinary {
     param(
         [Parameter(Mandatory = $true)] [string]$BuildDir,
         [Parameter(Mandatory = $true)] [string]$Config,
-        [Parameter(Mandatory = $true)] [string]$BaseName
+        [Parameter(Mandatory = $true)] [string]$BaseName,
+        [Parameter()] [string]$PackageRoot = ""
     )
 
-    $isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+    $hostIsWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
         [System.Runtime.InteropServices.OSPlatform]::Windows)
-    $isLinux = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+    $hostIsLinux = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
         [System.Runtime.InteropServices.OSPlatform]::Linux)
 
-    if ($isWindows) {
+    if ($hostIsWindows) {
         $fileName = "${BaseName}.dll"
-    } elseif ($isLinux) {
+    } elseif ($hostIsLinux) {
         $fileName = "lib${BaseName}.so"
     } else {
         $fileName = "lib${BaseName}.dylib"
@@ -135,6 +254,17 @@ function Resolve-SidecarBinary {
         Select-Object -First 1
     if ($null -ne $match) {
         return $match.FullName
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PackageRoot)) {
+        $packageLibRoot = Join-Path $PackageRoot "libs"
+        if (Test-Path -LiteralPath $packageLibRoot) {
+            $packageMatch = Get-ChildItem -Path $packageLibRoot -Recurse -File -Filter $fileName |
+                Select-Object -First 1
+            if ($null -ne $packageMatch) {
+                return $packageMatch.FullName
+            }
+        }
     }
 
     throw "Could not locate sidecar binary $fileName under $BuildDir"
@@ -167,7 +297,11 @@ function Invoke-NativeBuild {
         throw "CMake build failed for $Name"
     }
 
-    $sidecarBinary = Resolve-SidecarBinary -BuildDir $BuildDir -Config $Config -BaseName $BaseName
+    $sidecarBinary = Resolve-SidecarBinary `
+        -BuildDir $BuildDir `
+        -Config $Config `
+        -BaseName $BaseName `
+        -PackageRoot $PackageRoot
     $hostTriple = Get-HostTargetTriple
 
     & cmake `
@@ -183,6 +317,52 @@ function Invoke-NativeBuild {
 if (-not $SkipNative) {
     $DuckdbRoot = Join-Path $ProjectRoot "packages\db\native\duckdb"
     $LightgbmRoot = Join-Path $ProjectRoot "packages\ml\native\lightgbm"
+    $HttpRoot = Join-Path $ProjectRoot "packages\net\native\http"
+    $EtaCoreLibrary = Resolve-EtaCoreLibrary `
+        -ProjectRoot $ProjectRoot `
+        -EtaExecutable $EtaExecutable `
+        -Config $Config `
+        -ExplicitPath $EtaCoreLibrary
+    Write-Host "  using ETA_CORE_LIBRARY=$EtaCoreLibrary"
+
+    $HttpConfigureArgs = @(
+        "-DETA_HTTP_FETCH_UPSTREAM={FETCH_UPSTREAM}",
+        "-DETA_HTTP_ENABLE_TESTS=OFF",
+        "-DETA_CORE_LIBRARY=$EtaCoreLibrary"
+    )
+    if ($CMakePrefixPath) {
+        $HttpConfigureArgs += "-DCMAKE_PREFIX_PATH=$CMakePrefixPath"
+    }
+    if ($BoostDir) {
+        $HttpConfigureArgs += "-DBoost_DIR=$BoostDir"
+    }
+    if ($BoostIncludeDir) {
+        $HttpConfigureArgs += "-DBoost_INCLUDE_DIR=$BoostIncludeDir"
+    }
+
+    Invoke-NativeBuild `
+        -Name "http" `
+        -PackageRoot $HttpRoot `
+        -BuildDir (Join-Path $BuildRoot "http") `
+        -TargetName "eta_http" `
+        -BaseName "eta_http" `
+        -StageScript (Join-Path $HttpRoot "cmake\StageHttpSidecar.cmake") `
+        -ConfigureArgs $HttpConfigureArgs
+
+    $DuckdbConfigureArgs = @(
+        "-DETA_DUCKDB_FETCH_UPSTREAM={FETCH_UPSTREAM}",
+        "-DETA_DUCKDB_ENABLE_TESTS=OFF",
+        "-DETA_CORE_LIBRARY=$EtaCoreLibrary"
+    )
+    if ($CMakePrefixPath) {
+        $DuckdbConfigureArgs += "-DCMAKE_PREFIX_PATH=$CMakePrefixPath"
+    }
+    if ($BoostDir) {
+        $DuckdbConfigureArgs += "-DBoost_DIR=$BoostDir"
+    }
+    if ($BoostIncludeDir) {
+        $DuckdbConfigureArgs += "-DBoost_INCLUDE_DIR=$BoostIncludeDir"
+    }
 
     Invoke-NativeBuild `
         -Name "duckdb" `
@@ -191,14 +371,12 @@ if (-not $SkipNative) {
         -TargetName "eta_duckdb" `
         -BaseName "eta_duckdb" `
         -StageScript (Join-Path $DuckdbRoot "cmake\StageDuckDBSidecar.cmake") `
-        -ConfigureArgs @(
-            "-DETA_DUCKDB_FETCH_UPSTREAM={FETCH_UPSTREAM}",
-            "-DETA_DUCKDB_ENABLE_TESTS=OFF"
-        )
+        -ConfigureArgs $DuckdbConfigureArgs
 
     $LightgbmConfigureArgs = @(
         "-DETA_LIGHTGBM_FETCH_UPSTREAM={FETCH_UPSTREAM}",
-        "-DETA_LIGHTGBM_ENABLE_TESTS=OFF"
+        "-DETA_LIGHTGBM_ENABLE_TESTS=OFF",
+        "-DETA_CORE_LIBRARY=$EtaCoreLibrary"
     )
     if ($CMakePrefixPath) {
         $LightgbmConfigureArgs += "-DCMAKE_PREFIX_PATH=$CMakePrefixPath"
@@ -226,19 +404,11 @@ $PackageManifests = Get-ChildItem -Path (Join-Path $ProjectRoot "packages") -Rec
     Sort-Object FullName
 
 $StdlibModulePath = Join-Path $ProjectRoot "stdlib"
-$EffectiveModulePath = $env:ETA_MODULE_PATH
+$EffectiveModulePath = ""
 if (Test-Path -LiteralPath $StdlibModulePath) {
-    $parts = @()
-    if (-not [string]::IsNullOrWhiteSpace($EffectiveModulePath)) {
-        $parts = $EffectiveModulePath.Split([System.IO.Path]::PathSeparator)
-    }
-    if (-not ($parts -contains $StdlibModulePath)) {
-        if ([string]::IsNullOrWhiteSpace($EffectiveModulePath)) {
-            $EffectiveModulePath = $StdlibModulePath
-        } else {
-            $EffectiveModulePath = "$StdlibModulePath$([System.IO.Path]::PathSeparator)$EffectiveModulePath"
-        }
-    }
+    $EffectiveModulePath = $StdlibModulePath
+} elseif (-not [string]::IsNullOrWhiteSpace($env:ETA_MODULE_PATH)) {
+    $EffectiveModulePath = $env:ETA_MODULE_PATH
 }
 
 $PreviousModulePath = $env:ETA_MODULE_PATH
@@ -266,31 +436,3 @@ finally {
 
 Write-Host ""
 Write-Host "[OK] Package rebuild complete." -ForegroundColor Green
-    $cachePath = Join-Path $ProjectRoot "out\msvc-release\CMakeCache.txt"
-    if (-not $CMakePrefixPath) {
-        $CMakePrefixPath = Get-CMakeCacheValue -CachePath $cachePath -Key "CMAKE_PREFIX_PATH"
-    }
-    if (-not $BoostDir) {
-        $BoostDir = Get-CMakeCacheValue -CachePath $cachePath -Key "Boost_DIR"
-    }
-    if (-not $BoostIncludeDir) {
-        $BoostIncludeDir = Get-CMakeCacheValue -CachePath $cachePath -Key "Boost_INCLUDE_DIR"
-    }
-    if (-not $CMakePrefixPath -and $env:VCPKG_ROOT) {
-        $candidate = Join-Path $env:VCPKG_ROOT "installed\x64-windows"
-        if (Test-Path -LiteralPath $candidate) {
-            $CMakePrefixPath = $candidate
-        }
-    }
-    if (-not $BoostDir -and $env:VCPKG_ROOT) {
-        $candidate = Join-Path $env:VCPKG_ROOT "installed\x64-windows\share\boost"
-        if (Test-Path -LiteralPath $candidate) {
-            $BoostDir = $candidate
-        }
-    }
-    if (-not $BoostIncludeDir -and $env:VCPKG_ROOT) {
-        $candidate = Join-Path $env:VCPKG_ROOT "installed\x64-windows\include"
-        if (Test-Path -LiteralPath $candidate) {
-            $BoostIncludeDir = $candidate
-        }
-    }

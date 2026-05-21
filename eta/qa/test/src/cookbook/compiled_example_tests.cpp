@@ -226,6 +226,24 @@ static bool requires_net(const fs::path& file) {
     return false;
 }
 
+/**
+ * External package sidecar filtering.
+ *
+ * Cookbook examples that import package-sidecar modules outside bundled stdlib
+ * are validated by package-local test suites.
+ */
+static bool requires_external_package_sidecar(const fs::path& file) {
+    std::ifstream ifs(file);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        auto pos = line.find_first_not_of(" \t");
+        if (pos != std::string::npos && line[pos] == ';') continue;
+        if (line.find("(import ml.lightgbm)") != std::string::npos) return true;
+        if (line.find("(import net.http)") != std::string::npos) return true;
+    }
+    return false;
+}
+
 /// Test fixture
 
 struct CompiledExampleFixture {
@@ -506,6 +524,12 @@ struct CompiledExampleFixture {
 #endif
             if (requires_net(file)) {
                 BOOST_TEST_MESSAGE("  [SKIP] " << rel.string() << " (requires networking runtime  -  skipped)");
+                continue;
+            }
+            if (requires_external_package_sidecar(file)) {
+                BOOST_TEST_MESSAGE(
+                    "  [SKIP] " << rel.string()
+                                << " (requires package sidecar runtime  -  skipped)");
                 continue;
             }
             BOOST_TEST_CONTEXT("Compiled round-trip (" << (optimize ? "-O" : "-O0/default")

@@ -74,6 +74,10 @@ cookbook/notebooks/.ipynb_checkpoints/
 packages/**/.eta/
 packages/**/eta.lock
 
+*.log
+
+gha_build_logs/*
+
 
 
 

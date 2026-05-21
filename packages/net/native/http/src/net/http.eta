@@ -1,0 +1,615 @@
+;;; net/http.eta
+;;; Sidecar-backed HTTP wrappers for eta-http.
+
+(module net.http
+  (import std.json)
+  (export
+    http-version
+    make-session
+    session?
+    close-session!
+    session-set-option!
+    session-get-option
+    make-request
+    request?
+    request-set-url!
+    request-set-option!
+    request-set-header!
+    request-set-body-bytes!
+    request-set-body-string!
+    request-set-body-file!
+    request-set-body!
+    request-set-form!
+    request-set-multipart!
+    perform
+    perform-stream
+    response?
+    status
+    ok?
+    raise-for-status!
+    body-bytes
+    body-string
+    body-json
+    headers
+    header
+    effective-url
+    get
+    get-json
+    post
+    post-json
+    download
+    url-encode
+    url-decode
+    url-parse
+    url-build)
+  (begin
+
+    ;;@doc (http:%runtime-error-payload? value)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return whether `value` is a runtime-error payload from `catch`.
+    ;;@example
+    ;; (http:%runtime-error-payload? 'x)
+    (defun http:%runtime-error-payload? (value)
+      (and (pair? value)
+           (eq? (car value) 'runtime-error)))
+
+    ;;@doc (http:%payload-message payload)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Extract message text from runtime-error payload.
+    ;;@example
+    ;; (http:%payload-message 'x)
+    (defun http:%payload-message (payload)
+      (if (and (pair? payload)
+               (pair? (cdr payload))
+               (pair? (cdr (cdr payload))))
+          (let ((message (car (cdr (cdr payload)))))
+            (if (string? message) message "runtime error"))
+          "runtime error"))
+
+    ;;@doc (http:%raise-runtime who payload)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Raise a normalized net.http wrapper error.
+    ;;@example
+    ;; (http:%raise-runtime "get" 'x)
+    (defun http:%raise-runtime (who payload)
+      (error (string-append "net.http: " who ": " (http:%payload-message payload))))
+
+    ;;@doc (http:%unwrap who thunk)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Invoke thunk and rethrow runtime.error payloads with net.http prefixing.
+    ;;@example
+    ;; (http:%unwrap "x" (lambda () 1))
+    (defun http:%unwrap (who thunk)
+      (let ((result (catch 'runtime.error (thunk))))
+        (if (http:%runtime-error-payload? result)
+            (http:%raise-runtime who result)
+            result)))
+
+    ;;@doc (http:%proper-list? value)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return whether `value` is a proper list.
+    ;;@example
+    ;; (http:%proper-list? '())
+    (defun http:%proper-list? (value)
+      (cond
+        ((null? value) #t)
+        ((pair? value) (http:%proper-list? (cdr value)))
+        (#t #f)))
+
+    ;;@doc (http:%apply-options! session opts who)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Apply `(key . value)` option entries onto session.
+    ;;@example
+    ;; (http:%apply-options! (make-session) '() "x")
+    (defun http:%apply-options! (session opts who)
+      (if (http:%proper-list? opts)
+          #t
+          (error (string-append "net.http: " who ": options must be a proper list")))
+      (letrec ((loop (lambda (rest)
+                       (if (null? rest)
+                           session
+                           (let ((entry (car rest)))
+                             (if (and (pair? entry)
+                                      (not (null? (car entry))))
+                                 (begin
+                                   (session-set-option! session (car entry) (cdr entry))
+                                   (loop (cdr rest)))
+                                 (error
+                                   (string-append
+                                     "net.http: "
+                                     who
+                                     ": options must contain (key . value) pairs"))))))))
+        (loop opts)))
+
+    ;;@doc (http:%resolve-session who rest)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Resolve optional `(opts)` or `(opts session)` arguments.
+    ;;@example
+    ;; (http:%resolve-session "get" '())
+    (defun http:%resolve-session (who rest)
+      (cond
+        ((null? rest)
+         (list (make-session) #t '()))
+        ((null? (cdr rest))
+         (if (session? (car rest))
+             (list (car rest) #f '())
+             (list (make-session) #t (car rest))))
+        ((null? (cdr (cdr rest)))
+         (let ((opts (car rest))
+               (session (car (cdr rest))))
+           (if (session? session)
+               (list session #f opts)
+               (error (string-append "net.http: " who ": session argument is invalid")))))
+        (#t
+         (error (string-append "net.http: " who ": expected url, optional opts, optional session")))))
+
+    ;;@doc (http-version)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return `(libcurl-version protocols features)` from the sidecar.
+    ;;@example
+    ;; (http-version)
+    (define (http-version)
+      (http:%unwrap "http-version" (lambda () (http/version))))
+
+    ;;@doc (make-session . rest)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Allocate an HTTP session handle and apply optional options alist.
+    ;;@example
+    ;; (make-session '((timeout-ms . 1000)))
+    (define (make-session . rest)
+      (if (> (length rest) 1)
+          (error "net.http: make-session: expected zero or one options list")
+          #t)
+      (let ((session (http:%unwrap "make-session" (lambda () (http/session-new)))))
+        (if (null? rest)
+            session
+            (http:%apply-options! session (car rest) "make-session"))))
+
+    ;;@doc (session? value)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return whether `value` is a live HTTP session handle.
+    ;;@example
+    ;; (session? (make-session))
+    (define (session? value)
+      (http:%unwrap "session?" (lambda () (http/session? value))))
+
+    ;;@doc (close-session! session)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Close `session` and release native resources early.
+    ;;@example
+    ;; (close-session! (make-session))
+    (define (close-session! session)
+      (http:%unwrap "close-session!" (lambda () (http/session-close! session))))
+
+    ;;@doc (session-set-option! session name value)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set one session default option.
+    ;;@example
+    ;; (session-set-option! s 'timeout-ms 1000)
+    (define (session-set-option! session name value)
+      (http:%unwrap
+        "session-set-option!"
+        (lambda () (http/session-set-option! session name value))))
+
+    ;;@doc (session-get-option session name)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Read one session option.
+    ;;@example
+    ;; (session-get-option s 'timeout-ms)
+    (define (session-get-option session name)
+      (http:%unwrap
+        "session-get-option"
+        (lambda () (http/session-get-option session name))))
+
+    ;;@doc (make-request session method)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Allocate an HTTP request handle bound to `session`.
+    ;;@example
+    ;; (make-request (make-session) 'get)
+    (define (make-request session method)
+      (if (session? session)
+          #t
+          (error "net.http: make-request: session must be an http session"))
+      (http:%unwrap "make-request" (lambda () (http/request-new session method))))
+
+    ;;@doc (request? value)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return whether `value` is a live request handle.
+    ;;@example
+    ;; (request? (make-request (make-session) 'get))
+    (define (request? value)
+      (http:%unwrap "request?" (lambda () (http/request? value))))
+
+    ;;@doc (request-set-url! request url)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set request URL.
+    ;;@example
+    ;; (request-set-url! req "http://127.0.0.1:8080/")
+    (define (request-set-url! request url)
+      (http:%unwrap
+        "request-set-url!"
+        (lambda () (http/request-set-url! request url))))
+
+    ;;@doc (request-set-option! request name value)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set one request option override.
+    ;;@example
+    ;; (request-set-option! req 'timeout-ms 1000)
+    (define (request-set-option! request name value)
+      (http:%unwrap
+        "request-set-option!"
+        (lambda () (http/request-set-option! request name value))))
+
+    ;;@doc (request-set-header! request name value-or-false)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Add one header or remove by passing `#f` as value.
+    ;;@example
+    ;; (request-set-header! req "X-Test" "1")
+    (define (request-set-header! request name value-or-false)
+      (http:%unwrap
+        "request-set-header!"
+        (lambda () (http/request-set-header! request name value-or-false))))
+
+    ;;@doc (request-set-body-bytes! request body-bytes)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set request body from bytevector.
+    ;;@example
+    ;; (request-set-body-bytes! req bv)
+    (define (request-set-body-bytes! request body-bytes)
+      (http:%unwrap
+        "request-set-body-bytes!"
+        (lambda () (http/request-set-body-bytes! request body-bytes))))
+
+    ;;@doc (request-set-body-string! request body charset)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set request body from string text and charset.
+    ;;@example
+    ;; (request-set-body-string! req "{}" "utf-8")
+    (define (request-set-body-string! request body charset)
+      (http:%unwrap
+        "request-set-body-string!"
+        (lambda () (http/request-set-body-string! request body charset))))
+
+    ;;@doc (request-set-body-file! request path)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set request body from file path.
+    ;;@example
+    ;; (request-set-body-file! req "/tmp/x.bin")
+    (define (request-set-body-file! request path)
+      (http:%unwrap
+        "request-set-body-file!"
+        (lambda () (http/request-set-body-file! request path))))
+
+    ;;@doc (request-set-body! request body)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set request body from string using UTF-8.
+    ;;@example
+    ;; (request-set-body! req "{}")
+    (define (request-set-body! request body)
+      (if (string? body)
+          (request-set-body-string! request body "utf-8")
+          (error "net.http: request-set-body!: body must be a string")))
+
+    ;;@doc (request-set-form! request fields)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set request body from form fields alist.
+    ;;@example
+    ;; (request-set-form! req '((x . "1")))
+    (define (request-set-form! request fields)
+      (http:%unwrap
+        "request-set-form!"
+        (lambda () (http/request-set-body-form! request fields))))
+
+    ;;@doc (request-set-multipart! request parts)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Set request body from multipart part descriptions.
+    ;;@example
+    ;; (request-set-multipart! req '(("f" "v")))
+    (define (request-set-multipart! request parts)
+      (http:%unwrap
+        "request-set-multipart!"
+        (lambda () (http/request-set-body-multipart! request parts))))
+
+    ;;@doc (perform request)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Execute `request` and return a response handle.
+    ;;@example
+    ;; (perform req)
+    (define (perform request)
+      (http:%unwrap "perform" (lambda () (http/perform request))))
+
+    ;;@doc (perform-stream request)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Execute `request` via the streaming primitive and return a response.
+    ;;@example
+    ;; (perform-stream req)
+    (define (perform-stream request)
+      (http:%unwrap "perform-stream" (lambda () (http/perform-stream request #f #f))))
+
+    ;;@doc (response? value)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return whether `value` is a response handle.
+    ;;@example
+    ;; (response? (get "http://127.0.0.1:8080/"))
+    (define (response? value)
+      (http:%unwrap "response?" (lambda () (http/response? value))))
+
+    ;;@doc (status response)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return HTTP status code for `response`.
+    ;;@example
+    ;; (status resp)
+    (define (status response)
+      (http:%unwrap "status" (lambda () (http/response-status response))))
+
+    ;;@doc (ok? response)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return whether the HTTP status is in the 2xx range.
+    ;;@example
+    ;; (ok? resp)
+    (define (ok? response)
+      (let ((code (status response)))
+        (and (>= code 200) (< code 300))))
+
+    ;;@doc (raise-for-status! response)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Raise when response status is outside 2xx; otherwise return response.
+    ;;@example
+    ;; (raise-for-status! resp)
+    (define (raise-for-status! response)
+      (let ((code (status response)))
+        (if (ok? response)
+            response
+            (error
+              (string-append
+                "net.http: HTTP "
+                (number->string code)
+                " at "
+                (effective-url response))))))
+
+    ;;@doc (body-bytes response)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return response body as a bytevector.
+    ;;@example
+    ;; (body-bytes resp)
+    (define (body-bytes response)
+      (http:%unwrap "body-bytes" (lambda () (http/response-body-bytes response))))
+
+    ;;@doc (body-string response)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Decode response body bytes as a bytewise string.
+    ;;@example
+    ;; (body-string resp)
+    (define (body-string response)
+      (let ((input-port (open-input-bytevector (body-bytes response)))
+            (output-port (open-output-string)))
+        (letrec ((loop (lambda ()
+                         (let ((byte (read-u8 input-port)))
+                           (if byte
+                               (begin
+                                 (write-char (integer->char byte) output-port)
+                                 (loop))
+                               (get-output-string output-port))))))
+          (loop))))
+
+    ;;@doc (body-json response)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Decode response body as JSON using `std.json`.
+    ;;@example
+    ;; (body-json resp)
+    (define (body-json response)
+      (http:%unwrap
+        "body-json"
+        (lambda () (json:read-string (body-string response)))))
+
+    ;;@doc (headers response)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return response headers as `(name . value)` pairs.
+    ;;@example
+    ;; (headers resp)
+    (define (headers response)
+      (http:%unwrap "headers" (lambda () (http/response-headers response))))
+
+    ;;@doc (header response name)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return first matching header value or `#f`.
+    ;;@example
+    ;; (header resp "content-type")
+    (define (header response name)
+      (if (not (string? name))
+          (error "net.http: header: name must be a string")
+          #t)
+      (letrec ((loop (lambda (rest)
+                       (if (null? rest)
+                           #f
+                           (let ((entry (car rest)))
+                             (if (and (pair? entry)
+                                      (string? (car entry))
+                                      (string=? (car entry) name))
+                                 (cdr entry)
+                                 (loop (cdr rest))))))))
+        (loop (headers response))))
+
+    ;;@doc (effective-url response)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Return final URL after redirect handling.
+    ;;@example
+    ;; (effective-url resp)
+    (define (effective-url response)
+      (http:%unwrap
+        "effective-url"
+        (lambda () (http/response-effective-url response))))
+
+    ;;@doc (get url . rest)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Execute one-shot GET with optional options/session.
+    ;;@example
+    ;; (get "http://127.0.0.1:8080/")
+    (define (get url . rest)
+      (if (not (string? url))
+          (error "net.http: get: url must be a string")
+          #t)
+      (let* ((resolved (http:%resolve-session "get" rest))
+             (session (car resolved))
+             (auto-close? (car (cdr resolved)))
+             (opts (car (cdr (cdr resolved)))))
+        (http:%apply-options! session opts "get")
+        (let ((request (make-request session 'get)))
+          (request-set-url! request url)
+          (let ((response (perform request)))
+            (if auto-close?
+                (close-session! session)
+                #t)
+            response))))
+
+    ;;@doc (post url body . rest)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Execute one-shot POST with string body.
+    ;;@example
+    ;; (post "http://127.0.0.1:8080/echo" "{}")
+    (define (post url body . rest)
+      (if (not (string? url))
+          (error "net.http: post: url must be a string")
+          #t)
+      (let* ((resolved (http:%resolve-session "post" rest))
+             (session (car resolved))
+             (auto-close? (car (cdr resolved)))
+             (opts (car (cdr (cdr resolved)))))
+        (http:%apply-options! session opts "post")
+        (let ((request (make-request session 'post)))
+          (request-set-url! request url)
+          (request-set-body! request body)
+          (let ((response (perform request)))
+            (if auto-close?
+                (close-session! session)
+                #t)
+            response))))
+
+    ;;@doc (post-json url value . rest)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Execute one-shot POST with JSON body.
+    ;;@example
+    ;; (post-json "http://127.0.0.1:8080/json" '((x . 1)))
+    (define (post-json url value . rest)
+      (if (not (string? url))
+          (error "net.http: post-json: url must be a string")
+          #t)
+      (let* ((resolved (http:%resolve-session "post-json" rest))
+             (session (car resolved))
+             (auto-close? (car (cdr resolved)))
+             (opts (car (cdr (cdr resolved)))))
+        (http:%apply-options! session opts "post-json")
+        (let* ((request (make-request session 'post))
+               (json-text
+                 (http:%unwrap "post-json" (lambda () (json:write-string value)))))
+          (request-set-url! request url)
+          (request-set-header! request "Content-Type" "application/json")
+          (request-set-body-string! request json-text "utf-8")
+          (let ((response (perform request)))
+            (if auto-close?
+                (close-session! session)
+                #t)
+            response))))
+
+    ;;@doc (get-json url . rest)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Execute one-shot GET and decode response body as JSON.
+    ;;@example
+    ;; (get-json "http://127.0.0.1:8080/json-get")
+    (define (get-json url . rest)
+      (body-json (apply get (cons url rest))))
+
+    ;;@doc (download url path . rest)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Stream a URL payload to `path`.
+    ;;@example
+    ;; (download "http://127.0.0.1:8080/file" "out.bin")
+    (define (download url path . rest)
+      (if (not (string? url))
+          (error "net.http: download: url must be a string")
+          #t)
+      (if (not (string? path))
+          (error "net.http: download: path must be a string")
+          #t)
+      (if (> (length rest) 1)
+          (error "net.http: download: expected url, path, and optional options list")
+          #t)
+      (let ((opts (if (null? rest) '() (car rest))))
+        (http:%unwrap "download" (lambda () (http/download url path opts)))))
+
+    ;;@doc (url-encode text)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Percent-encode URL text.
+    ;;@example
+    ;; (url-encode "a b")
+    (define (url-encode text)
+      (http:%unwrap "url-encode" (lambda () (http/url-encode text))))
+
+    ;;@doc (url-decode text)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Decode percent-encoded URL text.
+    ;;@example
+    ;; (url-decode "a%20b")
+    (define (url-decode text)
+      (http:%unwrap "url-decode" (lambda () (http/url-decode text))))
+
+    ;;@doc (url-parse text)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Parse URL text into component alist.
+    ;;@example
+    ;; (url-parse "https://example.com")
+    (define (url-parse text)
+      (http:%unwrap "url-parse" (lambda () (http/url-parse text))))
+
+    ;;@doc (url-build components)
+    ;;@category Networking
+    ;;@module net.http
+    ;; Build URL text from component alist.
+    ;;@example
+    ;; (url-build '((scheme . "https") (host . "example.com")))
+    (define (url-build components)
+      (http:%unwrap "url-build" (lambda () (http/url-build components))))))

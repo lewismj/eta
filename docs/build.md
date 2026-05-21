@@ -155,6 +155,34 @@ export ETA_MODULE_PATH=./stdlib
 ./build/eta/tools/interpreter/etai cookbook/basics/hello.eta
 ```
 
+## Building Sidecar Packages
+
+Native sidecar packages are built separately from core Eta binaries.
+
+```powershell
+.\scripts\build_packages.ps1
+```
+
+```bash
+./scripts/build_packages.sh
+```
+
+These scripts rebuild non-stdlib package artifacts (including `eta-http`,
+`eta-duckdb`, and `eta-lightgbm`) and compile package `.eta` sources.
+They should be used when package code changes and a core Eta rebuild is not
+required.
+
+If your shell has an inherited `ETA_MODULE_PATH` from another install, clear it
+before package builds to avoid stale-module resolution:
+
+```powershell
+Remove-Item Env:ETA_MODULE_PATH -ErrorAction SilentlyContinue
+```
+
+```bash
+unset ETA_MODULE_PATH
+```
+
 ---
 
 ## Running Tests

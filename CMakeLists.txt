@@ -34,6 +34,7 @@ add_subdirectory(editors/vscode)
 
 set(ETA_LIGHTGBM_PACKAGE_DIR "${ETA_REPO_ROOT_DIR}/packages/ml/native/lightgbm")
 set(ETA_DUCKDB_PACKAGE_DIR "${ETA_REPO_ROOT_DIR}/packages/db/native/duckdb")
+set(ETA_HTTP_PACKAGE_DIR "${ETA_REPO_ROOT_DIR}/packages/net/native/http")
 
 option(ETA_ENABLE_PACKAGE_NATIVE_SIDECARS
     "Build and stage package-managed native sidecars in the top-level build."
@@ -44,13 +45,18 @@ if(ETA_ENABLE_PACKAGE_NATIVE_SIDECARS)
         "Fetch pinned LightGBM upstream sources for package development." FORCE)
     set(ETA_DUCKDB_FETCH_UPSTREAM ON CACHE BOOL
         "Fetch pinned DuckDB upstream sources for package development." FORCE)
+    set(ETA_HTTP_FETCH_UPSTREAM ON CACHE BOOL
+        "Fetch pinned libcurl upstream sources for package development." FORCE)
     set(ETA_LIGHTGBM_ENABLE_TESTS OFF CACHE BOOL
         "Build package-local tests." FORCE)
     set(ETA_DUCKDB_ENABLE_TESTS OFF CACHE BOOL
         "Build package-local tests." FORCE)
+    set(ETA_HTTP_ENABLE_TESTS OFF CACHE BOOL
+        "Build package-local tests." FORCE)
 
     add_subdirectory("${ETA_LIGHTGBM_PACKAGE_DIR}" "packages/ml/native/lightgbm")
     add_subdirectory("${ETA_DUCKDB_PACKAGE_DIR}" "packages/db/native/duckdb")
+    add_subdirectory("${ETA_HTTP_PACKAGE_DIR}" "packages/net/native/http")
 
     if(WIN32)
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "^[Aa][Rr][Mm]64|aarch64")
@@ -91,7 +97,12 @@ if(ETA_ENABLE_PACKAGE_NATIVE_SIDECARS)
                 -DSIDECAR_BINARY=$<TARGET_FILE:eta_duckdb>
                 -DHOST_TARGET_TRIPLE=${ETA_PACKAGE_HOST_TRIPLE}
                 -P "${ETA_DUCKDB_PACKAGE_DIR}/cmake/StageDuckDBSidecar.cmake"
-            DEPENDS eta_lightgbm eta_duckdb
+            COMMAND "${CMAKE_COMMAND}"
+                -DPACKAGE_ROOT=${ETA_HTTP_PACKAGE_DIR}
+                -DSIDECAR_BINARY=$<TARGET_FILE:eta_http>
+                -DHOST_TARGET_TRIPLE=${ETA_PACKAGE_HOST_TRIPLE}
+                -P "${ETA_HTTP_PACKAGE_DIR}/cmake/StageHttpSidecar.cmake"
+            DEPENDS eta_lightgbm eta_duckdb eta_http
             COMMENT "Stage package sidecars and refresh host sha256 entries"
             VERBATIM
         )
@@ -151,6 +162,21 @@ install(DIRECTORY "${ETA_DUCKDB_PACKAGE_DIR}/libs/"
         PATTERN "*.so"
         PATTERN "*.dylib")
 
+install(FILES
+    "${ETA_HTTP_PACKAGE_DIR}/eta.toml"
+    "${ETA_HTTP_PACKAGE_DIR}/README.md"
+    DESTINATION "packages/net/native/http")
+install(DIRECTORY "${ETA_HTTP_PACKAGE_DIR}/src/"
+    DESTINATION "packages/net/native/http/src"
+    FILES_MATCHING PATTERN "*.eta")
+install(DIRECTORY "${ETA_HTTP_PACKAGE_DIR}/libs/"
+    DESTINATION "packages/net/native/http/libs"
+    OPTIONAL
+    FILES_MATCHING
+        PATTERN "*.dll"
+        PATTERN "*.so"
+        PATTERN "*.dylib")
+
 add_custom_target(eta_all)
 foreach(_t IN ITEMS
     eta_core
@@ -177,6 +203,7 @@ foreach(_t IN ITEMS
     eta_prof_off_bench
     eta_lightgbm
     eta_duckdb
+    eta_http
     eta_stage_native_packages
 )
     if(TARGET ${_t})

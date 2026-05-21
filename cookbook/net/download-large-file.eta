@@ -1,0 +1,26 @@
+(module cookbook.net.download-large-file
+  (import net.http)
+  (import std.io)
+  (import std.fs)
+  (export
+    cleanup-file!
+    run-download-example)
+  (begin
+    (define default-url "https://example.com/archive.bin")
+    (define default-out-path "archive.bin")
+
+    (defun cleanup-file! (path)
+      (if (fs:file-exists? path)
+          (fs:delete-file path)
+          #t))
+
+    (defun run-download-example (url out-path)
+      (let ((resp (download url out-path '((timeout-ms . 0) (low-speed-limit-bps . 10000)))))
+        (raise-for-status! resp)
+        (println (string-append "downloaded: " out-path))
+        (println (string-append "status: " (number->string (status resp))))
+        resp))
+
+    ;; Disabled by default: this example targets public internet.
+    ;; (run-download-example default-url default-out-path)
+    ))

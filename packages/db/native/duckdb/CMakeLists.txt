@@ -9,6 +9,8 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 get_filename_component(ETA_REPO_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../.." ABSOLUTE)
 set(ETA_CORE_SRC_DIR "${ETA_REPO_ROOT_DIR}/eta/core/src")
+set(ETA_CORE_LIBRARY "" CACHE FILEPATH
+    "Path to prebuilt eta_core static library for standalone sidecar builds.")
 set(ETA_STDLIB_DIR "${ETA_REPO_ROOT_DIR}/stdlib" CACHE PATH
     "Path to the Eta stdlib source directory.")
 set(ETA_ETA_EXECUTABLE "" CACHE FILEPATH
@@ -27,6 +29,30 @@ if(POLICY CMP0167)
 endif()
 
 find_package(Boost 1.88 REQUIRED)
+
+function(eta_duckdb_resolve_core_target out_target)
+    if(TARGET eta_core)
+        set(${out_target} eta_core PARENT_SCOPE)
+        return()
+    endif()
+
+    if(NOT "${ETA_CORE_LIBRARY}" STREQUAL "" AND EXISTS "${ETA_CORE_LIBRARY}")
+        if(NOT TARGET eta_core_imported)
+            add_library(eta_core_imported UNKNOWN IMPORTED)
+            set_target_properties(eta_core_imported PROPERTIES
+                IMPORTED_LOCATION "${ETA_CORE_LIBRARY}"
+            )
+        endif()
+        set(${out_target} eta_core_imported PARENT_SCOPE)
+        return()
+    endif()
+
+    message(FATAL_ERROR
+        "Could not resolve eta_core for eta_duckdb. "
+        "Build eta_core first or pass -DETA_CORE_LIBRARY=/abs/path/to/libeta_core.{a,lib}")
+endfunction()
+
+eta_duckdb_resolve_core_target(ETA_DUCKDB_CORE_TARGET)
 
 if(ETA_DUCKDB_FETCH_UPSTREAM)
     include(cmake/FetchDuckDB.cmake)
@@ -153,10 +179,8 @@ target_include_directories(eta_duckdb PRIVATE
 target_link_libraries(eta_duckdb PRIVATE
     ${ETA_DUCKDB_LIBRARY_TARGET}
     ${ETA_DUCKDB_STATIC_LOADER_TARGET}
+    ${ETA_DUCKDB_CORE_TARGET}
 )
-if(TARGET eta_core)
-    target_link_libraries(eta_duckdb PRIVATE eta_core)
-endif()
 if(ETA_DUCKDB_NEEDS_RUNTIME_DLL_COPY)
     add_custom_command(TARGET eta_duckdb POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -194,10 +218,8 @@ if(ETA_DUCKDB_ENABLE_TESTS)
     target_link_libraries(eta_duckdb_unit_tests PRIVATE
         ${ETA_DUCKDB_LIBRARY_TARGET}
         ${ETA_DUCKDB_STATIC_LOADER_TARGET}
+        ${ETA_DUCKDB_CORE_TARGET}
     )
-    if(TARGET eta_core)
-        target_link_libraries(eta_duckdb_unit_tests PRIVATE eta_core)
-    endif()
     if(ETA_DUCKDB_NEEDS_RUNTIME_DLL_COPY)
         add_custom_command(TARGET eta_duckdb_unit_tests POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
