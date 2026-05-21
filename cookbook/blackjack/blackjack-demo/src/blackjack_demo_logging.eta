@@ -1,0 +1,143 @@
+(module blackjack_demo_logging
+  (export
+    make-log-session
+    log-session-path
+    log-session-write
+    log-session-close
+    phase-start-message
+    phase-end-message)
+  (import std.io std.time std.log)
+  (begin
+
+    (defun %timestamp-file-fragment ()
+      (let ((iso (time:format-iso8601-local (time:now-ms))))
+        (string-append
+          (substring iso 0 4)
+          "_"
+          (substring iso 5 7)
+          "_"
+          (substring iso 8 10)
+          "_"
+          (substring iso 11 13)
+          "_"
+          (substring iso 14 16)
+          "_"
+          (substring iso 17 19))))
+
+    (defun %default-app-log-path (command seed)
+      (string-append
+        "blackjack-demo-"
+        command
+        "-"
+        (number->string seed)
+        "-"
+        (%timestamp-file-fragment)
+        ".log"))
+
+    (defun %ends-with? (text suffix)
+      (let ((n (string-length text))
+            (m (string-length suffix)))
+        (and (>= n m)
+             (string=? (substring text (- n m) n) suffix))))
+
+    (defun %run-name-log-path (run-name)
+      (if (%ends-with? run-name ".log")
+          run-name
+          (string-append run-name ".log")))
+
+    (defun %resolve-app-log-path (run-cfg command)
+      (let ((raw (hash-map-ref run-cfg 'app-log-path))
+            (run-name (hash-map-ref run-cfg 'run-name)))
+        (cond
+          ((string=? raw "off") #f)
+          ((and (> (string-length raw) 0)
+                (not (string=? raw "auto")))
+           raw)
+          ((> (string-length run-name) 0)
+           (%run-name-log-path run-name))
+          ((string=? raw "auto")
+           (%default-app-log-path command (hash-map-ref run-cfg 'seed)))
+          (else (%default-app-log-path command (hash-map-ref run-cfg 'seed))))))
+
+    (defun %make-app-logger (path)
+      (let* ((logger-name (string-append
+                            "blackjack.demo.app."
+                            (number->string (time:now-ms))))
+             (sink (log:make-file-sink path))
+             (logger (log:make-logger logger-name (list sink))))
+        (log:set-pattern! logger "%v")
+        (log:flush-on! logger 'info)
+        logger))
+
+    (defun make-log-session (run-cfg command)
+      (let ((path (%resolve-app-log-path run-cfg command)))
+        (if path
+            (cons path (%make-app-logger path))
+            #f)))
+
+    (defun log-session-path (session)
+      (car session))
+
+    (defun %log-session-logger (session)
+      (cdr session))
+
+    (defun %format-log-ts (ms)
+      (let ((iso (time:format-iso8601-local ms)))
+        (string-append
+          (substring iso 0 4)
+          "-"
+          (substring iso 5 7)
+          "-"
+          (substring iso 8 10)
+          ":"
+          (substring iso 11 13)
+          "."
+          (substring iso 14 16)
+          "."
+          (substring iso 17 19))))
+
+    (defun %log-timestamp ()
+      (%format-log-ts (time:now-ms)))
+
+    (defun %for-each-line (text f)
+      (let ((port (open-input-string text)))
+        (let loop ()
+          (let ((line (read-line port)))
+            (if line
+                (begin
+                  (f line)
+                  (loop))
+                (close-input-port port))))))
+
+    (defun log-session-write (session message)
+      (if session
+          (let ((logger (%log-session-logger session)))
+            (%for-each-line message
+                            (lambda (line)
+                              (log:info logger
+                                        (string-append "["
+                                                       (%log-timestamp)
+                                                       "] "
+                                                       line))))
+            (log:flush! logger))
+          #f))
+
+    (defun log-session-close (session)
+      (if session
+          (let ((logger (%log-session-logger session)))
+            (log:flush! logger))
+          #f))
+
+    (defun phase-start-message (name)
+      (string-append
+        "phase-start="
+        name))
+
+    (defun phase-end-message (name elapsed)
+      (string-append
+        "phase-end="
+        name
+        ", elapsed-ms="
+        (number->string elapsed)))
+
+  ))

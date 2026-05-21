@@ -1,0 +1,379 @@
+(module blackjack_demo_render
+  (export
+    startup-message
+    chart-output
+    timed-section
+    render-induce
+    render-causal
+    render-learn
+    render-chart
+    render-maxims
+    render-report
+    render-all)
+  (import
+    std.io
+    std.collections
+    std.core
+    std.time
+    blackjack
+    blackjack_demo_config
+    blackjack_demo_logging)
+  (begin
+
+    (define (startup-message)
+      (scaffold-message))
+
+    (define (chart-output)
+      (render-strategy-charts default-chart-counts))
+
+    (defun %alist-key-match? (lhs rhs)
+      (if (and (symbol? lhs) (symbol? rhs))
+          (string=? (symbol->string lhs)
+                    (symbol->string rhs))
+          (equal? lhs rhs)))
+
+    (defun %alist-get (key rows)
+      (let loop ((rest rows))
+        (cond
+          ((null? rest) #f)
+          ((not (pair? rest)) #f)
+          (else
+            (let ((entry (car rest)))
+              (if (and (pair? entry)
+                       (%alist-key-match? key (car entry)))
+                  (cdr entry)
+                  (loop (cdr rest))))))))
+
+    (defun %join-with (parts sep)
+      (if (null? parts)
+          ""
+          (let loop ((rest (cdr parts)) (acc (car parts)))
+            (if (null? rest)
+                acc
+                (loop (cdr rest)
+                      (string-append acc sep (car rest)))))))
+
+    (defun %section (name body)
+      (string-append "== " name " ==\n" body))
+
+    (defun timed-section (name thunk . hooks)
+      (let* ((on-start (if (null? hooks) #f (car hooks)))
+             (on-finish (if (or (null? hooks) (null? (cdr hooks)))
+                            #f
+                            (car (cdr hooks))))
+             (_started (if on-start (on-start name) #f))
+             (t0 (time:monotonic-ms))
+             (body (thunk))
+             (t1 (time:monotonic-ms))
+             (elapsed (time:elapsed-ms t0 t1))
+             (_finished (if on-finish (on-finish name elapsed) #f)))
+        (%section name
+                  (string-append
+                    "elapsed-ms="
+                    (number->string elapsed)
+                    "\n"
+                    body))))
+
+    (defun %read-file-text (path)
+      (let ((port (open-input-file path)))
+        (let loop ((lines '()))
+          (let ((line (read-line port)))
+            (if line
+                (loop (cons line lines))
+                (begin
+                  (close-input-port port)
+                  (%join-with (reverse lines) "\n")))))))
+
+    (defun %format-log-ts (ms)
+      (let ((iso (time:format-iso8601-local ms)))
+        (string-append
+          (substring iso 0 4)
+          "-"
+          (substring iso 5 7)
+          "-"
+          (substring iso 8 10)
+          ":"
+          (substring iso 11 13)
+          "."
+          (substring iso 14 16)
+          "."
+          (substring iso 17 19))))
+
+    (defun %worker-profile-line (stat)
+      (string-append
+        "worker=worker_"
+        (number->string (%alist-get 'worker-id stat))
+        ", shard-start="
+        (number->string (%alist-get 'shard-start stat))
+        ", shard-count="
+        (number->string (%alist-get 'shard-count stat))
+        ", produced="
+        (number->string (%alist-get 'rows stat))
+        ", elapsed-ms="
+        (number->string (%alist-get 'elapsed-ms stat))
+        ", started-at="
+        (%format-log-ts (%alist-get 'started-at-ms stat))
+        ", finished-at="
+        (%format-log-ts (%alist-get 'finished-at-ms stat))))
+
+    (defun %log-worker-profiles (session worker-stats)
+      (if session
+          (let loop ((rest worker-stats))
+            (if (null? rest)
+                #t
+                (begin
+                  (log-session-write session
+                                     (string-append "induce-worker-profile, "
+                                                    (%worker-profile-line (car rest))))
+                  (loop (cdr rest)))))
+          #f))
+
+    (defun render-induce (run-cfg . rest)
+      (let* ((session (if (null? rest) #f (car rest)))
+             (seed (run-cfg-ref run-cfg 'seed))
+             (rounds (run-cfg-ref run-cfg 'induce-rounds))
+             (workers (run-cfg-ref run-cfg 'induce-workers))
+             (cfg (make-mc-shoe seed))
+             (progress-hook (if session
+                                (lambda (message)
+                                  (log-session-write session
+                                                     (string-append
+                                                       "induce-progress="
+                                                       message)))
+                                #f))
+             (profile (simulate-profiled policy-hit-below-17
+                                         cfg
+                                         rounds
+                                         workers
+                                         ""
+                                         progress-hook))
+             (rows (%alist-get 'rows profile))
+             (summary (simulate-summary rows))
+             (worker-stats (%alist-get 'worker-stats profile))
+             (worker-lines (map* %worker-profile-line worker-stats))
+             (worker-block (if (null? worker-lines)
+                               "worker-profiles=none"
+                               (string-append
+                                 "worker-profiles=\n"
+                                 (%join-with worker-lines "\n")))))
+        (%log-worker-profiles session worker-stats)
+        (string-append
+          "seed="
+          (number->string seed)
+          "\ntrace-schema="
+          (symbol->string trace-schema-version)
+          "\nrounds="
+          (number->string rounds)
+          "\nworkers="
+          (number->string workers)
+          "\nsummary="
+          (display->string summary)
+          "\ndispatch-ms="
+          (number->string (%alist-get 'dispatch-ms profile))
+          "\ncollect-ms="
+          (number->string (%alist-get 'collect-ms profile))
+          "\ncleanup-ms="
+          (number->string (%alist-get 'cleanup-ms profile))
+          "\nflatten-ms="
+          (number->string (%alist-get 'flatten-ms profile))
+          "\nworker-elapsed-ms-total="
+          (number->string (%alist-get 'worker-elapsed-ms-total profile))
+          "\nworker-elapsed-ms-max="
+          (number->string (%alist-get 'worker-elapsed-ms-max profile))
+          "\n"
+          worker-block
+          "\npredicates=(bust blackjack dealer-hits dealer-stands player-wins push)")))
+
+    (defun %render-causal-row (row)
+      (string-append
+        "count="
+        (number->string (%alist-get 'count row))
+        ", ev-do(hit)="
+        (display->string (%alist-get 'ev-do-hit row))
+        ", ev-do(stand)="
+        (display->string (%alist-get 'ev-do-stand row))
+        ", policy="
+        (symbol->string (%alist-get 'policy row))))
+
+    (defun render-causal (run-cfg)
+      (let* ((seed (run-cfg-ref run-cfg 'seed))
+             (rows (sweep-do state-16-vs-10 default-count-buckets))
+             (threshold (find-flip-threshold state-16-vs-10 default-count-buckets))
+             (lines (map* %render-causal-row rows))
+             (threshold-label (if threshold (number->string threshold) "none")))
+        (string-append
+          "seed="
+          (number->string seed)
+          "\nstate=(16,10)\n"
+          (%join-with lines "\n")
+          "\nflip-threshold="
+          threshold-label)))
+
+    (defun render-learn (run-cfg . rest)
+      (let* ((seed (run-cfg-ref run-cfg 'seed))
+             (session (if (null? rest) #f (car rest)))
+             (learn-mode-name (run-cfg-ref run-cfg 'learn-mode))
+             (epochs (run-cfg-ref run-cfg 'learn-epochs))
+             (batch-size (run-cfg-ref run-cfg 'learn-batch-size))
+             (learning-rate (run-cfg-ref run-cfg 'learn-learning-rate))
+             (policy-refresh-requested (run-cfg-ref run-cfg 'learn-policy-refresh))
+             (mode (learn-mode-from-string learn-mode-name))
+             (cfg (make-learn-config mode
+                                     seed
+                                     epochs
+                                     batch-size
+                                     learning-rate
+                                     policy-refresh-requested))
+             (policy-refresh (learn-config-policy-refresh cfg))
+             (result (recover-hi-lo cfg))
+             (training-log-path (learn-result-training-log-path result))
+             (training-log-text (%read-file-text training-log-path)))
+        (if session
+            (log-session-write session
+                               (string-append
+                                 "learn-training-output-path="
+                                 training-log-path))
+            #f)
+        (if session
+            (log-session-write session
+                               (string-append
+                                 "learn-training-output=\n"
+                                 training-log-text))
+            #f)
+        (string-append
+          "mode="
+          learn-mode-name
+          "\nrequested-seed="
+          (number->string seed)
+          "\neffective-seed="
+          (number->string (learn-result-seed result))
+          "\nepochs="
+          (number->string (learn-result-epochs result))
+          "\nbatch-size="
+          (number->string (learn-result-batch-size result))
+          "\nlearning-rate="
+          (display->string learning-rate)
+          "\npolicy-refresh-requested="
+          (number->string policy-refresh-requested)
+          "\npolicy-refresh="
+          (number->string policy-refresh)
+          "\nloss-initial="
+          (display->string (learn-result-loss-initial result))
+          "\nloss-final="
+          (display->string (learn-result-loss-final result))
+          "\ncosine-hi-lo="
+          (display->string (learn-result-cosine-hi-lo result))
+          "\nev-monotone="
+          (display->string (learn-result-ev-monotone result))
+          "\ntraining-log-path="
+          training-log-path
+          "\ntraining-output=\n"
+          training-log-text
+          "\nnormalized-weights="
+          (display->string (learn-result-normalized-weights result)))))
+
+    (defun render-chart (run-cfg)
+      (let ((seed (run-cfg-ref run-cfg 'seed)))
+        (string-append
+          "seed="
+          (number->string seed)
+          "\n"
+          (chart-output))))
+
+    (defun render-maxims (run-cfg)
+      (let ((seed (run-cfg-ref run-cfg 'seed)))
+        (string-append
+          "seed="
+          (number->string seed)
+          "\n"
+          (render-maxim-clauses default-chart-counts))))
+
+    (defun %timed-phase (name thunk . hooks)
+      (let* ((on-start (if (null? hooks) #f (car hooks)))
+             (on-finish (if (or (null? hooks) (null? (cdr hooks)))
+                            #f
+                            (car (cdr hooks))))
+             (_started (if on-start (on-start name) #f))
+             (t0 (time:monotonic-ms))
+             (body (thunk))
+             (t1 (time:monotonic-ms))
+             (elapsed (time:elapsed-ms t0 t1))
+             (_finished (if on-finish (on-finish name elapsed) #f))
+             (section (%section name
+                                (string-append
+                                  "elapsed-ms="
+                                  (number->string elapsed)
+                                  "\n"
+                                  body))))
+        (list
+          (cons 'name name)
+          (cons 'elapsed-ms elapsed)
+          (cons 'section section))))
+
+    (defun render-report (phases total-elapsed)
+      (let* ((ranked (sort (lambda (lhs rhs)
+                             (> (%alist-get 'elapsed-ms lhs)
+                                (%alist-get 'elapsed-ms rhs)))
+                           phases))
+             (lines (map-indexed
+                      (lambda (idx phase)
+                        (string-append
+                          (number->string (+ idx 1))
+                          ". "
+                          (%alist-get 'name phase)
+                          " elapsed-ms="
+                          (number->string (%alist-get 'elapsed-ms phase))))
+                      ranked)))
+        (string-append
+          "total-elapsed-ms="
+          (number->string total-elapsed)
+          "\nslowest-phases:\n"
+          (%join-with lines "\n"))))
+
+    (defun render-all (run-cfg . rest)
+      (let* ((session (if (null? rest) #f (car rest)))
+             (on-start (if session
+                           (lambda (name)
+                             (log-session-write session (phase-start-message name)))
+                           #f))
+             (on-finish (if session
+                            (lambda (name elapsed)
+                              (log-session-write session
+                                                 (phase-end-message name elapsed)))
+                            #f))
+             (total-start (time:monotonic-ms))
+             (phases (list
+                       (%timed-phase "induce" (lambda () (render-induce run-cfg session))
+                                     on-start on-finish)
+                       (%timed-phase "causal" (lambda () (render-causal run-cfg))
+                                     on-start on-finish)
+                       (%timed-phase "learn" (lambda () (render-learn run-cfg session))
+                                     on-start on-finish)
+                       (%timed-phase "chart" (lambda () (render-chart run-cfg))
+                                     on-start on-finish)
+                       (%timed-phase "maxims" (lambda () (render-maxims run-cfg))
+                                     on-start on-finish)))
+             (body (%join-with
+                     (cons (startup-message)
+                           (map* (lambda (phase) (%alist-get 'section phase))
+                                 phases))
+                     "\n\n"))
+             (total-end (time:monotonic-ms))
+             (total-elapsed (time:elapsed-ms total-start total-end))
+             (report (render-report phases total-elapsed)))
+        (if session
+            (log-session-write session
+                               (string-append "total-elapsed-ms="
+                                              (number->string total-elapsed)))
+            #f)
+        (if session
+            (log-session-write session
+                               (string-append "report-summary=\n" report))
+            #f)
+        (string-append body
+                       "\n\n== report ==\n"
+                       report
+                       "\n\ntotal-elapsed-ms="
+                       (number->string total-elapsed))))
+
+  ))

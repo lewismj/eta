@@ -15,6 +15,35 @@ eta run -- report --config tests/config/supervised_demo.json
 eta run -- all --config tests/config/supervised_demo.json
 ```
 
+## Workbook-first API
+
+For notebook/tutorial use, import `blackjack_workbook` and run explicit steps
+instead of routing through the full CLI:
+
+```eta
+(import blackjack_workbook)
+(workbook-overview)
+(run-step-1 42 64 1)
+(run-step-2 42 16 10)
+(run-step-3 42 8 32 0.01 4)
+(run-workbook 42)
+```
+
+Step source locations:
+
+- Step 1 simulation: `../blackjack/src/mc.eta`
+- Step 2 causal sweep: `../blackjack/src/causal.eta`
+- Step 3 learning: `../blackjack/src/learn.eta`
+- Step 3 policy chart/maxims: `../blackjack/src/strategy.eta`, `../blackjack/src/maxims.eta`
+
+## App module split
+
+- `src/blackjack_demo.eta`: thin CLI entrypoint and command dispatch.
+- `src/blackjack_demo_config.eta`: CLI spec + JSON/run config resolution.
+- `src/blackjack_demo_logging.eta`: app-log session handling and phase log lines.
+- `src/blackjack_demo_render.eta`: induce/causal/learn/chart/maxims/report rendering.
+- `src/blackjack_workbook.eta`: explicit step-by-step notebook/workbook API.
+
 Supported options:
 
 - `--config <path>`: JSON config for seed + ML settings

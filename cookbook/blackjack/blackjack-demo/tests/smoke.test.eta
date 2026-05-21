@@ -1,5 +1,5 @@
 (module blackjack_demo.tests.smoke
-  (import std.test std.causal.render std.io std.fs std.time std.regex std.log blackjack blackjack_demo)
+  (import std.test std.causal.render std.io std.fs std.time std.regex std.log blackjack blackjack_demo blackjack_workbook)
   (begin
 
     (defun contains? (text needle)
@@ -229,6 +229,17 @@
                 (assert-true (contains? help "--app-log"))
                 (assert-true (contains? help "app_log_path"))
                 (assert-true (contains? help "induce_workers")))))
+          (%make-logged-test "b7.1-workbook-api-exposes-step-flow"
+            (lambda ()
+              (let* ((overview (workbook-overview))
+                     (steps (workbook-steps))
+                     (step2 (run-step-2 42 16 10)))
+                (assert-true (contains? overview "step-1"))
+                (assert-equal 3 (length steps))
+                (assert-true (contains? (car steps) "make-mc-shoe"))
+                (assert-true (contains? (car (cdr steps)) "sweep-do"))
+                (assert-true (contains? step2 "flip-threshold="))
+                (assert-true (contains? step2 "state=(16,10)")))))
           (%make-logged-test "b7-chart-subcommand-renders-section-output"
             (lambda ()
               (let ((out (%run-command-logged
