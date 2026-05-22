@@ -60,6 +60,7 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/vm/sandbox.cpp
         src/eta/runtime/value_formatter.cpp
         src/eta/runtime/actor/mailbox.cpp
+        src/eta/runtime/actor/scheduler.cpp
         src/eta/runtime/actor/actor_system.cpp
         src/eta/runtime/actor/node_transport.cpp
         src/eta/runtime/csv_builtins.cpp

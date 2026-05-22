@@ -356,6 +356,12 @@ public:
 private:
     friend class eta::nng::SessionActorRuntime;
 
+    enum class ActorSchedulerMode : std::uint8_t {
+        ThreadPerActor,
+        Pool,
+        PoolShadow,
+    };
+
     [[nodiscard]] bool can_register_extension_primitives() const noexcept override;
     void register_builtin_primitive(std::string name,
                                     uint32_t arity,
@@ -398,6 +404,11 @@ private:
      * falls back to PATH lookup.
      */
     static std::string detect_etai_path();
+    static ActorSchedulerMode parse_actor_scheduler_mode_env() noexcept;
+    static runtime::actor::ActorSystem::SchedulerMode to_actor_scheduler_mode(
+        ActorSchedulerMode mode) noexcept;
+    static std::uint64_t parse_actor_reduction_budget_env() noexcept;
+    static bool actor_scheduler_supports_vm_yield(ActorSchedulerMode mode) noexcept;
 
     /// File ID registry used by diagnostics and debugger file lookups.
     uint32_t allocate_file_id(const std::string& raw_path);
@@ -420,6 +431,8 @@ private:
     native::SidecarRuntimeBindingV1 sidecar_runtime_binding_{};
     runtime::vm::VM vm_;
     std::shared_ptr<runtime::actor::ActorSystem> actor_system_;
+    ActorSchedulerMode actor_scheduler_mode_{ActorSchedulerMode::ThreadPerActor};
+    std::uint64_t actor_reduction_budget_{2000};
 
     diagnostic::DiagnosticEngine diag_engine_;
 

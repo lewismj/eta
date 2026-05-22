@@ -371,6 +371,7 @@ inline void register_builtin_specs_seed(BuiltinEnvironment& env) {
     r("%actor-send-checked",   2, false);
     r("%actor-receive",        2, false);
     r("%actor-mailbox-len",    0, false);
+    r("%actor-process-info",   1, true);
     r("%actor-trap-exit!",     1, false);
     r("%actor-link",           1, false);
     r("%actor-unlink",         1, false);

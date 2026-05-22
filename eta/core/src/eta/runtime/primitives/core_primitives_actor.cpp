@@ -1,6 +1,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -433,6 +434,158 @@ std::expected<DecodedExitSignal, RuntimeError> decode_exit_signal_reason(
     return out;
 }
 
+[[nodiscard]] std::int64_t saturating_fixnum_value(std::uint64_t value) {
+    constexpr std::uint64_t max_fixnum =
+        static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    if (value > max_fixnum) {
+        return std::numeric_limits<std::int64_t>::max();
+    }
+    return static_cast<std::int64_t>(value);
+}
+
+std::expected<LispVal, RuntimeError> make_fixnum_u64(
+    Heap& heap,
+    std::uint64_t value) {
+    return memory::factory::make_fixnum(heap, saturating_fixnum_value(value));
+}
+
+std::expected<LispVal, RuntimeError> encode_pid_list(
+    const std::vector<types::Pid>& pids,
+    Heap& heap) {
+    auto roots = heap.make_external_root_frame();
+    std::vector<LispVal> values;
+    values.reserve(pids.size());
+
+    for (const auto& pid : pids) {
+        auto pid_value = memory::factory::make_pid(heap, pid);
+        if (!pid_value.has_value()) return std::unexpected(pid_value.error());
+        roots.push(*pid_value);
+        values.push_back(*pid_value);
+    }
+    return make_list(heap, std::span<const LispVal>(values));
+}
+
+std::expected<LispVal, RuntimeError> encode_monitor_ref_list(
+    const std::vector<actor::ActorSystem::MonitorRef>& refs,
+    Heap& heap) {
+    auto roots = heap.make_external_root_frame();
+    std::vector<LispVal> values;
+    values.reserve(refs.size());
+
+    for (const auto ref : refs) {
+        auto ref_value = make_fixnum_u64(heap, ref);
+        if (!ref_value.has_value()) return std::unexpected(ref_value.error());
+        roots.push(*ref_value);
+        values.push_back(*ref_value);
+    }
+    return make_list(heap, std::span<const LispVal>(values));
+}
+
+std::expected<LispVal, RuntimeError> encode_yield_reason(
+    actor::ActorSystem::YieldReason reason,
+    InternTable& intern_table) {
+    using YieldReason = actor::ActorSystem::YieldReason;
+    switch (reason) {
+        case YieldReason::None:
+            return memory::factory::make_symbol(intern_table, "none");
+        case YieldReason::BudgetExhausted:
+            return memory::factory::make_symbol(intern_table, "budget-exhausted");
+        case YieldReason::BlockedOnReceive:
+            return memory::factory::make_symbol(intern_table, "blocked-on-receive");
+        case YieldReason::Finished:
+            return memory::factory::make_symbol(intern_table, "finished");
+        case YieldReason::Error:
+            return memory::factory::make_symbol(intern_table, "error");
+    }
+    return memory::factory::make_symbol(intern_table, "none");
+}
+
+std::expected<LispVal, RuntimeError> encode_run_state(
+    actor::ActorSystem::RunState state,
+    InternTable& intern_table) {
+    using RunState = actor::ActorSystem::RunState;
+    switch (state) {
+        case RunState::Runnable:
+            return memory::factory::make_symbol(intern_table, "runnable");
+        case RunState::Running:
+            return memory::factory::make_symbol(intern_table, "running");
+        case RunState::Waiting:
+            return memory::factory::make_symbol(intern_table, "waiting");
+        case RunState::Exited:
+            return memory::factory::make_symbol(intern_table, "exited");
+    }
+    return memory::factory::make_symbol(intern_table, "running");
+}
+
+std::expected<LispVal, RuntimeError> encode_process_info_value(
+    const actor::ActorSystem::ProcessInfo& info,
+    std::string_view key,
+    Heap& heap,
+    InternTable& intern_table) {
+    if (key == "pid") {
+        return memory::factory::make_pid(heap, info.pid);
+    }
+    if (key == "state") {
+        return encode_run_state(info.run_state, intern_table);
+    }
+    if (key == "last-yield-reason") {
+        return encode_yield_reason(info.last_yield_reason, intern_table);
+    }
+    if (key == "message-queue-len") {
+        return make_fixnum_u64(heap, static_cast<std::uint64_t>(info.mailbox_length));
+    }
+    if (key == "registered-name") {
+        if (info.registered_name.empty()) return nanbox::False;
+        return memory::factory::make_symbol(intern_table, info.registered_name);
+    }
+    if (key == "links") {
+        return encode_pid_list(info.links, heap);
+    }
+    if (key == "monitors") {
+        return encode_monitor_ref_list(info.monitors, heap);
+    }
+    if (key == "reductions") {
+        return make_fixnum_u64(heap, info.reductions);
+    }
+    return nanbox::False;
+}
+
+std::expected<LispVal, RuntimeError> encode_process_info_alist(
+    const actor::ActorSystem::ProcessInfo& info,
+    Heap& heap,
+    InternTable& intern_table) {
+    constexpr std::array<std::string_view, 8> kProcessInfoKeys{
+        "pid",
+        "state",
+        "last-yield-reason",
+        "message-queue-len",
+        "registered-name",
+        "links",
+        "monitors",
+        "reductions"};
+
+    auto roots = heap.make_external_root_frame();
+    std::vector<LispVal> entries;
+    entries.reserve(kProcessInfoKeys.size());
+
+    for (const auto key : kProcessInfoKeys) {
+        auto value = encode_process_info_value(info, key, heap, intern_table);
+        if (!value.has_value()) return std::unexpected(value.error());
+        roots.push(*value);
+
+        auto key_symbol = memory::factory::make_symbol(intern_table, std::string(key));
+        if (!key_symbol.has_value()) return std::unexpected(key_symbol.error());
+        roots.push(*key_symbol);
+
+        auto pair = memory::factory::make_cons(heap, *key_symbol, *value);
+        if (!pair.has_value()) return std::unexpected(pair.error());
+        roots.push(*pair);
+        entries.push_back(*pair);
+    }
+
+    return make_list(heap, std::span<const LispVal>(entries));
+}
+
 } // namespace
 
 void PrimReg::register_actor_bridge() {
@@ -613,6 +766,40 @@ void PrimReg::register_actor_bridge() {
             }
 
             return memory::factory::make_fixnum(heap, static_cast<std::int64_t>(*len));
+        });
+
+    env.register_builtin("%actor-process-info", 1, true,
+        [&heap, &intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm || !vm->actor_system()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "%actor-process-info: actor system is not available"}});
+            }
+
+            if (args.size() > 2) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InvalidArity,
+                    "%actor-process-info: expected 1 or 2 arguments"}});
+            }
+
+            auto pid = expect_pid(heap, args[0], "%actor-process-info");
+            if (!pid.has_value()) return std::unexpected(pid.error());
+
+            auto info = vm->actor_system()->process_info(*pid);
+            if (!info.has_value()) return nanbox::False;
+
+            if (args.size() == 1) {
+                auto encoded = encode_process_info_alist(*info, heap, intern_table);
+                if (!encoded.has_value()) return std::unexpected(encoded.error());
+                return *encoded;
+            }
+
+            auto key = decode_registry_name(intern_table, args[1], "%actor-process-info");
+            if (!key.has_value()) return std::unexpected(key.error());
+
+            auto value = encode_process_info_value(*info, *key, heap, intern_table);
+            if (!value.has_value()) return std::unexpected(value.error());
+            return *value;
         });
 
     env.register_builtin("%actor-trap-exit!", 1, false,

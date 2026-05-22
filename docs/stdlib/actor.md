@@ -29,6 +29,7 @@ distributed actor-node links and `std.net` for transport-level NNG sockets.
 | `(unregister name)` | Remove one local registration. |
 | `(whereis name)` | Resolve local registered `name` to PID or `#f`. |
 | `(registered)` | Return all registered local names. |
+| `(process-info pid [key])` | Return process info alist or one keyed value (`'pid`, `'state`, `'last-yield-reason`, `'message-queue-len`, `'registered-name`, `'links`, `'monitors`, `'reductions`). `state` is one of `'runnable`, `'running`, `'waiting`, `'exited`. `last-yield-reason` is one of `'none`, `'budget-exhausted`, `'blocked-on-receive`, `'finished`, `'error`. |
 | `(match-case matcher handler)` | Build one receive clause for `receive-match`. |
 | `(match-list head [arity])` | Match list messages by head value and optional tail arity. |
 | `(match-symbol sym)` | Match one symbol message by `eq?`. |

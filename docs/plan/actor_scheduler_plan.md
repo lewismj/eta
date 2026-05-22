@@ -111,6 +111,19 @@ Gate:
 
 1. Semantics parity holds under tiny and default reduction budgets.
 
+Implementation notes (current):
+
+1. `VM::execute_with_status(...)` now reports `finished`,
+   `budget-exhausted`, or `blocked-on-receive` and keeps VM state resumable
+   between slices.
+2. `Driver::run_spawned_actor(...)` runs actor entry code through
+   `execute_with_status(...)`; yielding remains disabled in
+   `thread-per-actor` mode.
+3. `process-info` now sources `last-yield-reason` from actor runtime state
+   (`none`, `budget-exhausted`, `blocked-on-receive`, `finished`, `error`).
+4. Coverage includes `vm_execute_with_status_yields_and_resumes_at_budget_boundary`
+   and `actor_semantics_parity_under_tiny_reduction_budgets`.
+
 ---
 
 ### M7.3 - Scheduler pool and run queues (shadow mode)
@@ -145,6 +158,20 @@ Gate:
 
 1. Queue/state tests deterministic.
 2. No functional difference versus baseline actor suites.
+
+Implementation notes (current):
+
+1. Added `eta/core/src/eta/runtime/actor/scheduler.{h,cpp}` with:
+   - fixed worker pool startup/shutdown
+   - per-worker run queues
+   - global fallback queue
+   - basic work stealing
+2. `ActorSystem` now tracks run state per process (`runnable`, `running`,
+   `waiting`, `exited`) and surfaces it through `process-info`.
+3. `pool-shadow` now boots scheduler workers and records runnable queueing
+   metrics while actor execution stays on `thread-per-actor`.
+4. Coverage includes deterministic queue/work-steal tests and actor run-state
+   transition + shadow-metrics assertions.
 
 ---
 

@@ -21,6 +21,8 @@
 
 namespace eta::runtime::actor {
 
+class Scheduler;
+
 /**
  * @brief Runtime owner for local actors and their mailboxes.
  */
@@ -41,10 +43,54 @@ public:
         TransportError,
     };
 
+    enum class YieldReason : std::uint8_t {
+        None,
+        BudgetExhausted,
+        BlockedOnReceive,
+        Finished,
+        Error,
+    };
+
+    enum class SchedulerMode : std::uint8_t {
+        ThreadPerActor,
+        Pool,
+        PoolShadow,
+    };
+
+    enum class RunState : std::uint8_t {
+        Runnable,
+        Running,
+        Waiting,
+        Exited,
+    };
+
     struct ConnectedNode {
         std::uint64_t node_id{0};
         std::string node_name{};
         std::string endpoint{};
+    };
+
+    struct ProcessInfo {
+        types::Pid pid{};
+        bool alive{false};
+        std::size_t mailbox_length{0};
+        std::string registered_name{};
+        std::vector<types::Pid> links{};
+        std::vector<MonitorRef> monitors{};
+        std::uint64_t reductions{0};
+        RunState run_state{RunState::Runnable};
+        YieldReason last_yield_reason{YieldReason::None};
+    };
+
+    struct SchedulerStats {
+        SchedulerMode mode{SchedulerMode::ThreadPerActor};
+        std::uint64_t runnable_queue_depth{0};
+        std::uint64_t scheduler_wakeups{0};
+        std::uint64_t dirty_queue_depth{0};
+        std::uint64_t enqueued{0};
+        std::uint64_t dequeued{0};
+        std::uint64_t steals{0};
+        std::uint64_t global_queue_depth{0};
     };
 
     ActorSystem();
@@ -194,11 +240,25 @@ public:
         const MessageMatcher& matcher);
 
     [[nodiscard]] std::optional<std::size_t> mailbox_size(const types::Pid& pid) const;
+    [[nodiscard]] std::optional<ProcessInfo> process_info(const types::Pid& pid) const;
+    void set_scheduler_mode(SchedulerMode mode);
+    [[nodiscard]] SchedulerMode scheduler_mode() const;
+    [[nodiscard]] SchedulerStats scheduler_stats() const;
     [[nodiscard]] bool pid_exists(const types::Pid& pid) const;
     [[nodiscard]] bool register_name(std::string name, const types::Pid& pid);
     [[nodiscard]] bool unregister_name(std::string_view name);
     [[nodiscard]] std::optional<types::Pid> whereis(std::string_view name) const;
     [[nodiscard]] std::vector<std::string> registered_names() const;
+
+    /**
+     * @brief Add reduction units to the actor currently bound to this thread.
+     */
+    void add_current_thread_reductions(std::uint64_t units) noexcept;
+
+    /**
+     * @brief Update last yield reason for the actor bound to this thread.
+     */
+    void set_current_thread_last_yield_reason(YieldReason reason) noexcept;
 
     /**
      * @brief Stop all mailboxes and join spawned worker threads.
@@ -240,6 +300,9 @@ private:
         bool trap_exit{false};
         std::unordered_set<types::Pid, PidHasher> links{};
         std::unordered_set<MonitorRef> monitors{};
+        std::atomic<std::uint64_t> reductions{0};
+        std::atomic<RunState> run_state{RunState::Runnable};
+        std::atomic<YieldReason> last_yield_reason{YieldReason::None};
     };
 
     [[nodiscard]] types::Pid allocate_pid_unsafe();
@@ -247,7 +310,7 @@ private:
     [[nodiscard]] bool enqueue_message_unsafe(
         const types::Pid& pid,
         Message message,
-        std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox) const;
+        std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox);
     [[nodiscard]] bool deliver_remote_payload(const types::Pid& pid, BinaryMessage payload);
     [[nodiscard]] static std::uint64_t allocate_local_node_id();
     void erase_monitor_unsafe(MonitorRef ref);
@@ -285,6 +348,14 @@ private:
     static ExitReason decode_remote_down_reason(
         const NodeTransport::RemoteDownSignal& signal);
     static ExitReason map_node_down_reason(NodeTransport::NodeDownReason reason);
+    void mark_process_waiting_if_blocking_receive_unsafe(
+        const std::shared_ptr<ActorProcess>& process,
+        std::optional<std::chrono::milliseconds> timeout);
+    void mark_process_running_unsafe(const std::shared_ptr<ActorProcess>& process);
+    void mark_process_exited_unsafe(const std::shared_ptr<ActorProcess>& process);
+    void mark_process_runnable_from_message_unsafe(const std::shared_ptr<ActorProcess>& process);
+    void enqueue_shadow_runnable_unsafe(const types::Pid& pid);
+    [[nodiscard]] static std::size_t default_scheduler_worker_count() noexcept;
 
     mutable std::mutex mutex_{};
     std::unordered_map<types::Pid, std::shared_ptr<ActorProcess>, PidHasher> processes_{};
@@ -300,6 +371,8 @@ private:
     std::atomic<std::uint64_t> next_actor_id_{1};
     std::atomic<MonitorRef> next_monitor_ref_{1};
     std::atomic<bool> shutting_down_{false};
+    SchedulerMode scheduler_mode_{SchedulerMode::ThreadPerActor};
+    std::unique_ptr<Scheduler> scheduler_{};
 };
 
 } // namespace eta::runtime::actor

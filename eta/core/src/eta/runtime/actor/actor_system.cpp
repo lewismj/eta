@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "eta/runtime/actor/node_transport.h"
+#include "eta/runtime/actor/scheduler.h"
 
 namespace eta::runtime::actor {
 
@@ -14,6 +15,8 @@ struct ThreadActorBinding {
     const ActorSystem* system{nullptr};
     types::Pid pid{};
     bool active{false};
+    std::atomic<std::uint64_t>* reductions_counter{nullptr};
+    std::atomic<ActorSystem::YieldReason>* yield_reason{nullptr};
 };
 
 thread_local ThreadActorBinding g_thread_actor_binding{};
@@ -114,6 +117,7 @@ std::expected<types::Pid, std::string> ActorSystem::spawn(ActorEntry entry) {
         }
         process->pid = allocate_pid_unsafe();
         processes_.emplace(process->pid, process);
+        enqueue_shadow_runnable_unsafe(process->pid);
     }
 
     try {
@@ -156,6 +160,12 @@ bool ActorSystem::bind_current_thread_pid(const types::Pid& pid) {
     g_thread_actor_binding.system = this;
     g_thread_actor_binding.pid = pid;
     g_thread_actor_binding.active = true;
+    g_thread_actor_binding.reductions_counter = &process->reductions;
+    g_thread_actor_binding.yield_reason = &process->last_yield_reason;
+    process->run_state.store(RunState::Running, std::memory_order_relaxed);
+    process->last_yield_reason.store(
+        YieldReason::None,
+        std::memory_order_relaxed);
     return true;
 }
 
@@ -164,6 +174,8 @@ void ActorSystem::unbind_current_thread_pid() {
     g_thread_actor_binding.system = nullptr;
     g_thread_actor_binding.pid = {};
     g_thread_actor_binding.active = false;
+    g_thread_actor_binding.reductions_counter = nullptr;
+    g_thread_actor_binding.yield_reason = nullptr;
 }
 
 std::optional<types::Pid> ActorSystem::current_pid() const {
@@ -189,10 +201,12 @@ ActorSystem::SendStatus ActorSystem::send_checked(const types::Pid& pid, BinaryM
             } else if (!process->alive.load(std::memory_order_acquire)) {
                 status = SendStatus::DeadPid;
             } else {
-                outbox.emplace_back(
-                    process->mailbox,
-                    Message::make_payload(std::move(message)));
-                status = SendStatus::Delivered;
+                status = enqueue_message_unsafe(
+                    pid,
+                    Message::make_payload(std::move(message)),
+                    outbox)
+                    ? SendStatus::Delivered
+                    : SendStatus::DeadPid;
             }
         }
         apply_outbox_messages(outbox);
@@ -571,13 +585,29 @@ std::optional<ActorSystem::Message> ActorSystem::receive(
     const types::Pid& pid,
     std::optional<std::chrono::milliseconds> timeout) {
     std::shared_ptr<Mailbox> mailbox;
+    std::shared_ptr<ActorProcess> process;
     {
         std::lock_guard lock(mutex_);
-        auto process = lookup_process_unsafe(pid);
+        process = lookup_process_unsafe(pid);
         if (!process) return std::nullopt;
         mailbox = process->mailbox;
+        mark_process_waiting_if_blocking_receive_unsafe(process, timeout);
     }
-    return mailbox->pop(timeout);
+
+    auto message = mailbox->pop(timeout);
+
+    {
+        std::lock_guard lock(mutex_);
+        auto refreshed = lookup_process_unsafe(pid);
+        if (!refreshed) return message;
+        if (refreshed->alive.load(std::memory_order_acquire)) {
+            mark_process_running_unsafe(refreshed);
+        } else {
+            mark_process_exited_unsafe(refreshed);
+        }
+    }
+
+    return message;
 }
 
 std::expected<std::optional<ActorSystem::Message>, error::RuntimeError>
@@ -586,13 +616,30 @@ ActorSystem::receive_matching(
     std::optional<std::chrono::milliseconds> timeout,
     const MessageMatcher& matcher) {
     std::shared_ptr<Mailbox> mailbox;
+    std::shared_ptr<ActorProcess> process;
     {
         std::lock_guard lock(mutex_);
-        auto process = lookup_process_unsafe(pid);
+        process = lookup_process_unsafe(pid);
         if (!process) return std::optional<Message>{};
         mailbox = process->mailbox;
+        mark_process_waiting_if_blocking_receive_unsafe(process, timeout);
     }
-    return mailbox->pop_matching(timeout, matcher);
+
+    auto matched = mailbox->pop_matching(timeout, matcher);
+
+    {
+        std::lock_guard lock(mutex_);
+        auto refreshed = lookup_process_unsafe(pid);
+        if (refreshed) {
+            if (refreshed->alive.load(std::memory_order_acquire)) {
+                mark_process_running_unsafe(refreshed);
+            } else {
+                mark_process_exited_unsafe(refreshed);
+            }
+        }
+    }
+
+    return matched;
 }
 
 std::optional<std::size_t> ActorSystem::mailbox_size(const types::Pid& pid) const {
@@ -604,6 +651,89 @@ std::optional<std::size_t> ActorSystem::mailbox_size(const types::Pid& pid) cons
         mailbox = process->mailbox;
     }
     return mailbox->size();
+}
+
+std::optional<ActorSystem::ProcessInfo> ActorSystem::process_info(
+    const types::Pid& pid) const {
+    std::shared_ptr<ActorProcess> process;
+    ProcessInfo info;
+    {
+        std::lock_guard lock(mutex_);
+        process = lookup_process_unsafe(pid);
+        if (!process) return std::nullopt;
+
+        info.pid = process->pid;
+        info.alive = process->alive.load(std::memory_order_acquire);
+        info.registered_name = process->registered_name;
+        info.reductions = process->reductions.load(std::memory_order_relaxed);
+        info.run_state = process->run_state.load(std::memory_order_relaxed);
+        info.last_yield_reason = process->last_yield_reason.load(std::memory_order_relaxed);
+
+        info.links.reserve(process->links.size());
+        for (const auto& linked_pid : process->links) {
+            info.links.push_back(linked_pid);
+        }
+
+        info.monitors.reserve(process->monitors.size());
+        for (const auto ref : process->monitors) {
+            info.monitors.push_back(ref);
+        }
+    }
+
+    info.mailbox_length = process->mailbox->size();
+
+    std::sort(
+        info.links.begin(),
+        info.links.end(),
+        [](const types::Pid& lhs, const types::Pid& rhs) {
+            if (lhs.node_id != rhs.node_id) return lhs.node_id < rhs.node_id;
+            if (lhs.actor_id != rhs.actor_id) return lhs.actor_id < rhs.actor_id;
+            return lhs.incarnation < rhs.incarnation;
+        });
+    std::sort(info.monitors.begin(), info.monitors.end());
+    return info;
+}
+
+void ActorSystem::set_scheduler_mode(SchedulerMode mode) {
+    std::lock_guard lock(mutex_);
+    scheduler_mode_ = mode;
+
+    if (mode == SchedulerMode::ThreadPerActor) {
+        if (scheduler_) {
+            scheduler_->shutdown();
+            scheduler_.reset();
+        }
+        return;
+    }
+
+    if (!scheduler_) {
+        scheduler_ = std::make_unique<Scheduler>(
+            default_scheduler_worker_count(),
+            [](const types::Pid&, std::size_t) {});
+    }
+    scheduler_->start();
+}
+
+ActorSystem::SchedulerMode ActorSystem::scheduler_mode() const {
+    std::lock_guard lock(mutex_);
+    return scheduler_mode_;
+}
+
+ActorSystem::SchedulerStats ActorSystem::scheduler_stats() const {
+    std::lock_guard lock(mutex_);
+    SchedulerStats stats;
+    stats.mode = scheduler_mode_;
+    if (!scheduler_) return stats;
+
+    const auto snapshot = scheduler_->stats_snapshot();
+    stats.runnable_queue_depth = snapshot.runnable_queue_depth;
+    stats.scheduler_wakeups = snapshot.scheduler_wakeups;
+    stats.dirty_queue_depth = snapshot.dirty_queue_depth;
+    stats.enqueued = snapshot.enqueued;
+    stats.dequeued = snapshot.dequeued;
+    stats.steals = snapshot.steals;
+    stats.global_queue_depth = snapshot.global_queue_depth;
+    return stats;
 }
 
 bool ActorSystem::pid_exists(const types::Pid& pid) const {
@@ -692,6 +822,74 @@ std::vector<std::string> ActorSystem::registered_names() const {
     return names;
 }
 
+void ActorSystem::mark_process_waiting_if_blocking_receive_unsafe(
+    const std::shared_ptr<ActorProcess>& process,
+    std::optional<std::chrono::milliseconds> timeout) {
+    if (!process) return;
+    if (!process->alive.load(std::memory_order_acquire)) return;
+
+    const bool potentially_blocking_receive =
+        !timeout.has_value() || timeout->count() > 0;
+    if (!potentially_blocking_receive) return;
+    if (process->mailbox->size() > 0) return;
+    process->run_state.store(RunState::Waiting, std::memory_order_relaxed);
+}
+
+void ActorSystem::mark_process_running_unsafe(const std::shared_ptr<ActorProcess>& process) {
+    if (!process) return;
+    if (!process->alive.load(std::memory_order_acquire)) return;
+    process->run_state.store(RunState::Running, std::memory_order_relaxed);
+}
+
+void ActorSystem::mark_process_exited_unsafe(const std::shared_ptr<ActorProcess>& process) {
+    if (!process) return;
+    process->run_state.store(RunState::Exited, std::memory_order_relaxed);
+}
+
+void ActorSystem::mark_process_runnable_from_message_unsafe(
+    const std::shared_ptr<ActorProcess>& process) {
+    if (!process) return;
+    if (!process->alive.load(std::memory_order_acquire)) return;
+
+    const auto previous = process->run_state.load(std::memory_order_relaxed);
+    if (previous != RunState::Waiting) return;
+
+    process->run_state.store(RunState::Runnable, std::memory_order_relaxed);
+    enqueue_shadow_runnable_unsafe(process->pid);
+}
+
+void ActorSystem::enqueue_shadow_runnable_unsafe(const types::Pid& pid) {
+    if (!scheduler_) return;
+    if (scheduler_mode_ != SchedulerMode::Pool && scheduler_mode_ != SchedulerMode::PoolShadow) {
+        return;
+    }
+    (void)scheduler_->enqueue(pid);
+}
+
+std::size_t ActorSystem::default_scheduler_worker_count() noexcept {
+    const auto concurrency = std::thread::hardware_concurrency();
+    return concurrency == 0 ? 1u : static_cast<std::size_t>(concurrency);
+}
+
+void ActorSystem::add_current_thread_reductions(std::uint64_t units) noexcept {
+    if (units == 0) return;
+    if (g_thread_actor_binding.system != this || !g_thread_actor_binding.active) {
+        return;
+    }
+    auto* reductions_counter = g_thread_actor_binding.reductions_counter;
+    if (!reductions_counter) return;
+    reductions_counter->fetch_add(units, std::memory_order_relaxed);
+}
+
+void ActorSystem::set_current_thread_last_yield_reason(YieldReason reason) noexcept {
+    if (g_thread_actor_binding.system != this || !g_thread_actor_binding.active) {
+        return;
+    }
+    auto* yield_reason = g_thread_actor_binding.yield_reason;
+    if (!yield_reason) return;
+    yield_reason->store(reason, std::memory_order_relaxed);
+}
+
 void ActorSystem::shutdown() {
     if (shutting_down_.exchange(true, std::memory_order_acq_rel)) return;
     if (node_transport_) {
@@ -708,12 +906,18 @@ void ActorSystem::shutdown() {
         processes.reserve(processes_.size());
         for (const auto& [_, process] : processes_) {
             process->alive.store(false, std::memory_order_release);
+            process->run_state.store(RunState::Exited, std::memory_order_relaxed);
             process->links.clear();
             process->monitors.clear();
             process->registered_name.clear();
             process->mailbox->close();
             processes.push_back(process);
         }
+    }
+
+    if (scheduler_) {
+        scheduler_->shutdown();
+        scheduler_.reset();
     }
 
     const auto current_thread = std::this_thread::get_id();
@@ -756,10 +960,11 @@ std::shared_ptr<ActorSystem::ActorProcess> ActorSystem::lookup_process_unsafe(
 bool ActorSystem::enqueue_message_unsafe(
     const types::Pid& pid,
     Message message,
-    std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox) const {
+    std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox) {
     auto process = lookup_process_unsafe(pid);
     if (!process) return false;
     if (!process->alive.load(std::memory_order_acquire)) return false;
+    mark_process_runnable_from_message_unsafe(process);
     outbox.emplace_back(process->mailbox, std::move(message));
     return true;
 }
@@ -982,6 +1187,7 @@ void ActorSystem::terminate_actor_chain_unsafe(
         if (!process->alive.load(std::memory_order_acquire)) continue;
 
         process->alive.store(false, std::memory_order_release);
+        process->run_state.store(RunState::Exited, std::memory_order_relaxed);
         process->mailbox->close();
 
         if (!process->registered_name.empty()) {

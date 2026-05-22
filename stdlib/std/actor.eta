@@ -20,6 +20,7 @@
     unregister
     whereis
     registered
+    process-info
     match-case
     match-list
     match-symbol
@@ -58,6 +59,11 @@
     (define unregister %actor-unregister)
     (define whereis %actor-whereis)
     (define registered %actor-registered)
+
+    (defun process-info (pid . rest)
+      (if (null? rest)
+          (%actor-process-info pid)
+          (%actor-process-info pid (car rest))))
 
     (defun match-case (matcher handler)
       (cons matcher handler))

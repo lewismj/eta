@@ -1,12 +1,15 @@
 #include "eta/session/driver.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <span>
 #include <sstream>
 #include <type_traits>
+#include <thread>
 #include <unordered_set>
 #include <utility>
 
@@ -31,6 +34,57 @@ std::size_t Driver::parse_heap_env_var(const char* env_var,
     return ::eta::session::parse_heap_env_var(env_var, default_val);
 }
 
+Driver::ActorSchedulerMode Driver::parse_actor_scheduler_mode_env() noexcept {
+    const char* value = std::getenv("ETA_ACTOR_SCHEDULER");
+    if (!value || value[0] == '\0') {
+        return ActorSchedulerMode::ThreadPerActor;
+    }
+
+    std::string normalized(value);
+    std::transform(
+        normalized.begin(),
+        normalized.end(),
+        normalized.begin(),
+        [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+
+    if (normalized == "pool") return ActorSchedulerMode::Pool;
+    if (normalized == "pool-shadow") return ActorSchedulerMode::PoolShadow;
+    return ActorSchedulerMode::ThreadPerActor;
+}
+
+runtime::actor::ActorSystem::SchedulerMode Driver::to_actor_scheduler_mode(
+    ActorSchedulerMode mode) noexcept {
+    switch (mode) {
+        case ActorSchedulerMode::ThreadPerActor:
+            return runtime::actor::ActorSystem::SchedulerMode::ThreadPerActor;
+        case ActorSchedulerMode::Pool:
+            return runtime::actor::ActorSystem::SchedulerMode::Pool;
+        case ActorSchedulerMode::PoolShadow:
+            return runtime::actor::ActorSystem::SchedulerMode::PoolShadow;
+    }
+    return runtime::actor::ActorSystem::SchedulerMode::ThreadPerActor;
+}
+
+std::uint64_t Driver::parse_actor_reduction_budget_env() noexcept {
+    constexpr std::uint64_t kDefaultBudget = 2000;
+    const char* value = std::getenv("ETA_ACTOR_REDUCTION_BUDGET");
+    if (!value || value[0] == '\0') return kDefaultBudget;
+
+    char* end = nullptr;
+    errno = 0;
+    const auto parsed = std::strtoull(value, &end, 10);
+    if (end == value || errno == ERANGE) return kDefaultBudget;
+    if (end && *end != '\0') return kDefaultBudget;
+    if (parsed == 0ULL) return kDefaultBudget;
+    return static_cast<std::uint64_t>(parsed);
+}
+
+bool Driver::actor_scheduler_supports_vm_yield(ActorSchedulerMode mode) noexcept {
+    return mode != ActorSchedulerMode::ThreadPerActor;
+}
+
 Driver::Driver(ModulePathResolver resolver,
                std::size_t heap_bytes,
                std::string etai_path,
@@ -45,6 +99,8 @@ Driver::Driver(ModulePathResolver resolver,
       sidecar_manager_(*this),
       vm_(heap_, intern_table_),
       actor_system_(std::make_shared<runtime::actor::ActorSystem>()),
+      actor_scheduler_mode_(parse_actor_scheduler_mode_env()),
+      actor_reduction_budget_(parse_actor_reduction_budget_env()),
       diag_engine_(),
       actor_runtime_(eta::nng::make_session_actor_runtime()),
       command_line_arguments_(std::move(command_line_arguments)),
@@ -73,6 +129,7 @@ Driver::Driver(ModulePathResolver resolver,
                     primitive_installer_.builtin_count());
             });
         (void)actor_system_->register_current_thread_actor();
+        actor_system_->set_scheduler_mode(to_actor_scheduler_mode(actor_scheduler_mode_));
     }
 
     /**
@@ -864,8 +921,24 @@ void Driver::run_spawned_actor(runtime::types::Pid pid,
         return;
     }
 
-    auto child_result = child_vm.call_value(*closure, {});
-    if (!child_result) {
+    const std::uint32_t closure_global_slot = static_cast<std::uint32_t>(child_globals.size());
+    child_globals.push_back(*closure);
+
+    runtime::vm::BytecodeFunction actor_entry;
+    actor_entry.name = "actor_spawn_entry";
+    actor_entry.arity = 0;
+    actor_entry.has_rest = false;
+    actor_entry.stack_size = 1;
+    actor_entry.code.push_back({runtime::vm::OpCode::LoadGlobal, closure_global_slot});
+    actor_entry.code.push_back({runtime::vm::OpCode::Call, 0u});
+    actor_entry.code.push_back({runtime::vm::OpCode::Return, 0u});
+
+    const bool enable_yield = actor_scheduler_supports_vm_yield(actor_scheduler_mode_);
+    runtime::vm::VM::ExecuteSliceOptions execute_options;
+    execute_options.enable_yield = enable_yield;
+    execute_options.reduction_budget = actor_reduction_budget_;
+
+    const auto log_child_runtime_error = [](const runtime::error::RuntimeError& error) {
         std::visit(
             [](const auto& err) {
                 using Err = std::decay_t<decltype(err)>;
@@ -883,7 +956,42 @@ void Driver::run_spawned_actor(runtime::types::Pid pid,
                               << runtime::memory::intern::to_string(err) << "\n";
                 }
             },
-            child_result.error());
+            error);
+    };
+
+    for (;;) {
+        auto child_result = child_vm.execute_with_status(actor_entry, execute_options);
+        if (!child_result) {
+            if (actor_system_) {
+                actor_system_->set_current_thread_last_yield_reason(
+                    runtime::actor::ActorSystem::YieldReason::Error);
+            }
+            log_child_runtime_error(child_result.error());
+            return;
+        }
+
+        if (child_result->status == runtime::vm::VM::ExecuteSliceStatus::BudgetExhausted) {
+            if (actor_system_) {
+                actor_system_->set_current_thread_last_yield_reason(
+                    runtime::actor::ActorSystem::YieldReason::BudgetExhausted);
+            }
+            continue;
+        }
+
+        if (child_result->status == runtime::vm::VM::ExecuteSliceStatus::BlockedOnReceive) {
+            if (actor_system_) {
+                actor_system_->set_current_thread_last_yield_reason(
+                    runtime::actor::ActorSystem::YieldReason::BlockedOnReceive);
+            }
+            std::this_thread::yield();
+            continue;
+        }
+
+        if (enable_yield && actor_system_) {
+            actor_system_->set_current_thread_last_yield_reason(
+                runtime::actor::ActorSystem::YieldReason::Finished);
+        }
+        return;
     }
 }
 

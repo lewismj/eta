@@ -1,5 +1,7 @@
 #include "vm.h"
 #include <algorithm>
+#include <limits>
+#include "eta/runtime/actor/actor_system.h"
 #include "eta/runtime/factory.h"
 #include "eta/runtime/ad_error.h"
 #include "eta/runtime/types/types.h"
@@ -16,7 +18,6 @@
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/prof/profiler.h"
 #include <bit>
-#include <limits>
 
 namespace eta::runtime::vm {
 
@@ -98,6 +99,11 @@ void VM::save_execution_state() {
     snapshot.pc = pc_;
     snapshot.fp = fp_;
     snapshot.current_closure = current_closure_;
+    snapshot.execute_slice_options = execute_slice_options_;
+    snapshot.active_slice_entry = active_slice_entry_;
+    snapshot.slice_active = slice_active_;
+    snapshot.slice_reduction_budget_remaining = slice_reduction_budget_remaining_;
+    snapshot.pending_run_loop_status = pending_run_loop_status_;
     saved_executions_.push_back(std::move(snapshot));
 
     clear_exception_transfer();
@@ -112,6 +118,11 @@ void VM::save_execution_state() {
     pc_ = 0;
     fp_ = 0;
     current_closure_ = nanbox::Nil;
+    execute_slice_options_ = ExecuteSliceOptions{};
+    active_slice_entry_ = nullptr;
+    slice_active_ = false;
+    slice_reduction_budget_remaining_ = 0;
+    pending_run_loop_status_.reset();
 }
 
 void VM::restore_execution_state() {
@@ -132,6 +143,11 @@ void VM::restore_execution_state() {
     pc_ = snapshot.pc;
     fp_ = snapshot.fp;
     current_closure_ = snapshot.current_closure;
+    execute_slice_options_ = snapshot.execute_slice_options;
+    active_slice_entry_ = snapshot.active_slice_entry;
+    slice_active_ = snapshot.slice_active;
+    slice_reduction_budget_remaining_ = snapshot.slice_reduction_budget_remaining;
+    pending_run_loop_status_ = snapshot.pending_run_loop_status;
 }
 
 bool VM::values_eqv(LispVal a, LispVal b) const {
@@ -471,28 +487,84 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
 }
 
 std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
-    ExecuteDepthScope depth_scope(*this);
-    clear_exception_transfer();
-    /**
-     * Push a sentinel frame to mark the bottom of this execution call.
-     * This prevents CallCC from capturing frames above the point where execute() was called.
-     */
-    frames_.push_back({nullptr, 0, 0, Nil, FrameKind::Sentinel});
+    auto run_result = execute_with_status(main, ExecuteSliceOptions{});
+    if (!run_result) return std::unexpected(run_result.error());
+    if (run_result->status != ExecuteSliceStatus::Finished) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "execute: unexpected non-finished VM status"}});
+    }
+    return run_result->value;
+}
 
-    current_func_ = &main;
-    pc_ = 0;
-    fp_ = 0;
-    current_closure_ = 0; ///< Top-level
-    
-    /// Initial stack resize for main
-    stack_.resize(main.stack_size, Nil);
-    
-    auto res = run_loop();
-    if (!res) return std::unexpected(res.error());
+std::expected<VM::ExecuteSliceResult, RuntimeError> VM::execute_with_status(
+    const BytecodeFunction& main,
+    ExecuteSliceOptions options) {
+    ExecuteDepthScope depth_scope(*this);
+
+    if (!slice_active_) {
+        clear_exception_transfer();
+        pending_run_loop_status_.reset();
+        /**
+         * Push a sentinel frame to mark the bottom of this execution call.
+         * This prevents CallCC from capturing frames above the point where execute() was called.
+         */
+        frames_.push_back({nullptr, 0, 0, Nil, FrameKind::Sentinel});
+
+        current_func_ = &main;
+        pc_ = 0;
+        fp_ = 0;
+        current_closure_ = 0; ///< Top-level
+
+        /// Initial stack resize for main
+        stack_.resize(main.stack_size, Nil);
+        active_slice_entry_ = &main;
+        slice_active_ = true;
+    } else if (active_slice_entry_ != &main) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "execute_with_status: cannot switch entry function while execution is active"}});
+    }
+
+    execute_slice_options_ = options;
+    if (yielding_enabled()) {
+        slice_reduction_budget_remaining_ = execute_slice_options_.reduction_budget;
+    } else {
+        slice_reduction_budget_remaining_ = 0;
+    }
+
+    auto run_result = run_loop();
+    if (!run_result) {
+        slice_active_ = false;
+        active_slice_entry_ = nullptr;
+        pending_run_loop_status_.reset();
+        slice_reduction_budget_remaining_ = 0;
+        return std::unexpected(run_result.error());
+    }
+
+    ExecuteSliceResult out;
+    switch (*run_result) {
+        case ExecuteSliceStatus::BudgetExhausted:
+            out.status = ExecuteSliceStatus::BudgetExhausted;
+            out.value = nanbox::Nil;
+            return out;
+        case ExecuteSliceStatus::BlockedOnReceive:
+            out.status = ExecuteSliceStatus::BlockedOnReceive;
+            out.value = nanbox::Nil;
+            return out;
+        case ExecuteSliceStatus::Finished:
+            break;
+    }
 
     process_pending_finalizers();
-    
-    return pop();
+    out.status = ExecuteSliceStatus::Finished;
+    out.value = pop();
+
+    slice_active_ = false;
+    active_slice_entry_ = nullptr;
+    pending_run_loop_status_.reset();
+    slice_reduction_budget_remaining_ = 0;
+    return out;
 }
 
 std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<LispVal> args) {
@@ -500,6 +572,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     const auto process_finalizers_if_host = [&]() {
         if (host_call) process_pending_finalizers();
     };
+    charge_reductions();
 
     if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(proc)) {
         uint32_t argc = static_cast<uint32_t>(args.size());
@@ -615,6 +688,14 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
         return std::unexpected(run_res.error());
     }
 
+    if (*run_res != ExecuteSliceStatus::Finished) {
+        restore();
+        process_finalizers_if_host();
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "call_value: yielded during nested VM execution"}});
+    }
+
     /**
      * A non-local transfer (raise/catch or runtime catch) may unwind past
      * this synthetic call boundary. In that case, control has already moved
@@ -642,6 +723,32 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     return result;
 }
 
+void VM::charge_reductions(std::uint64_t units) noexcept {
+    if (units == 0) return;
+
+    constexpr std::uint64_t max_reductions = std::numeric_limits<std::uint64_t>::max();
+    if (reductions_ > (max_reductions - units)) {
+        reductions_ = max_reductions;
+    } else {
+        reductions_ += units;
+    }
+
+    if (actor_system_) {
+        actor_system_->add_current_thread_reductions(units);
+    }
+
+    if (!yielding_enabled()) return;
+
+    if (slice_reduction_budget_remaining_ <= units) {
+        slice_reduction_budget_remaining_ = 0;
+        if (!pending_run_loop_status_.has_value()) {
+            pending_run_loop_status_ = ExecuteSliceStatus::BudgetExhausted;
+        }
+    } else {
+        slice_reduction_budget_remaining_ -= units;
+    }
+}
+
 std::expected<LispVal, RuntimeError> VM::tape_binary_op(OpCode op, LispVal a, LispVal b) {
     auto saved_size = stack_.size();
     push(a);
@@ -658,6 +765,8 @@ std::expected<LispVal, RuntimeError> VM::tape_binary_op(OpCode op, LispVal a, Li
 /// Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
 std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
     LispVal callee, uint32_t argc, bool is_tail, reader::lexer::Span call_span) {
+    charge_reductions();
+
     /// Use try_get_as for consistent heap access pattern
     auto route_runtime_error = [&](RuntimeError err) -> std::expected<DispatchResult, RuntimeError> {
         auto handled = do_runtime_error(err, call_span);
@@ -843,8 +952,20 @@ void VM::unpack_to_stack(LispVal value) {
     }
 }
 
-std::expected<void, RuntimeError> VM::run_loop() {
+std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
+    if (pending_run_loop_status_.has_value()) {
+        const auto pending = *pending_run_loop_status_;
+        pending_run_loop_status_.reset();
+        return pending;
+    }
+
     while (current_func_ && pc_ < current_func_->code.size()) {
+        if (pending_run_loop_status_.has_value()) {
+            const auto pending = *pending_run_loop_status_;
+            pending_run_loop_status_.reset();
+            return pending;
+        }
+
         if (prof::runtime_profiler().sampling_active()) [[unlikely]] {
             prof::runtime_profiler().on_vm_safepoint();
         }
@@ -869,6 +990,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
             }
         }
         const auto& instr = current_func_->code[pc_++];
+        charge_reductions();
         const auto instr_span = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)
                                               : reader::lexer::Span{};
         switch (instr.opcode) {
@@ -1418,7 +1540,8 @@ std::expected<void, RuntimeError> VM::run_loop() {
                     std::string("OpCode not implemented: ") + to_string(instr.opcode)}});
         }
     }
-    return {};
+    pending_run_loop_status_.reset();
+    return ExecuteSliceStatus::Finished;
 }
 
 /**

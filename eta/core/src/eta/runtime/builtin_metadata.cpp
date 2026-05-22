@@ -144,6 +144,7 @@ namespace {
     if (name == "%actor-send-checked") return "(%actor-send-checked pid payload)";
     if (name == "%actor-receive") return "(%actor-receive matcher timeout)";
     if (name == "%actor-mailbox-len") return "(%actor-mailbox-len)";
+    if (name == "%actor-process-info") return "(%actor-process-info pid [key])";
     if (name == "%actor-trap-exit!") return "(%actor-trap-exit! enabled?)";
     if (name == "%actor-link") return "(%actor-link pid)";
     if (name == "%actor-unlink") return "(%actor-unlink pid)";

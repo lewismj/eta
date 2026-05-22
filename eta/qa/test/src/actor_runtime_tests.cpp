@@ -1,7 +1,9 @@
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <sstream>
@@ -72,6 +74,44 @@ struct ActorHarness {
         auto decoded = eta::runtime::nanbox::ops::decode<std::int64_t>(value);
         BOOST_REQUIRE_MESSAGE(decoded.has_value(), "expected fixnum result");
         return *decoded;
+    }
+};
+
+struct ScopedEnvVar {
+    std::string key;
+    std::optional<std::string> original;
+
+    ScopedEnvVar(std::string key_in, std::string value)
+        : key(std::move(key_in)) {
+        if (const char* existing = std::getenv(key.c_str())) {
+            original = std::string(existing);
+        }
+        set(value);
+    }
+
+    ~ScopedEnvVar() {
+        if (original.has_value()) {
+            set(*original);
+        } else {
+            clear();
+        }
+    }
+
+private:
+    void set(const std::string& value) const {
+#ifdef _WIN32
+        _putenv_s(key.c_str(), value.c_str());
+#else
+        setenv(key.c_str(), value.c_str(), 1);
+#endif
+    }
+
+    void clear() const {
+#ifdef _WIN32
+        _putenv_s(key.c_str(), "");
+#else
+        unsetenv(key.c_str());
+#endif
     }
 };
 
@@ -353,6 +393,113 @@ BOOST_AUTO_TEST_CASE(actor_receive_timeout_returns_false) {
   (define result (receive-after 5)))
 )eta");
     BOOST_TEST(result == eta::runtime::nanbox::False);
+}
+
+BOOST_AUTO_TEST_CASE(actor_process_info_reports_reductions_and_state) {
+    ActorHarness harness;
+    auto result = harness.run_module(R"eta(
+(module actor.runtime.process_info
+  (import std.actor)
+
+  (defun spin (n acc)
+    (if (= n 0)
+        acc
+        (spin (- n 1) (+ acc 1))))
+
+  (define me (self))
+  (define before (process-info me 'reductions))
+  (define work (spin 64 0))
+  (define after (process-info me 'reductions))
+  (define info (process-info me))
+  (define reductions-entry (assq 'reductions info))
+  (define state-entry (assq 'state info))
+  (define reason-entry (assq 'last-yield-reason info))
+  (define queue-entry (assq 'message-queue-len info))
+  (define result
+    (and (= work 64)
+         (number? before)
+         (number? after)
+         (> after before)
+         (pair? reductions-entry)
+         (>= (cdr reductions-entry) after)
+         (pair? state-entry)
+         (eq? (cdr state-entry) 'running)
+         (pair? reason-entry)
+         (eq? (cdr reason-entry) 'none)
+         (pair? queue-entry)
+         (= (cdr queue-entry) 0))))
+)eta");
+    BOOST_TEST(result == eta::runtime::nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(actor_semantics_parity_under_tiny_reduction_budgets) {
+    constexpr std::array<int, 3> kBudgets{1, 5, 20};
+    constexpr std::array<std::string_view, 2> kSchedulerModes{
+        "thread-per-actor",
+        "pool-shadow"};
+
+    for (const auto mode : kSchedulerModes) {
+        for (const auto budget : kBudgets) {
+            ScopedEnvVar scheduler_mode("ETA_ACTOR_SCHEDULER", std::string(mode));
+            ScopedEnvVar reduction_budget(
+                "ETA_ACTOR_REDUCTION_BUDGET",
+                std::to_string(budget));
+
+            ActorHarness harness;
+            auto result = harness.run_module(R"eta(
+(module actor.runtime.tiny_budget.parity
+  (import std.actor)
+
+  (define self-pid (self))
+  (send self-pid (list 'a 1))
+  (send self-pid (list 'b 2))
+  (send self-pid (list 'a 3))
+
+  (define picked (receive-match (match-list 'b 1) 0))
+  (define left-1 (receive-after 0))
+  (define left-2 (receive-after 0))
+  (define left-3 (receive-after 0))
+
+  (trap-exit! #t)
+  (define child (spawn (lambda () (receive-after 10000))))
+  (link child)
+  (define ref (monitor child))
+  (exit child 'boom)
+
+  (define down-msg (receive-match (match-list 'DOWN 4) 1000))
+  (define exit-msg (receive-match (match-list 'EXIT 2) 1000))
+
+  (define result
+    (and (pair? picked)
+         (eq? (car picked) 'b)
+         (= (car (cdr picked)) 2)
+         (pair? left-1)
+         (eq? (car left-1) 'a)
+         (= (car (cdr left-1)) 1)
+         (pair? left-2)
+         (eq? (car left-2) 'a)
+         (= (car (cdr left-2)) 3)
+         (not left-3)
+         (pair? down-msg)
+         (eq? (car down-msg) 'DOWN)
+         (= (car (cdr down-msg)) ref)
+         (eq? (car (cdr (cdr down-msg))) 'process)
+         (pid? (car (cdr (cdr (cdr down-msg)))))
+         (eq? (car (cdr (cdr (cdr (cdr down-msg))))) 'boom)
+         (pair? exit-msg)
+         (eq? (car exit-msg) 'EXIT)
+         (pid? (car (cdr exit-msg)))
+         (eq? (car (cdr (cdr exit-msg))) 'boom)
+         (not (receive-after 0)))))
+)eta");
+
+            BOOST_TEST_CONTEXT(
+                "ETA_ACTOR_SCHEDULER=" << mode
+                << ", ETA_ACTOR_REDUCTION_BUDGET=" << budget) {
+                BOOST_TEST(result == eta::runtime::nanbox::True);
+            }
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(actor_selective_receive_preserves_unmatched_order) {
