@@ -1119,10 +1119,9 @@ complete ping/pong stress test without OS thread exhaustion.
 
 1. Update all cookbook concurrency examples.
 2. Update docs and release notes.
-3. Add deprecation warnings for old socket-as-mailbox actor examples.
+3. Remove old socket-as-mailbox actor examples and replace them with actor-native examples.
 4. Ensure LSP builtin names and docs know all new primitives.
-5. Bundle migration guide: "from `current-mailbox` / `send!` to
-   `self` / `send` / `receive`."
+5. Document the replacement API directly in the main actor/net docs.
 
 Gate: docs, examples, and tests are all aligned with the new actor API.
 
@@ -1156,7 +1155,7 @@ Current docs say "actor owns a mailbox socket". Replace with:
 
 For one release cycle:
 
-1. `(current-mailbox)` in actor context returns `(self)` but warns in docs.
+1. `(current-mailbox)` in actor context returns `(self)` for compatibility.
 2. `(send! pid msg)` may dispatch to actor send if first arg is PID, but
    docs should prefer `(send pid msg)`.
 3. `(recv! pid)` should **not** be overloaded if avoidable; receiving is
@@ -1168,7 +1167,7 @@ For one release cycle:
 | Old example | New shape |
 | ----------- | --------- |
 | `worker-pool-worker.eta` uses `(current-mailbox)` | Worker uses `(receive ...)` and replies to sender PID included in task. |
-| `message-passing.eta` uses sockets | Keep as nng transport example; add actor-native version. |
+| `message-passing.eta` uses sockets | Replace with actor-native `spawn` / `send` / `receive`. |
 | `parallel-map.eta` spawns worker modules | Use `std.actor` worker pool with PIDs. |
 | `distributed-compute.eta` | Use `std.actor.node` in M6.1. |
 

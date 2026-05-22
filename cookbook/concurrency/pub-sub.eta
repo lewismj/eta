@@ -1,68 +1,79 @@
-;;; cookbook/concurrency/pub-sub.eta — PUB/SUB publish-subscribe demo.
-;;;
-;;; Demonstrates the PUB/SUB pattern:
-;;;   - (nng-socket 'pub)   → publisher socket
-;;;   - (nng-socket 'sub)   → subscriber socket
-;;;   - (nng-subscribe sub topic) → filter messages by prefix
-;;;   - (pub-sub endpoint topics handler) → event loop helper
-;;;
-;;; This example spawns a publisher worker child process, then subscribes
-;;; to two topic streams from the parent.
+;;; cookbook/concurrency/pub-sub.eta - Actor pub/sub broker and subscribers.
 ;;;
 ;;; Run:
 ;;;   etai cookbook/concurrency/pub-sub.eta
-;;;
-;;; The publisher is cookbook/concurrency/pub-sub-publisher.eta
 
 (module pub-sub-demo
-  (import std.net)
-  (import std.io)
+  (import std.actor std.io)
   (begin
 
-    ;;@doc (pub-endpoint)
-    ;;@category Concurrency
-    ;;@module pub-sub-demo
-    ;; PUB/SUB publish-subscribe demo Uses `pub-endpoint`.
-    ;;@example
-    ;; (display pub-endpoint)
-    (define pub-endpoint "tcp://127.0.0.1:5556")
+    (defun %add-subscription (subs topic pid)
+      (cons (cons topic pid) subs))
 
-    ;; Spawn the publisher as a child process.
-    ;; It will connect to pub-endpoint and start sending messages.
-    (println "pub-sub: spawning publisher...")
-    (define pub-proc (spawn "cookbook/concurrency/pub-sub-publisher.eta"))
+    (defun %publish (subs topic payload)
+      (for-each
+        (lambda (entry)
+          (when (equal? (car entry) topic)
+            (send (cdr entry) (list 'event topic payload))))
+        subs))
 
-    ;; Give the publisher a moment to connect (nng reconnects automatically,
-    ;; but for PUB/SUB early messages can be lost before SUB connects).
-    ;; Signal the publisher to start after we're ready.
+    (defun make-broker ()
+      (spawn
+        (lambda ()
+          (let loop ((subs '()))
+            (receive
+              (list
+                (match-case
+                  (match-list 'subscribe 2)
+                  (lambda (msg)
+                    (let ((pid (car (cdr msg)))
+                          (topic (car (cdr (cdr msg)))))
+                      (loop (%add-subscription subs topic pid)))))
+                (match-case
+                  (match-list 'publish 2)
+                  (lambda (msg)
+                    (let ((topic (car (cdr msg)))
+                          (payload (car (cdr (cdr msg)))))
+                      (%publish subs topic payload)
+                      (loop subs))))
+                (match-case
+                  (match-symbol 'stop)
+                  (lambda (msg)
+                    'ok)))
+              'wait)))))
 
-    ;; Set up our subscriber socket
-    (define sub (nng-socket 'sub))
-    (nng-listen sub pub-endpoint)
+    (defun make-subscriber (name topic broker parent)
+      (spawn
+        (lambda ()
+          (send broker (list 'subscribe (self) topic))
+          (let loop ()
+            (receive
+              (list
+                (match-case
+                  (match-list 'event 2)
+                  (lambda (msg)
+                    (let ((seen-topic (car (cdr msg)))
+                          (payload (car (cdr (cdr msg)))))
+                      (send parent (list 'seen name seen-topic payload))
+                      (loop))))
+                (match-case
+                  (match-symbol 'stop)
+                  (lambda (msg)
+                    'ok)))
+              'wait)))))
 
-    ;; Subscribe to price and alert topics only
-    (nng-subscribe sub "prices")
-    (nng-subscribe sub "alert")
+    (define broker (make-broker))
+    (define price-sub (make-subscriber 'price-sub 'prices broker (self)))
+    (define alert-sub (make-subscriber 'alert-sub 'alerts broker (self)))
 
-    ;; Tell the publisher we are ready (it is waiting for this signal)
-    (send! pub-proc 'ready)
+    (send broker (list 'publish 'prices 100.5))
+    (send broker (list 'publish 'alerts "margin-call"))
+    (send broker (list 'publish 'prices 101.1))
 
-    ;; Collect 6 messages then stop
-    (let ((count 0))
-      (letrec ((loop (lambda ()
-                       (when (< count 6)
-                         (let ((msg (recv! sub 'wait)))
-                           (when msg
-                             (print "sub received: ")
-                             (println msg)
-                             (set! count (+ count 1))))
-                         (loop)))))
-        (loop)))
+    (println (receive-match (match-list 'seen 3) 1000))
+    (println (receive-match (match-list 'seen 3) 1000))
+    (println (receive-match (match-list 'seen 3) 1000))
 
-    ;; Shutdown
-    (send! pub-proc 'stop)
-    (spawn-wait pub-proc)
-    (nng-close pub-proc)
-    (nng-close sub)
-    (println "pub-sub: done.")))
-
+    (send price-sub 'stop)
+    (send alert-sub 'stop)
+    (send broker 'stop)))

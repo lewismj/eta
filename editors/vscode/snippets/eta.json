@@ -107,8 +107,13 @@
     },
     "Import": {
         "prefix": "import",
-        "body": "(import ${1|std.prelude,std.io,std.core,std.collections,std.math,std.logic,std.freeze,std.clp,std.clpr,std.clpb,std.db,std.aad,std.torch,std.stats,std.hashmap,std.hashset,std.regex,std.csv,std.net,std.supervisor,std.process,std.test,std.time|})",
+        "body": "(import ${1|std.prelude,std.io,std.core,std.collections,std.math,std.logic,std.freeze,std.clp,std.clpr,std.clpb,std.db,std.aad,std.torch,std.stats,std.hashmap,std.hashset,std.regex,std.csv,std.actor,std.actor.node,std.actor.gen_server,std.actor.supervisor,std.net,std.supervisor,std.process,std.test,std.time|})",
         "description": "Import bindings from a module"
+    },
+    "Import Actor": {
+        "prefix": "import-actor",
+        "body": "(import std.actor)",
+        "description": "Import PID-based actor primitives"
     },
     "Import Process": {
         "prefix": "import-process",
@@ -269,40 +274,43 @@
         ],
         "description": "Safe socket with automatic dynamic-wind cleanup"
     },
-    "Spawn Worker": {
-        "prefix": "spawn",
+    "Actor Spawn": {
+        "prefix": "actor-spawn",
         "body": [
-            "(define ${1:worker} (spawn \"${2:worker.eta}\"))",
-            "(send! ${1:worker} ${3:'(task)})",
-            "(define ${4:result} (recv! ${1:worker} 'wait))",
-            "(spawn-wait ${1:worker})",
-            "(nng-close ${1:worker})",
-            "$0"
-        ],
-        "description": "Spawn a child process, send a message, receive the result, and clean up"
-    },
-    "Spawn Thread": {
-        "prefix": "spawn-thread",
-        "body": [
-            "(define ${1:t}",
-            "  (spawn-thread",
+            "(define ${1:pid}",
+            "  (spawn",
             "    (lambda ()",
-            "      (let loop ()",
-            "        (let ((${2:msg} (recv! (current-mailbox) 'wait)))",
-            "          ${3:(display msg) (newline)}",
-            "          (loop))))))",
+            "      ${2:(receive-after 'wait)})))",
             "$0"
         ],
-        "description": "Spawn an in-process actor thread with a recv loop on its mailbox"
+        "description": "Spawn a local actor process and bind its PID"
     },
-    "Spawn Thread With": {
-        "prefix": "spawn-thread-with",
+    "Actor Receive": {
+        "prefix": "actor-receive",
         "body": [
-            "(define ${1:t} (spawn-thread-with ${2:state}",
-            "  (lambda (${3:state} ${4:msg})",
-            "    ${0:(values state)})))"
+            "(receive",
+            "  (list",
+            "    (match-case (match-list '${1:tag} ${2:arity})",
+            "                (lambda (${3:msg})",
+            "                  ${4:${3:msg}})))",
+            "  ${5:1000}",
+            "  (lambda () ${0:#f}))"
         ],
-        "description": "Spawn an actor with explicit state-passing receive loop"
+        "description": "Selective receive with timeout handler"
+    },
+    "Actor Monitor": {
+        "prefix": "actor-monitor",
+        "body": [
+            "(define ${1:ref} (monitor ${2:pid}))",
+            "(receive",
+            "  (list",
+            "    (match-case (match-list 'DOWN 4)",
+            "                (lambda (${3:msg})",
+            "                  ${0:${3:msg}})))",
+            "  ${4:1000}",
+            "  (lambda () #f))"
+        ],
+        "description": "Monitor actor exit and handle DOWN messages"
     },
     "Send/Recv": {
         "prefix": "send-recv",
@@ -329,16 +337,6 @@
         ],
         "description": "Synchronous one-shot request-reply over a REQ socket"
     },
-    "Current Mailbox": {
-        "prefix": "current-mailbox",
-        "body": [
-            "(define ${1:mailbox} (current-mailbox))",
-            "(define ${2:msg} (recv! ${1:mailbox} 'wait))",
-            "$0"
-        ],
-        "description": "Receive the parent socket inside a spawned child process"
-    },
-
     "Supervisor One-For-One": {
         "prefix": "one-for-one",
         "body": [

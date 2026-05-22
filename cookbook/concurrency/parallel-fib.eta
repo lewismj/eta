@@ -1,44 +1,57 @@
-;;; cookbook/concurrency/parallel-fib.eta — Parallel Fibonacci using a worker pool.
-;;;
-;;; Demonstrates parallelism with a compute-intensive pure function.
-;;; Each worker computes fib(n) independently using a tail-recursive
-;;; accumulator, so all 6 values are calculated simultaneously.
+;;; cookbook/concurrency/parallel-fib.eta - Parallel Fibonacci with actor workers.
 ;;;
 ;;; Run:
 ;;;   etai cookbook/concurrency/parallel-fib.eta
-;;;
-;;; Worker: cookbook/concurrency/parallel-fib-worker.eta
 
 (module parallel-fib
-  (import std.net)
-  (import std.collections)
-  (import std.io)
+  (import std.actor std.collections std.io)
   (begin
 
-    ;;@doc (inputs)
-    ;;@category Concurrency
-    ;;@module parallel-fib
-    ;; Fibonacci indices to compute in parallel
-    ;;@example
-    ;; (display inputs)
-    (define inputs '(30 31 32 33 34 35))
+    (defun %vector->list (vec)
+      (let loop ((i 0) (acc '()))
+        (if (= i (vector-length vec))
+            (reverse acc)
+            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
-    (println "parallel-fib: computing Fibonacci numbers in parallel...")
-    (println (string-append "  inputs: " (display-to-string inputs)))
+    (defun fib (n)
+      (let loop ((k n) (a 0) (b 1))
+        (if (= k 0)
+            a
+            (loop (- k 1) b (+ a b)))))
 
-    ;; worker-pool spawns one child per input and collects results in order
-    (define results
-      (worker-pool "cookbook/concurrency/parallel-fib-worker.eta" inputs))
+    (define inputs '(25 26 27 28 29 30))
+    (define indices (range 0 (length inputs)))
 
-    (println (string-append "  results: " (display-to-string results)))
+    (define workers
+      (map
+        (lambda (dummy)
+          (spawn
+            (lambda ()
+              (receive
+                (list
+                  (match-case
+                    (match-list 'fib-task 3)
+                    (lambda (msg)
+                      (let ((reply-to (car (cdr msg)))
+                            (index (car (cdr (cdr msg))))
+                            (value (car (cdr (cdr (cdr msg))))))
+                        (send reply-to (list 'fib-result index (fib value)))))))
+                'wait))))
+        inputs))
 
-    ;; Display input → result pairs
-    (for-each (lambda (pair)
-                (let ((n   (car pair))
-                      (fib (cdr pair)))
-                  (println (string-append "  fib(" (number->string n) ") = "
-                                          (number->string fib)))))
-              (zip inputs results))
+    (let dispatch ((rest-workers workers) (rest-indices indices) (rest-values inputs))
+      (when (and (pair? rest-workers)
+                 (pair? rest-indices)
+                 (pair? rest-values))
+        (send (car rest-workers)
+              (list 'fib-task (self) (car rest-indices) (car rest-values)))
+        (dispatch (cdr rest-workers) (cdr rest-indices) (cdr rest-values))))
 
-    (println "parallel-fib: done.")))
+    (define results (make-vector (length inputs) 0))
+    (let loop ((remaining (length inputs)))
+      (when (> remaining 0)
+        (let ((msg (receive-match (match-list 'fib-result 2) 1000)))
+          (vector-set! results (car (cdr msg)) (car (cdr (cdr msg))))
+          (loop (- remaining 1)))))
 
+    (println (%vector->list results))))

@@ -1,20 +1,20 @@
-# Eta — Language Guide
+# Eta Ã¢â‚¬â€ Language Guide
 
-[← Back to README](../README.md) ·
-[Quick Start](./quickstart.md) ·
-[Architecture](./architecture.md) ·
-[Modules & Stdlib](./guide/reference/modules.md) ·
+[Ã¢â€ Â Back to README](../README.md) Ã‚Â·
+[Quick Start](./quickstart.md) Ã‚Â·
+[Architecture](./architecture.md) Ã‚Â·
+[Modules & Stdlib](./guide/reference/modules.md) Ã‚Â·
 [Release Notes](./release-notes.md)
 
 > [!NOTE]
 > This guide is the canonical entry point for learning the Eta language.
-> Each section is intentionally short and links to a deep-dive page —
+> Each section is intentionally short and links to a deep-dive page Ã¢â‚¬â€
 > either a tutorial chapter under [`docs/guide/`](./guide/) or a module / tool
 > reference under [`docs/guide/reference/`](./guide/reference/).
 
 > [!NOTE]
 > Looking for the library APIs? See the
-> **[Standard Library Guide](./stdlib.md)** — a per-module reference covering
+> **[Standard Library Guide](./stdlib.md)** Ã¢â‚¬â€ a per-module reference covering
 > `core`, `collections`, `math`, `aad`, `torch`, `causal`, `clp`, `logic`,
 > `net`, `process`, and the rest of the `std.*` packages.
 
@@ -58,10 +58,10 @@
 
 Eta is a Lisp/Scheme-like language with a hygienic macro system and a
 stack-based bytecode VM that uses NaN-boxing for value representation.
-The same VM hosts a wide range of capabilities — the symbolic core,
+The same VM hosts a wide range of capabilities Ã¢â‚¬â€ the symbolic core,
 logic programming, constraint logic programming (CLP), automatic
 adjoint differentiation, statistics, neural networks, causal inference,
-and actor-style concurrency — delivered as first-class language features
+and actor-style concurrency Ã¢â‚¬â€ delivered as first-class language features
 or as packaged `std.*` modules.
 
 ### Toolchain
@@ -93,7 +93,7 @@ etai hello.eta
 > [!TIP]
 > The interactive notebook at
 > [`cookbook/notebooks/LanguageBasics.ipynb`](../cookbook/notebooks/LanguageBasics.ipynb)
-> walks through the same material as §§ 2–9 in a runnable form.
+> walks through the same material as Ã‚Â§Ã‚Â§ 2Ã¢â‚¬â€œ9 in a runnable form.
 
 ### How to read this guide
 
@@ -105,9 +105,9 @@ the topic you need.
 
 ## 2. Syntax & Values
 
-Eta source is S-expressions: lists `( … )`, vectors `#( … )`, strings
-`"…"`, characters `#\a`, booleans `#t` / `#f`, symbols, fixnums and
-floats. Comments are `;` to end of line, or `#| … |#` for block
+Eta source is S-expressions: lists `( Ã¢â‚¬Â¦ )`, vectors `#( Ã¢â‚¬Â¦ )`, strings
+`"Ã¢â‚¬Â¦"`, characters `#\a`, booleans `#t` / `#f`, symbols, fixnums and
+floats. Comments are `;` to end of line, or `#| Ã¢â‚¬Â¦ |#` for block
 comments. Quoting uses `'`, quasi-quotation `` ` ``, unquote `,`, and
 splicing `,@`.
 
@@ -119,7 +119,7 @@ splicing `,@`.
 
 Equality has three flavours: `eq?` (identity), `eqv?` (numeric/char
 equivalence), `equal?` (structural). The numeric tower is fixnum +
-double, with NaN-box tagging — see [`nanboxing.md`](./guide/reference/nanboxing.md).
+double, with NaN-box tagging Ã¢â‚¬â€ see [`nanboxing.md`](./guide/reference/nanboxing.md).
 
 Because code is just S-expression data, `eval` compiles and executes
 any expression at runtime against the current lexical environment.
@@ -179,7 +179,7 @@ recursive.
 | `begin`            | Sequence expressions, return the last                 |
 
 Loops are recursive: use named `let` for tight loops and `letrec` for
-mutual recursion. All such forms are tail-call optimised — see §5.
+mutual recursion. All such forms are tail-call optimised Ã¢â‚¬â€ see Ã‚Â§5.
 
 ```scheme
 (cond
@@ -195,7 +195,7 @@ mutual recursion. All such forms are tail-call optimised — see §5.
 ## 5. Functions, Closures & Tail Calls
 
 `lambda` constructs a closure; `defun` is shorthand for
-`(define name (lambda …))`. Parameter lists support fixed, optional and
+`(define name (lambda Ã¢â‚¬Â¦))`. Parameter lists support fixed, optional and
 dotted-rest arguments, and `apply` calls a function with a list of
 arguments.
 
@@ -208,7 +208,7 @@ arguments.
 (apply sum '(1 2 3 4))                   ; => 10
 ```
 
-Eta guarantees tail-call optimisation in tail position — including the
+Eta guarantees tail-call optimisation in tail position Ã¢â‚¬â€ including the
 last expression of `if`, `cond`, `when`, `unless`, `case`, `let*`,
 `letrec`, and `begin`. Mutual recursion via `letrec` runs in constant
 stack.
@@ -236,8 +236,8 @@ comparison.
 (set-point-y! p 7)
 ```
 
-Other compound types: pairs / lists, vectors (`#( … )`, fixed-length,
-mutable, O(1) indexed), hash maps and hash sets — see §12.
+Other compound types: pairs / lists, vectors (`#( Ã¢â‚¬Â¦ )`, fixed-length,
+mutable, O(1) indexed), hash maps and hash sets Ã¢â‚¬â€ see Ã‚Â§12.
 
 ---
 
@@ -245,7 +245,7 @@ mutable, O(1) indexed), hash maps and hash sets — see §12.
 
 Eta has no built-in `match` form. Idiomatic dispatch uses `cond` with
 predicate guards or, for symbolic data, structural unification from
-`std.logic` (§17).
+`std.logic` (Ã‚Â§17).
 
 ```scheme
 (defun shape-area (s)
@@ -258,14 +258,14 @@ predicate guards or, for symbolic data, structural unification from
 ```
 
 For destructuring on relational data, use `(== pat term)` with logic
-variables — see [`logic.md`](./guide/reference/logic.md).
+variables Ã¢â‚¬â€ see [`logic.md`](./guide/reference/logic.md).
 
 ---
 
 ## 8. Macros (`syntax-rules`)
 
 Macros are hygienic and pattern-based. `define-syntax` binds an
-expander; `syntax-rules` lists `(pattern → template)` cases with
+expander; `syntax-rules` lists `(pattern Ã¢â€ â€™ template)` cases with
 ellipsis (`...`) for variadic patterns.
 
 ```scheme
@@ -278,7 +278,7 @@ ellipsis (`...`) for variadic patterns.
 ```
 
 > [!IMPORTANT]
-> Eta's macro system is `syntax-rules` only — there are no procedural
+> Eta's macro system is `syntax-rules` only Ã¢â‚¬â€ there are no procedural
 > macros. This keeps expansion deterministic and serialisable into
 > bytecode. See [`macros.md`](./guide/macros.md) for ellipses, literal
 > keywords, and worked examples from the standard library.
@@ -289,8 +289,8 @@ ellipsis (`...`) for variadic patterns.
 
 ## 9. Modules & Imports
 
-Every source file declares one or more `(module name … )` forms with
-explicit `(import …)` and `(export …)` clauses. The module search path
+Every source file declares one or more `(module name Ã¢â‚¬Â¦ )` forms with
+explicit `(import Ã¢â‚¬Â¦)` and `(export Ã¢â‚¬Â¦)` clauses. The module search path
 is the input file's directory plus `--path` arguments and
 `ETA_MODULE_PATH`.
 
@@ -333,7 +333,7 @@ exceptional), enabling reliable cleanup.
 
 Strings are immutable byte sequences with the standard Scheme operations
 (`string-append`, `string-length`, `substring`, `string-ref`,
-`string->list`, `string->symbol`, …). Symbols are interned. Regular
+`string->list`, `string->symbol`, Ã¢â‚¬Â¦). Symbols are interned. Regular
 expressions live in `std.regex`.
 
 ```scheme
@@ -359,7 +359,7 @@ expressions live in `std.regex`.
 
 `std.collections` provides the higher-order suite (`map*`, `filter`,
 `foldl` / `foldr`, `reduce`, `zip`, `range`, `take` / `drop`,
-`flatten`, `sort`, `any?`, `every?`, …).
+`flatten`, `sort`, `any?`, `every?`, Ã¢â‚¬Â¦).
 
 ```scheme
 (import std.prelude)
@@ -377,7 +377,7 @@ Built-ins: `display`, `write`, `newline`, `write-string`, `read-char`,
 `current-{input,output,error}-port`, `open-input-file`,
 `open-output-file`, `open-input-string`, `open-output-string`,
 `get-output-string`. `std.io` adds `println`, `eprintln`, `read-line`,
-`display->string`, and the `with-…-port` redirection helpers.
+`display->string`, and the `with-Ã¢â‚¬Â¦-port` redirection helpers.
 
 ```scheme
 (import std.io)
@@ -386,8 +386,8 @@ Built-ins: `display`, `write`, `newline`, `write-string`, `read-char`,
 ```
 
 CSV via [`std.csv`](./guide/reference/csv.md), Datalog via
-[`std.db`](./guide/reference/db.md). JSON has its own section (§14), and
-structured logging has its own section (§15).
+[`std.db`](./guide/reference/db.md). JSON has its own section (Ã‚Â§14), and
+structured logging has its own section (Ã‚Â§15).
 
 ### Filesystem (`std.fs`)
 
@@ -479,11 +479,11 @@ want to drive as Eta ports.
 ```scheme
 (import std.process std.io)
 
-;; Blocking — returns (exit-code stdout stderr)
+;; Blocking Ã¢â‚¬â€ returns (exit-code stdout stderr)
 (define r (process:run "git" '("--version")))
 (println (cadr r))                       ; "git version 2.45.0\n"
 
-;; Non-blocking — drive the child by its ports
+;; Non-blocking Ã¢â‚¬â€ drive the child by its ports
 (define p (process:spawn "python" '("-u" "-c" "print(input())")))
 (display "hello\n" (process:stdin-port p))
 (close-port (process:stdin-port p))
@@ -546,7 +546,7 @@ in v1 is `'keep-integers-exact?`.
 
 ## 15. Logging
 
-`std.log` is the structured-logging façade over the bundled
+`std.log` is the structured-logging faÃƒÂ§ade over the bundled
 [`spdlog`](https://github.com/gabime/spdlog) runtime. Build a sink, wrap
 it in a named logger, and emit records at one of six severity levels;
 records carry a free-form message plus an optional payload alist that is
@@ -570,12 +570,12 @@ Each level wrapper (`log:trace`, `log:debug`, `log:info`, `log:warn`,
 | Helper                         | Purpose                                                       |
 | :----------------------------- | :------------------------------------------------------------ |
 | `log:make-logger`              | Create a named logger fanning out to one or more sinks        |
-| `log:make-stdout-sink` / `…-stderr-sink` | Coloured console sink (toggle with `'color? #f`)    |
+| `log:make-stdout-sink` / `Ã¢â‚¬Â¦-stderr-sink` | Coloured console sink (toggle with `'color? #f`)    |
 | `log:make-file-sink`           | Plain file sink (`'truncate? #t` for fresh files)             |
 | `log:make-rotating-sink`       | Size-rotated file (bytes per file, retained file count)       |
 | `log:make-daily-sink`          | Daily-rotated file at `(hour, minute)` local time             |
-| `log:make-port-sink` / `…-error-port-sink` | Routes through a Scheme output port (or `current-error-port`) |
-| `log:set-level!` / `log:set-global-level!` | Per-logger or process-wide threshold (`trace`…`off`) |
+| `log:make-port-sink` / `Ã¢â‚¬Â¦-error-port-sink` | Routes through a Scheme output port (or `current-error-port`) |
+| `log:set-level!` / `log:set-global-level!` | Per-logger or process-wide threshold (`trace`Ã¢â‚¬Â¦`off`) |
 | `log:set-pattern!`             | spdlog format string for the line layout                      |
 | `log:set-formatter!`           | `'human` (default) or `'json`                                 |
 | `log:flush!` / `log:flush-on!` | Manual flush, or auto-flush above a level                     |
@@ -588,7 +588,7 @@ Each level wrapper (`log:trace`, `log:debug`, `log:info`, `log:warn`,
 ## 16. Time, Freeze & Finalizers
 
 `std.time` exposes `time:now-ms`, `time:monotonic-ms`, `time:sleep-ms`,
-`time:utc-parts`, `time:format-iso8601-utc`, `time:elapsed-ms` — see
+`time:utc-parts`, `time:format-iso8601-utc`, `time:elapsed-ms` Ã¢â‚¬â€ see
 [`time.md`](./guide/reference/time.md).
 
 `std.freeze` provides two attributed-variable combinators that compose
@@ -608,7 +608,7 @@ for object-lifetime hooks.
 
 Logic variables (`logic-var`), structural unification (`==`), and the
 search combinators (`findall`, `run1`, `succeeds?`, `naf`) are first
-class. Backtracking is implemented by a trail managed at the VM level —
+class. Backtracking is implemented by a trail managed at the VM level Ã¢â‚¬â€
 exception handling and CLP propagation compose with it cleanly.
 
 ```scheme
@@ -649,7 +649,7 @@ Three CLP domains are bundled:
 ```
 
 `std.clpr` exposes interval domains, linear and quadratic
-minimise/maximise routines backed by the Fourier–Motzkin oracle. See
+minimise/maximise routines backed by the FourierÃ¢â‚¬â€œMotzkin oracle. See
 [`cookbook/numerics/portfolio-lp.eta`](../cookbook/numerics/portfolio-lp.eta) for a
 worked LP.
 
@@ -658,8 +658,8 @@ worked LP.
 ## 19. Fact Tables
 
 `std.db` provides Datalog-style relations with `defrel`, `assert!`, and
-tabled evaluation — see [`db.md`](./guide/reference/db.md). `std.fact_table` is a
-columnar store with hash-indexed lookups for analytics workloads — see
+tabled evaluation Ã¢â‚¬â€ see [`db.md`](./guide/reference/db.md). `std.fact_table` is a
+columnar store with hash-indexed lookups for analytics workloads Ã¢â‚¬â€ see
 [`fact-table.md`](./guide/reference/fact-table.md) and
 [`cookbook/numerics/fact-table.eta`](../cookbook/numerics/fact-table.eta).
 
@@ -673,23 +673,23 @@ edge list; from there you can identify an estimand, estimate it from
 observations, run sensitivity checks, learn structure, or render the
 graph for a notebook.
 
-- **Graphs and d-separation** — DAGs and ADMGs (with `<->` for
+- **Graphs and d-separation** Ã¢â‚¬â€ DAGs and ADMGs (with `<->` for
   unobserved confounders), ancestors, c-components, Bayes-ball.
-- **Identification** — back-door, front-door, IV, generalised
+- **Identification** Ã¢â‚¬â€ back-door, front-door, IV, generalised
   adjustment, and the ID / IDC algorithms for arbitrary do-queries.
-- **Mediation** — natural and controlled direct/indirect effects
+- **Mediation** Ã¢â‚¬â€ natural and controlled direct/indirect effects
   (NDE, NIE, CDE).
-- **Transport & counterfactuals** — selection diagrams, the sBD
+- **Transport & counterfactuals** Ã¢â‚¬â€ selection diagrams, the sBD
   criterion, twin networks, ID*, effect of treatment on the treated.
-- **Estimation** — g-formula, IPW, AIPW, TMLE, plus bootstrap
+- **Estimation** Ã¢â‚¬â€ g-formula, IPW, AIPW, TMLE, plus bootstrap
   confidence intervals and sensitivity diagnostics (E-value,
   Rosenbaum bounds).
-- **Structure learning** — PC, FCI, GES, NOTEARS, with Fisher-z and
-  χ² conditional-independence tests.
-- **Rendering** — DOT, Mermaid, and LaTeX output for the same edge
+- **Structure learning** Ã¢â‚¬â€ PC, FCI, GES, NOTEARS, with Fisher-z and
+  Ãâ€¡Ã‚Â² conditional-independence tests.
+- **Rendering** Ã¢â‚¬â€ DOT, Mermaid, and LaTeX output for the same edge
   lists you query against.
 
-A graph is just an edge list — `->` is a directed edge, `<->` an
+A graph is just an edge list Ã¢â‚¬â€ `->` is a directed edge, `<->` an
 unobserved-confounder bidirected edge:
 
 ```scheme
@@ -708,7 +708,7 @@ unobserved-confounder bidirected edge:
 ```
 
 Once an estimand is identified, plug observational data into the
-estimation backends — every estimator returns a scalar ATE, and
+estimation backends Ã¢â‚¬â€ every estimator returns a scalar ATE, and
 `do:bootstrap-ci` wraps any of them for percentile CIs:
 
 ```scheme
@@ -716,7 +716,7 @@ estimation backends — every estimator returns a scalar ATE, and
 
 (define obs '(((x . 0) (z . 0) (y . 0.0)) ((x . 1) (z . 0) (y . 2.1))
               ((x . 0) (z . 1) (y . 9.8)) ((x . 1) (z . 1) (y . 12.0))
-              ;; … many more rows …
+              ;; Ã¢â‚¬Â¦ many more rows Ã¢â‚¬Â¦
               ))
 
 (do:ate-gformula obs 'y 'x '(z))   ;; plug-in regression
@@ -728,7 +728,7 @@ Render any graph straight to Mermaid or DOT for notebooks and papers:
 
 ```scheme
 (import std.causal.render)
-(dag:->mermaid finance-dag)        ;; flowchart LR …
+(dag:->mermaid finance-dag)        ;; flowchart LR Ã¢â‚¬Â¦
 (dag:->dot finance-dag '((title . "Finance DAG") (rankdir . "LR")))
 ```
 
@@ -742,7 +742,7 @@ Render any graph straight to Mermaid or DOT for notebooks and papers:
 | `std.causal.transport`        | Selection diagrams, sBD criterion, transport queries |
 | `std.causal.counterfactual`   | Twin networks, ID* / IDC*, effect-of-treatment-on-treated |
 | `std.causal.estimate`         | g-formula, IPW, AIPW, TMLE, bootstrap CIs, E-value, Rosenbaum bounds |
-| `std.causal.learn`            | PC / FCI / GES / NOTEARS structure learning, Fisher-z & χ² CI tests |
+| `std.causal.learn`            | PC / FCI / GES / NOTEARS structure learning, Fisher-z & Ãâ€¡Ã‚Â² CI tests |
 | `std.causal.render`           | DOT, Mermaid, LaTeX renderers; `define-dag` macro |
 
 > **Reference:** [`causal.md`](./guide/reference/causal.md);
@@ -753,7 +753,7 @@ Render any graph straight to Mermaid or DOT for notebooks and papers:
 
 ## 21. Automatic Differentiation (AAD)
 
-Reverse-mode AD with a tape recorded directly by the VM — no closure
+Reverse-mode AD with a tape recorded directly by the VM Ã¢â‚¬â€ no closure
 allocation per arithmetic op. `grad` returns `(value gradient-vector)`
 in a single backward sweep over the tape.
 
@@ -775,7 +775,7 @@ Helpers for AD-safe primitives (`ad-abs`, `softplus`, `relu`,
 `std.stats` provides descriptive statistics, OLS multi-regression, PCA,
 and distribution functions, backed by Eigen for dense linear algebra.
 The Eigen layer is currently exposed only through `std.stats` and
-`std.torch` — there is no separate user-facing module.
+`std.torch` Ã¢â‚¬â€ there is no separate user-facing module.
 
 > **Reference:** [`stats.md`](./guide/reference/stats.md).
 
@@ -801,35 +801,52 @@ optimisers, and (when built with CUDA) device transfer.
 
 ## 24. Concurrency & Distribution
 
+Eta concurrency uses PID-based actors for local workflows and NNG sockets for
+explicit transport workflows.
+
 > **Warning (Transition):**
-> The current concurrency primitives in this section are socket-based
-> compatibility APIs over NNG (`spawn`, `spawn-thread`,
-> `current-mailbox`, `send!`, `recv!`, `monitor`). The planned actor
-> runtime moves local actors to VM mailboxes addressed by PIDs, with NNG
-> retained as transport/distribution infrastructure.
+> Compatibility primitives remain socket-based in `std.net`, while local actor
+> code should use VM mailboxes addressed by PIDs via `std.actor`.
 
-Eta's actor model is built on **nng**: every actor owns a mailbox
-socket; messages are arbitrary Eta values serialised by the runtime.
-The same `send!` / `recv!` API works for in-process threads, OS
-processes, and remote TCP peers.
+### Actor API (`std.actor`)
 
-| Primitive             | Use                                                   |
-| :-------------------- | :---------------------------------------------------- |
-| `(spawn module-path)` | Fork a child process running the named module         |
-| `(spawn-thread thunk)`| Run a closure in a fresh in-process VM thread         |
-| `(current-mailbox)`   | Child-side handle to the parent / spawner             |
-| `(send! sock v 'wait)`| Block until message is sent                           |
-| `(recv! sock 'wait)`  | Block until a message arrives                         |
-| `(monitor sock)`      | Receive a `(down …)` message when the peer dies       |
+```scheme
+(import std.actor)
+```
 
-High-level patterns provided by `std.net`: `worker-pool`,
-`request-reply`, `survey`, PUB/SUB. Supervision trees (`one-for-one`,
-`one-for-all`) live in `std.supervisor`.
+| Primitive | Use |
+| :-------- | :-- |
+| `(self)` | Current actor PID |
+| `(spawn thunk)` | Spawn one local actor |
+| `(send pid payload)` | Send one message to PID or registered name |
+| `(receive cases [timeout-ms [timeout-thunk]])` | Selective receive |
+| `(receive-after timeout-ms)` | Receive one message with timeout |
+| `(monitor pid)` / `(demonitor ref [flush?])` | Monitor lifecycle (`DOWN`) |
+| `(link pid)` / `(unlink pid)` | Exit-link relationships |
+| `(trap-exit! enabled?)` | Convert linked exits to messages |
+| `(register name pid)` / `(whereis name)` | Local process registry |
+| `(process-info pid [key])` | Actor introspection |
 
-> **References:** [`message-passing.md`](./guide/reference/message-passing.md),
-> [`networking.md`](./guide/reference/networking.md),
-> [`network-message-passing.md`](./guide/reference/network-message-passing.md),
-> [`supervisor.md`](./guide/reference/supervisor.md).
+Higher-level actor modules:
+
+- `std.actor.supervisor`
+- `std.actor.gen_server`
+- `std.actor.node`
+
+### Transport API (`std.net`)
+
+Use `std.net` when you need socket-level NNG patterns (`REQ/REP`, `PUB/SUB`,
+`SURVEYOR/RESPONDENT`, endpoint-level dialing/listening).
+
+Compatibility primitives like `send!`, `recv!`, `spawn`, `spawn-thread`, and
+`current-mailbox` remain available for explicit transport workflows, but the
+primary local actor API is `std.actor`.
+
+> **References:** [`std.actor`](./stdlib/actor.md),
+> [`std.actor.supervisor`](./stdlib/actor-supervisor.md),
+> [`std.actor.gen_server`](./stdlib/actor-gen-server.md),
+> [`std.actor.node`](./stdlib/actor-node.md),
+> [`std.net`](./stdlib/net.md).
 
 ---
 
@@ -837,7 +854,7 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 | Example                                                        | Topic                                  | Walkthrough |
 | :------------------------------------------------------------- | :------------------------------------- | :---------- |
-| [`european.eta`](../cookbook/numerics/european.eta)                  | Black–Scholes Greeks via AAD           | [`european.md`](./guide/reference/european.md) |
+| [`european.eta`](../cookbook/numerics/european.eta)                  | BlackÃ¢â‚¬â€œScholes Greeks via AAD           | [`european.md`](./guide/reference/european.md) |
 | [`sabr.eta`](../cookbook/numerics/sabr.eta)                          | SABR vol surface, Hagan approximation  | [`sabr.md`](./guide/reference/sabr.md) |
 | [`xva.eta`](../cookbook/numerics/xva.eta)                            | CVA / FVA sensitivities via AAD        | [`xva.md`](./guide/reference/xva.md) |
 | [`xva-wwr/`](../cookbook/xva-wwr/)                          | Wrong-Way Risk via do-interventions    | [`featured/xva-wwr.md`](./featured/xva-wwr.md) |
@@ -868,7 +885,7 @@ High-level patterns provided by `std.net`: `worker-pool`,
 
 All Eta values fit in a 64-bit double-NaN payload: fixnums and small
 immediates are encoded directly; heap objects (pairs, vectors,
-strings, closures, records, …) use tagged pointers. See
+strings, closures, records, Ã¢â‚¬Â¦) use tagged pointers. See
 [`nanboxing.md`](./guide/reference/nanboxing.md).
 </details>
 
@@ -912,6 +929,6 @@ beginner programs, symbolic & logic, AAD & finance, concurrency, causal
 
 ## 29. Further Reading
 
-- [`architecture.md`](./architecture.md) — pipeline overview
-- [`next-steps.md`](./next-steps.md) — short-term work items
-- [`release-notes.md`](./release-notes.md) — version history
+- [`architecture.md`](./architecture.md) Ã¢â‚¬â€ pipeline overview
+- [`next-steps.md`](./next-steps.md) Ã¢â‚¬â€ short-term work items
+- [`release-notes.md`](./release-notes.md) Ã¢â‚¬â€ version history

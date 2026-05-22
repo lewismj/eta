@@ -88,7 +88,7 @@ These views update on every DAP `stopped` event.
 | Symptom                                   | Likely cause                                            |
 | :---------------------------------------- | :------------------------------------------------------ |
 | Stack overflow on linear recursion        | Lost TCO — see [Tail Calls](./tail-calls.md)            |
-| Actor `recv!` blocks forever              | Peer never sent; or `nng-close` was missed              |
+| Actor `receive` times out or blocks forever | Peer never sent; matcher does not match incoming messages |
 | `runtime.unbound` after rename            | Stale `.etac` cache — recompile with `etac`             |
 | Macro emits unexpected code               | Inspect `etac --dump-expand file.eta`                   |
 | Heap grows unbounded                      | Long-lived closure capturing a growing list — Heap Inspector helps locate the root |

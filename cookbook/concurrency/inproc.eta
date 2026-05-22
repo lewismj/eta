@@ -1,63 +1,60 @@
-;;; cookbook/concurrency/inproc.eta — In-process actor threads via spawn-thread.
-;;;
-;;; (spawn-thread thunk) → socket
-;;;   - Launches a fresh in-process thread with its own VM.
-;;;   - The thunk's bytecode and captured upvalues are serialized into the thread.
-;;;   - Communication uses the same send!/recv! mailbox API as (spawn).
-;;;   - Cheaper than OS-process spawn — no fork/exec overhead.
-;;;   - No separate worker file needed; the closure carries its own logic.
+;;; cookbook/concurrency/inproc.eta - In-process actor workers with local mailboxes.
 ;;;
 ;;; Run:
 ;;;   etai cookbook/concurrency/inproc.eta
 
 (module inproc
-  (import std.io)
+  (import std.actor std.collections std.io)
   (begin
 
-    (println "inproc: spawning in-process threads...")
+    (defun %vector->list (vec)
+      (let loop ((i 0) (acc '()))
+        (if (= i (vector-length vec))
+            (reverse acc)
+            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
-    ;;@doc (make-worker offset)
-    ;;@category Concurrency
-    ;;@module inproc
-    ;; make-worker captures 'offset' as an upvalue in the thunk.
-    ;; The thread VM reconstructs the closure, then:
-    ;;   1. calls (current-mailbox) to get its end of the PAIR socket
-    ;;   2. blocks on recv! waiting for the parent's input
-    ;;   3. adds the captured offset and sends the result back
-    ;;@example
-    ;; (make-worker 'x)
-    (define (make-worker offset)
-      (spawn-thread
+    (defun make-worker (offset)
+      (spawn
         (lambda ()
-          (let ((mb (current-mailbox)))
-            (let ((n (recv! mb 'wait)))
-              (send! mb (+ n offset) 'wait))))))
+          (let loop ()
+            (receive
+              (list
+                (match-case
+                  (match-list 'add 3)
+                  (lambda (msg)
+                    (let ((from (car (cdr msg)))
+                          (tag (car (cdr (cdr msg))))
+                          (value (car (cdr (cdr (cdr msg))))))
+                      (send from (list 'sum tag (+ value offset)))
+                      (loop))))
+                (match-case
+                  (match-symbol 'stop)
+                  (lambda (msg)
+                    'ok)))
+              'wait)))))
 
-    (define t1 (make-worker 10))
-    (define t2 (make-worker 20))
-    (define t3 (make-worker 30))
+    (define workers
+      (list
+        (make-worker 10)
+        (make-worker 20)
+        (make-worker 30)))
+    (define inputs '(5 6 7))
+    (define tags (range 0 (length workers)))
 
-    ;; Send one task to each thread — nng buffers the message even if
-    ;; the thread hasn't reached recv! yet.
-    (send! t1 5 'wait)
-    (send! t2 6 'wait)
-    (send! t3 7 'wait)
+    (let dispatch ((rest-workers workers) (rest-tags tags) (rest-values inputs))
+      (when (and (pair? rest-workers)
+                 (pair? rest-tags)
+                 (pair? rest-values))
+        (send (car rest-workers)
+              (list 'add (self) (car rest-tags) (car rest-values)))
+        (dispatch (cdr rest-workers) (cdr rest-tags) (cdr rest-values))))
 
-    ;; Collect results.
-    (define r1 (recv! t1 'wait))
-    (define r2 (recv! t2 'wait))
-    (define r3 (recv! t3 'wait))
+    (define results (make-vector (length workers) 0))
+    (let loop ((remaining (length workers)))
+      (when (> remaining 0)
+        (let ((msg (receive-match (match-list 'sum 2) 1000)))
+          (vector-set! results (car (cdr msg)) (car (cdr (cdr msg))))
+          (loop (- remaining 1)))))
 
-    (println (string-append "  inputs:   (5 6 7)"))
-    (println (string-append "  offsets:  (10 20 30)"))
-    (println (string-append "  results:  ("
-                            (number->string r1) " "
-                            (number->string r2) " "
-                            (number->string r3) ")"))
-
-    ;; Wait for all threads to finish, then release sockets.
-    (thread-join t1) (thread-join t2) (thread-join t3)
-    (nng-close t1)   (nng-close t2)   (nng-close t3)
-
-    (println "inproc: done.")))
-
+    (println (%vector->list results))
+    (for-each (lambda (worker) (send worker 'stop)) workers)))

@@ -6,6 +6,24 @@
 
 ## 2026-05-22
 
+### Actor M8 Polish (Docs, Examples, Tooling)
+
+Implemented the M8 cleanup pass for actor adoption:
+
+- replaced legacy socket-mailbox cookbook actor examples with actor-native
+  `std.actor` examples (message passing, worker-pool, parallel map/fib,
+  Monte Carlo, scatter-gather, pub-sub, and local in-process workers);
+- removed obsolete worker-only cookbook files that depended on
+  `current-mailbox` workflows;
+- updated `docs/cookbook/concurrency.md` and the language guide concurrency
+  section to present PID/mailbox actors as the primary model, with `std.net`
+  scoped to explicit transport workflows;
+- refreshed the actor improvement plan wording to remove deprecation-warning
+  guidance for old socket-mailbox examples and require direct replacement;
+- updated editor/tooling surfaces to prioritize actor APIs in snippets and
+  syntax highlighting, and expanded builtin metadata descriptions for actor
+  primitives.
+
 ### Actor Scheduler M7.6 (Scale Validation + Default Cutover)
 
 Implemented the M7.6 scheduler checkpoint:

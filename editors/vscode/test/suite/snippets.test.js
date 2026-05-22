@@ -73,7 +73,7 @@ describe('Eta snippets (B7)', () => {
             'clpr-maximize', 'clpb-solve',
             // supervisors / actors
             'one-for-one', 'one-for-all',
-            'spawn-thread', 'spawn-thread-with', 'current-mailbox',
+            'import-actor', 'actor-spawn', 'actor-receive', 'actor-monitor',
             // AAD / torch
             'grad', 'tape', 'tensor', 'backward',
             // testing
@@ -88,6 +88,22 @@ describe('Eta snippets (B7)', () => {
         // — there is no `defmacro`. Make sure no snippet references it.
         const raw = fs.readFileSync(SNIPPETS, 'utf8');
         assert.ok(!/defmacro/.test(raw), 'snippets must not mention defmacro');
+    });
+    it('does not advertise legacy socket-mailbox actor snippets', () => {
+        const snippets = loadSnippets();
+        const prefixes = new Set();
+        for (const entry of Object.values(snippets)) {
+            const p = entry.prefix;
+            if (Array.isArray(p)) {
+                p.forEach((x) => prefixes.add(x));
+            }
+            else {
+                prefixes.add(p);
+            }
+        }
+        assert.ok(!prefixes.has('current-mailbox'));
+        assert.ok(!prefixes.has('spawn-thread'));
+        assert.ok(!prefixes.has('spawn-thread-with'));
     });
     it('every snippet has a description', () => {
         const snippets = loadSnippets();

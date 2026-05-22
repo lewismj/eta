@@ -1,65 +1,127 @@
-;;; cookbook/concurrency/monte-carlo.eta — Parallel Monte Carlo π estimation.
-;;;
-;;; Estimates the value of π by sampling random points in the unit square
-;;; and counting how many fall inside the unit circle:
-;;;
-;;;   P(x² + y² ≤ 1)  =  π/4    (for x, y ∈ [0,1])
-;;;   ⟹  π ≈ 4 × (points_inside / total_points)
-;;;
-;;; The computation is split across N worker processes, each estimating π
-;;; independently from its own random seed.  The parent averages the results.
-;;;
-;;; Demonstrates:
-;;;   - worker-pool for embarrassingly parallel computation
-;;;   - passing structured arguments to workers
-;;;   - aggregating results
+;;; cookbook/concurrency/monte-carlo.eta - Monte Carlo pi estimate with actors.
 ;;;
 ;;; Run:
 ;;;   etai cookbook/concurrency/monte-carlo.eta
-;;;
-;;; Worker: cookbook/concurrency/monte-carlo-worker.eta
 
 (module monte-carlo
-  (import std.net)
-  (import std.collections)
-  (import std.math)
-  (import std.io)
+  (import std.actor std.collections std.math std.core std.io)
   (begin
 
-    ;;@doc (n-workers)
-    ;;@category Concurrency
-    ;;@module monte-carlo
-    ;; Parallel Monte Carlo π estimation Uses `n-workers`.
-    ;;@example
-    ;; (display n-workers)
-    (define n-workers   8)        ; number of parallel worker processes
-    (define samples-per-worker 50000)  ; Monte Carlo samples per worker
+    (defun %vector->list (vec)
+      (let loop ((i 0) (acc '()))
+        (if (= i (vector-length vec))
+            (reverse acc)
+            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
-    ;; Build task list: each task is (seed samples)
-    ;; Different seeds ensure each worker generates an independent sample
-    (define tasks
-      (map (lambda (i) (list (* i 1000007) samples-per-worker))
-           (range 0 n-workers)))
+    (defun %list-ref-or-false (xs index)
+      (let loop ((cursor xs) (remaining index))
+        (if (= remaining 0)
+            (if (non-pair? cursor) #f (car cursor))
+            (if (non-pair? cursor)
+                #f
+                (loop (cdr cursor) (- remaining 1))))))
 
-    (println (string-append "monte-carlo: estimating π using "
-                             (number->string n-workers)
-                             " workers × "
-                             (number->string samples-per-worker)
-                             " samples = "
-                             (number->string (* n-workers samples-per-worker))
-                             " total samples"))
+    (define %lcg-modulus 1024)
+    (define %unit-radius 1023)
+    (define %unit-radius-squared (* %unit-radius %unit-radius))
 
-    ;; Run workers in parallel — each returns its π estimate
-    (define estimates
-      (worker-pool "cookbook/concurrency/monte-carlo-worker.eta" tasks))
+    (defun %lcg-next (state)
+      (modulo (+ (* 25173 state) 13849) %lcg-modulus))
 
-    ;; Average all estimates
-    (define pi-estimate
-      (/ (foldl + 0.0 estimates) (length estimates)))
+    (defun %hit (x y)
+      (if (<= (+ (* x x) (* y y)) %unit-radius-squared) 1 0))
 
-    (println (string-append "monte-carlo: π estimate = "
-                             (number->string pi-estimate)))
-    (println (string-append "monte-carlo: true π     = " (number->string pi)))
-    (println (string-append "monte-carlo: error      = "
-                             (number->string (abs (- pi-estimate pi)))))))
+    (defun %count-inside-8 (seed)
+      (let* ((s1 (%lcg-next seed))
+             (s2 (%lcg-next s1))
+             (h1 (%hit s1 s2))
+             (s3 (%lcg-next s2))
+             (s4 (%lcg-next s3))
+             (h2 (%hit s3 s4))
+             (s5 (%lcg-next s4))
+             (s6 (%lcg-next s5))
+             (h3 (%hit s5 s6))
+             (s7 (%lcg-next s6))
+             (s8 (%lcg-next s7))
+             (h4 (%hit s7 s8))
+             (s9 (%lcg-next s8))
+             (s10 (%lcg-next s9))
+             (h5 (%hit s9 s10))
+             (s11 (%lcg-next s10))
+             (s12 (%lcg-next s11))
+             (h6 (%hit s11 s12))
+             (s13 (%lcg-next s12))
+             (s14 (%lcg-next s13))
+             (h7 (%hit s13 s14))
+             (s15 (%lcg-next s14))
+             (s16 (%lcg-next s15))
+             (h8 (%hit s15 s16)))
+        (+ h1 h2 h3 h4 h5 h6 h7 h8)))
 
+    (defun %spawn-worker ()
+      (spawn
+        (lambda ()
+          (receive
+            (list
+              (match-case
+                (match-list 'sample 4)
+                (lambda (msg)
+                  (let ((reply-to (%list-ref-or-false msg 1))
+                        (index (%list-ref-or-false msg 2))
+                        (seed (%list-ref-or-false msg 3))
+                        (count (%list-ref-or-false msg 4)))
+                    (if (and (pid? reply-to)
+                             (number? index)
+                             (number? seed)
+                             (number? count))
+                        (send reply-to
+                              (list 'estimate
+                                    index
+                                    (%count-inside-8 seed)
+                                    count))
+                        '())))))
+            'wait))))
+
+    (defun %spawn-workers (remaining acc)
+      (if (= remaining 0)
+          (reverse acc)
+          (%spawn-workers (- remaining 1) (cons (%spawn-worker) acc))))
+
+    (define n-workers 4)
+    (define samples-per-worker 8)
+    (define indices (range 0 n-workers))
+    (define workers (%spawn-workers n-workers '()))
+
+    (let dispatch ((rest-workers workers) (rest-indices indices))
+      (when (and (pair? rest-workers) (pair? rest-indices))
+        (send (car rest-workers)
+              (list 'sample
+                    (self)
+                    (car rest-indices)
+                    (+ 1000 (* (car rest-indices) 97))
+                    samples-per-worker))
+        (dispatch (cdr rest-workers) (cdr rest-indices))))
+
+    (define estimates (make-vector n-workers 0.0))
+    (let loop ((remaining n-workers))
+      (when (> remaining 0)
+        (let ((msg (receive-match (match-list 'estimate 3) 5000)))
+          (if (non-pair? msg)
+              (error "monte-carlo: timed out waiting for estimate")
+              (let ((index (%list-ref-or-false msg 1))
+                    (inside (%list-ref-or-false msg 2))
+                    (count (%list-ref-or-false msg 3)))
+                (if (and (number? index) (number? inside) (number? count) (> count 0))
+                    (begin
+                      (vector-set! estimates
+                                   index
+                                   (* 4.0 (/ (* 1.0 inside) (* 1.0 count))))
+                      (loop (- remaining 1)))
+                    (error "monte-carlo: malformed estimate message")))))))
+
+    (define mean-estimate
+      (/ (apply + (%vector->list estimates)) n-workers))
+
+    (println (%vector->list estimates))
+    (println (string-append "pi estimate: " (number->string mean-estimate)))
+    (println (string-append "pi error: " (number->string (abs (- mean-estimate pi)))))))

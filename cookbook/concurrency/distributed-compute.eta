@@ -1,57 +1,22 @@
-;;; cookbook/concurrency/distributed-compute.eta — Cross-machine message passing.
+;;; cookbook/concurrency/distributed-compute.eta - Client for remote REP compute service.
 ;;;
-;;; Demonstrates that the same send!/recv! API works transparently over TCP.
-;;; Spawns a server child process that binds a REP socket on localhost:6000,
-;;; waits for it to signal readiness, then runs the client in the parent.
+;;; Start server first:
+;;;   etai cookbook/concurrency/distributed-compute-server.eta
 ;;;
-;;; For real cross-machine use:
-;;;   - Run distributed-compute-server.eta on the server machine
-;;;   - Change endpoint below to point at the server's IP
-;;;
-;;; Run:
+;;; Then run:
 ;;;   etai cookbook/concurrency/distributed-compute.eta
 
 (module distributed-compute
-  (import std.core)
-  (import std.io)
+  (import std.net std.io)
   (begin
 
-    ;;@doc (endpoint)
-    ;;@category Concurrency
-    ;;@module distributed-compute
-    ;; Cross-machine message passing Uses `endpoint`.
-    ;;@example
-    ;; (display endpoint)
     (define endpoint "tcp://127.0.0.1:6000")
+    (println (string-append "distributed-compute client -> " endpoint))
 
-    ;; ── Spawn server child ────────────────────────────────────────────
-    ;; The server binds nng-listen synchronously, then sends 'ready.
-    ;; Waiting here guarantees the socket is listening before we dial.
-    (println "distributed-compute: starting server...")
-    (define server (spawn "cookbook/concurrency/distributed-compute-server.eta"))
-    (recv! server 'wait)   ; block until server sends 'ready
+    (for-each
+      (lambda (task)
+        (let ((result (request-reply endpoint task)))
+          (println (list 'task task 'result result))))
+      '((square 5) (mul 6 7) (fib 20)))
 
-    ;; ── Run client ────────────────────────────────────────────────────
-    (println (string-append "client: connecting to " endpoint))
-    (let ((sock (nng-socket 'req)))
-      (nng-dial sock endpoint)
-      (let ((tasks (list '(add 10 20)
-                         '(mul 6 7)
-                         '(fib 20)
-                         '(add 100 200))))
-        (for-each (lambda (task)
-                    (send! sock task)
-                    (let ((result (recv! sock 'wait)))
-                      (print (string-append "client: "
-                                            (display-to-string task)
-                                            " => "))
-                      (println result)))
-                  tasks))
-      (nng-close sock)
-      (println "client: done."))
-
-    ;; ── Shutdown ──────────────────────────────────────────────────────
-    (spawn-kill server)
-    (spawn-wait server)
-    (nng-close server)
-    (println "distributed-compute: done.")))
+    (println (request-reply endpoint '(shutdown)))))

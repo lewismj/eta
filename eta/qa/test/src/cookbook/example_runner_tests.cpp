@@ -305,6 +305,21 @@ static bool requires_external_package_sidecar(const fs::path& file) {
     return false;
 }
 
+/**
+ * Legacy socket-as-mailbox actor examples should not exist in cookbook/concurrency.
+ * We keep transport-level NNG examples, but actor examples must use std.actor mailboxes.
+ */
+static bool uses_legacy_socket_mailbox_api(const fs::path& file) {
+    std::ifstream ifs(file);
+    std::string line;
+    while (std::getline(ifs, line)) {
+        auto pos = line.find_first_not_of(" \t");
+        if (pos != std::string::npos && line[pos] == ';') continue;
+        if (line.find("current-mailbox") != std::string::npos) return true;
+    }
+    return false;
+}
+
 /// Test fixture
 
 struct ExampleRunnerFixture {
@@ -472,6 +487,34 @@ BOOST_AUTO_TEST_CASE(all_examples_run_without_errors) {
         for (const auto& f : failures) {
             BOOST_TEST_MESSAGE("  - " << f);
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(concurrency_examples_do_not_use_socket_mailbox_actor_api) {
+    auto dir = cookbook_dir();
+    if (dir.empty() || !fs::is_directory(dir)) {
+        BOOST_TEST_MESSAGE("No cookbook directory found - skipping.");
+        return;
+    }
+
+    auto concurrency_dir = dir / "concurrency";
+    if (!fs::is_directory(concurrency_dir)) {
+        BOOST_TEST_MESSAGE("No cookbook/concurrency directory found - skipping.");
+        return;
+    }
+
+    std::vector<std::string> offenders;
+    for (const auto& entry : fs::recursive_directory_iterator(concurrency_dir)) {
+        if (!entry.is_regular_file()) continue;
+        if (entry.path().extension() != ".eta") continue;
+        if (!uses_legacy_socket_mailbox_api(entry.path())) continue;
+        offenders.push_back(fs::relative(entry.path(), dir).string());
+    }
+
+    if (!offenders.empty()) {
+        std::string message = "Legacy socket-mailbox actor API usage found in:";
+        for (const auto& path : offenders) message += " " + path;
+        BOOST_FAIL(message);
     }
 }
 

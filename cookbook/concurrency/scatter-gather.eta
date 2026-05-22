@@ -1,83 +1,68 @@
-;;; cookbook/concurrency/scatter-gather.eta — SURVEYOR/RESPONDENT scatter-gather demo.
-;;;
-;;; Demonstrates the scatter-gather pattern:
-;;;   - (nng-socket 'surveyor)    → sends a question to all respondents
-;;;   - (nng-socket 'respondent)  → answers the surveyor's question
-;;;   - (nng-set-option sock 'survey-time ms) → deadline for collecting replies
-;;;   - (survey endpoint question timeout-ms) → std.net helper
-;;;
-;;; The surveyor broadcasts a question and collects ALL responses that
-;;; arrive before the deadline.  Useful for "which workers are idle?",
-;;; "what is your current load?", etc.
-;;;
-;;; This example spawns 3 respondent workers, surveys them, and collects
-;;; their status reports.
+;;; cookbook/concurrency/scatter-gather.eta - Actor scatter-gather with timeout.
 ;;;
 ;;; Run:
 ;;;   etai cookbook/concurrency/scatter-gather.eta
-;;;
-;;; Workers are cookbook/concurrency/scatter-gather-worker.eta
 
 (module scatter-gather
-  (import std.net)
-  (import std.collections)
-  (import std.io)
+  (import std.actor std.time std.io)
   (begin
 
-    ;;@doc (survey-endpoint)
-    ;;@category Concurrency
-    ;;@module scatter-gather
-    ;; SURVEYOR/RESPONDENT scatter-gather demo Uses `survey-endpoint`.
-    ;;@example
-    ;; (display survey-endpoint)
-    (define survey-endpoint "tcp://127.0.0.1:5557")
-    (define n-workers 3)
+    (defun %vector->list (vec)
+      (let loop ((i 0) (acc '()))
+        (if (= i (vector-length vec))
+            (reverse acc)
+            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
-    ;; Set up the surveyor socket
-    (define surveyor (nng-socket 'surveyor))
-    (nng-listen surveyor survey-endpoint)
+    (defun %status-for-ref? (ref)
+      (lambda (msg)
+        (and (pair? msg)
+             (eq? (car msg) 'status)
+             (pair? (cdr msg))
+             (equal? (car (cdr msg)) ref)
+             (pair? (cdr (cdr msg)))
+             (pair? (cdr (cdr (cdr msg))))
+             (pair? (cdr (cdr (cdr (cdr msg)))))
+             (null? (cdr (cdr (cdr (cdr (cdr msg)))))))))
 
-    ;; Deadline: collect responses for up to 1 second
-    (nng-set-option surveyor 'survey-time 1000)
+    (defun make-responder (index name delay-ms)
+      (spawn
+        (lambda ()
+          (let loop ()
+            (receive
+              (list
+                (match-case
+                  (match-list 'status 2)
+                  (lambda (msg)
+                    (let ((from (car (cdr msg)))
+                          (ref (car (cdr (cdr msg)))))
+                      (time:sleep-ms delay-ms)
+                      (send from (list 'status ref index name 'idle))
+                      (loop))))
+                (match-case
+                  (match-symbol 'stop)
+                  (lambda (msg)
+                    'ok)))
+              'wait)))))
 
-    ;; Spawn respondent workers — each worker connects to the survey endpoint
-    (println "scatter-gather: spawning respondents...")
-    (define workers
-      (map (lambda (id)
-             (spawn "cookbook/concurrency/scatter-gather-worker.eta"))
-           (range 0 n-workers)))
+    (define responders
+      (list
+        (make-responder 0 'worker-0 30)
+        (make-responder 1 'worker-1 60)
+        (make-responder 2 'worker-2 90)))
 
-    ;; Send each worker its ID so it can identify itself in responses
-    (for-each (lambda (pair)
-                (send! (car pair) (cdr pair)))
-              (zip workers (range 0 n-workers)))
+    (define survey-ref 'survey-ref)
+    (for-each
+      (lambda (pid)
+        (send pid (list 'status (self) survey-ref)))
+      responders)
 
-    ;; Wait for all workers to confirm they've connected
-    (for-each (lambda (w) (recv! w 'wait)) workers)
+    (define replies (make-vector (length responders) #f))
+    (let collect ((remaining (length responders)))
+      (when (> remaining 0)
+        (let ((msg (receive-match (%status-for-ref? survey-ref) 200)))
+          (when msg
+            (vector-set! replies (car (cdr (cdr msg))) msg)
+            (collect (- remaining 1))))))
 
-    ;; ── Broadcast the question ────────────────────────────────────────
-    (println "scatter-gather: asking 'status?'...")
-    (send! surveyor '(status?) 'wait)
-
-    ;; ── Collect all responses within the deadline ─────────────────────
-    (let ((responses
-           (letrec ((collect (lambda (acc)
-                               (let ((r (recv! surveyor)))
-                                 (if r
-                                     (collect (cons r acc))
-                                     (reverse acc))))))
-             (collect '()))))
-      (println (string-append "scatter-gather: received "
-                              (number->string (length responses))
-                              " response(s)"))
-      (for-each (lambda (r)
-                  (print "  ") (println r))
-                responses))
-
-    ;; ── Cleanup ───────────────────────────────────────────────────────
-    (for-each (lambda (w) (send! w 'stop)) workers)
-    (for-each spawn-wait workers)
-    (for-each nng-close workers)
-    (nng-close surveyor)
-    (println "scatter-gather: done.")))
-
+    (println (%vector->list replies))
+    (for-each (lambda (pid) (send pid 'stop)) responders)))
