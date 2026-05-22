@@ -58,6 +58,8 @@ add_test(
         --path "${ETA_STDLIB_SOURCE_DIR}"
         "${ETA_STDLIB_SOURCE_DIR}/tests"
 )
+set_tests_properties(eta_stdlib_tests PROPERTIES
+    ENVIRONMENT "ETA_MODULE_PATH=")
 
 install(TARGETS eta_test RUNTIME DESTINATION bin)
 

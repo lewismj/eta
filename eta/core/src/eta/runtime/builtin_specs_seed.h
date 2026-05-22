@@ -368,6 +368,7 @@ inline void register_builtin_specs_seed(BuiltinEnvironment& env) {
     r("%actor-alive?",         1, false);
     r("%actor-spawn",          1, false);
     r("%actor-send",           2, false);
+    r("%actor-send-checked",   2, false);
     r("%actor-receive",        2, false);
     r("%actor-mailbox-len",    0, false);
     r("%actor-trap-exit!",     1, false);
@@ -381,6 +382,11 @@ inline void register_builtin_specs_seed(BuiltinEnvironment& env) {
     r("%actor-unregister",     1, false);
     r("%actor-whereis",        1, false);
     r("%actor-registered",     0, false);
+    r("%actor-node-name",      0, false);
+    r("%actor-node-listen",    1, true);
+    r("%actor-node-connect",   1, true);
+    r("%actor-nodes",          0, false);
+    r("%actor-disconnect-node", 1, false);
     r("eval",                  1, false);
 
     /**

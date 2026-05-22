@@ -97,6 +97,7 @@ the distribution and is importable with `(import <name>)`.
 | Module | Import | Description |
 | :----- | :----- | :---------- |
 | [std.actor](./actor.md) | `(import std.actor)` | Local PID/mailbox actor runtime wrappers. |
+| [std.actor.node](./actor-node.md) | `(import std.actor.node)` | Distributed node handshake/routing for actor PIDs over NNG. |
 | [std.actor.gen_server](./actor-gen-server.md) | `(import std.actor.gen_server)` | OTP-style server behaviour (`start`, `call`, `cast`, `stop`). |
 | [std.actor.supervisor](./actor-supervisor.md) | `(import std.actor.supervisor)` | Local actor supervisor helpers (strategies, child specs, restart intensity). |
 | [std.net](./net.md) | `(import std.net)` | High-level networking patterns over NNG. *(requires `-DETA_BUILD_NNG=ON`)* |

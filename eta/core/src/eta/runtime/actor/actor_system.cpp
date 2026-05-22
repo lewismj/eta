@@ -4,6 +4,8 @@
 #include <deque>
 #include <utility>
 
+#include "eta/runtime/actor/node_transport.h"
+
 namespace eta::runtime::actor {
 
 namespace {
@@ -15,6 +17,7 @@ struct ThreadActorBinding {
 };
 
 thread_local ThreadActorBinding g_thread_actor_binding{};
+std::atomic<std::uint64_t> g_next_node_id{1};
 
 [[nodiscard]] std::size_t hash_combine(std::size_t seed, std::size_t value) noexcept {
     seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
@@ -31,6 +34,19 @@ void apply_outbox_messages(
 }
 
 } // namespace
+
+ActorSystem::ActorSystem()
+    : local_node_id_(allocate_local_node_id()) {
+    node_name_ = "eta@node-" + std::to_string(local_node_id_);
+    node_transport_ = std::make_unique<NodeTransport>(
+        local_node_id_,
+        [this](const types::Pid& pid, BinaryMessage payload) {
+            return deliver_remote_payload(pid, std::move(payload));
+        });
+    if (node_transport_) {
+        (void)node_transport_->configure(node_name_, node_cookie_, nullptr);
+    }
+}
 
 ActorSystem::~ActorSystem() {
     shutdown();
@@ -133,13 +149,135 @@ std::optional<types::Pid> ActorSystem::current_pid() const {
 }
 
 bool ActorSystem::send(const types::Pid& pid, BinaryMessage message) {
+    return send_checked(pid, std::move(message)) == SendStatus::Delivered;
+}
+
+ActorSystem::SendStatus ActorSystem::send_checked(const types::Pid& pid, BinaryMessage message) {
+    if (pid.node_id == local_node_id_) {
+        std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
+        SendStatus status = SendStatus::NoSuchPid;
+        {
+            std::lock_guard lock(mutex_);
+            auto process = lookup_process_unsafe(pid);
+            if (!process) {
+                status = SendStatus::NoSuchPid;
+            } else if (!process->alive.load(std::memory_order_acquire)) {
+                status = SendStatus::DeadPid;
+            } else {
+                outbox.emplace_back(
+                    process->mailbox,
+                    Message::make_payload(std::move(message)));
+                status = SendStatus::Delivered;
+            }
+        }
+        apply_outbox_messages(outbox);
+        return status;
+    }
+
+    if (!node_transport_) {
+        return SendStatus::NoRoute;
+    }
+
+    auto sender = current_pid();
+    const types::Pid from = sender.value_or(types::Pid{
+        .node_id = local_node_id_,
+        .actor_id = 0,
+        .incarnation = 0});
+    auto result = node_transport_->send_remote(from, pid, std::move(message));
+    switch (result.code) {
+        case NodeTransport::SendResultCode::Delivered:
+            return SendStatus::Delivered;
+        case NodeTransport::SendResultCode::NoRoute:
+            return SendStatus::NoRoute;
+        case NodeTransport::SendResultCode::TransportError:
+            return SendStatus::TransportError;
+    }
+    return SendStatus::TransportError;
+}
+
+std::string ActorSystem::node_name() const {
+    std::lock_guard lock(mutex_);
+    return node_name_;
+}
+
+std::uint64_t ActorSystem::local_node_id() const noexcept {
+    return local_node_id_;
+}
+
+bool ActorSystem::configure_node(
+    std::string node_name,
+    std::string cookie,
+    std::string* error_message) {
+    if (node_name.empty()) {
+        if (error_message) *error_message = "node name must be non-empty";
+        return false;
+    }
+    if (!node_transport_) {
+        if (error_message) *error_message = "node transport is unavailable";
+        return false;
+    }
+
+    if (!node_transport_->configure(node_name, cookie, error_message)) {
+        return false;
+    }
+
+    {
+        std::lock_guard lock(mutex_);
+        node_name_ = std::move(node_name);
+        node_cookie_ = std::move(cookie);
+    }
+    return true;
+}
+
+bool ActorSystem::node_listen(
+    std::string endpoint,
+    std::string* error_message) {
+    if (!node_transport_) {
+        if (error_message) *error_message = "node transport is unavailable";
+        return false;
+    }
+    return node_transport_->listen(std::move(endpoint), error_message);
+}
+
+bool ActorSystem::node_connect(
+    std::string endpoint,
+    std::string* error_message) {
+    if (!node_transport_) {
+        if (error_message) *error_message = "node transport is unavailable";
+        return false;
+    }
+    return node_transport_->connect(std::move(endpoint), error_message);
+}
+
+bool ActorSystem::disconnect_node(std::string_view node_name) {
+    if (!node_transport_) return false;
+    return node_transport_->disconnect_node(node_name);
+}
+
+std::vector<ActorSystem::ConnectedNode> ActorSystem::connected_nodes() const {
+    if (!node_transport_) return {};
+    const auto nodes = node_transport_->connected_nodes();
+    std::vector<ConnectedNode> out;
+    out.reserve(nodes.size());
+    for (const auto& node : nodes) {
+        out.push_back(ConnectedNode{
+            .node_id = node.node_id,
+            .node_name = node.node_name,
+            .endpoint = node.endpoint});
+    }
+    return out;
+}
+
+bool ActorSystem::deliver_remote_payload(const types::Pid& pid, BinaryMessage payload) {
+    if (pid.node_id != local_node_id_) return false;
+
     std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
     bool queued = false;
     {
         std::lock_guard lock(mutex_);
         queued = enqueue_message_unsafe(
             pid,
-            Message::make_payload(std::move(message)),
+            Message::make_payload(std::move(payload)),
             outbox);
     }
     apply_outbox_messages(outbox);
@@ -420,6 +558,9 @@ std::vector<std::string> ActorSystem::registered_names() const {
 
 void ActorSystem::shutdown() {
     if (shutting_down_.exchange(true, std::memory_order_acq_rel)) return;
+    if (node_transport_) {
+        node_transport_->shutdown();
+    }
 
     std::vector<std::shared_ptr<ActorProcess>> processes;
     {
@@ -462,7 +603,7 @@ std::size_t ActorSystem::PidHasher::operator()(const types::Pid& pid) const noex
 
 types::Pid ActorSystem::allocate_pid_unsafe() {
     types::Pid pid;
-    pid.node_id = 0;
+    pid.node_id = local_node_id_;
     pid.actor_id = next_actor_id_.fetch_add(1, std::memory_order_relaxed);
     pid.incarnation = 1;
     return pid;
@@ -591,6 +732,14 @@ bool ActorSystem::is_normal_exit(const ExitReason& reason) {
 ActorSystem::ExitReason ActorSystem::normalize_down_reason(const ExitReason& reason) {
     if (reason.kind != ExitReason::Kind::Custom) return reason;
     return reason;
+}
+
+std::uint64_t ActorSystem::allocate_local_node_id() {
+    auto node_id = g_next_node_id.fetch_add(1, std::memory_order_relaxed);
+    if (node_id == 0) {
+        node_id = g_next_node_id.fetch_add(1, std::memory_order_relaxed);
+    }
+    return node_id;
 }
 
 } // namespace eta::runtime::actor

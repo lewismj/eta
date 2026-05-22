@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <memory>
@@ -19,6 +20,8 @@
 
 namespace eta::runtime::actor {
 
+class NodeTransport;
+
 /**
  * @brief Runtime owner for local actors and their mailboxes.
  */
@@ -31,7 +34,21 @@ public:
     using MonitorRef = std::uint64_t;
     using ActorEntry = std::function<void(const types::Pid&)>;
 
-    ActorSystem() = default;
+    enum class SendStatus : std::uint8_t {
+        Delivered,
+        NoSuchPid,
+        DeadPid,
+        NoRoute,
+        TransportError,
+    };
+
+    struct ConnectedNode {
+        std::uint64_t node_id{0};
+        std::string node_name{};
+        std::string endpoint{};
+    };
+
+    ActorSystem();
     ~ActorSystem();
 
     ActorSystem(const ActorSystem&) = delete;
@@ -64,6 +81,53 @@ public:
      * @brief Send a binary payload to one actor mailbox.
      */
     [[nodiscard]] bool send(const types::Pid& pid, BinaryMessage message);
+
+    /**
+     * @brief Send one payload and return delivery status.
+     */
+    [[nodiscard]] SendStatus send_checked(const types::Pid& pid, BinaryMessage message);
+
+    /**
+     * @brief Return local node name used for distributed transport.
+     */
+    [[nodiscard]] std::string node_name() const;
+
+    /**
+     * @brief Return local node id used in PIDs.
+     */
+    [[nodiscard]] std::uint64_t local_node_id() const noexcept;
+
+    /**
+     * @brief Configure local node identity and cookie for transport handshakes.
+     */
+    [[nodiscard]] bool configure_node(
+        std::string node_name,
+        std::string cookie,
+        std::string* error_message = nullptr);
+
+    /**
+     * @brief Start listening for one remote node on @p endpoint.
+     */
+    [[nodiscard]] bool node_listen(
+        std::string endpoint,
+        std::string* error_message = nullptr);
+
+    /**
+     * @brief Connect to one remote node endpoint.
+     */
+    [[nodiscard]] bool node_connect(
+        std::string endpoint,
+        std::string* error_message = nullptr);
+
+    /**
+     * @brief Disconnect one node by name.
+     */
+    [[nodiscard]] bool disconnect_node(std::string_view node_name);
+
+    /**
+     * @brief Snapshot connected node metadata.
+     */
+    [[nodiscard]] std::vector<ConnectedNode> connected_nodes() const;
 
     /**
      * @brief Set trap-exit mode for one actor.
@@ -165,6 +229,8 @@ private:
         const types::Pid& pid,
         Message message,
         std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox) const;
+    [[nodiscard]] bool deliver_remote_payload(const types::Pid& pid, BinaryMessage payload);
+    [[nodiscard]] static std::uint64_t allocate_local_node_id();
     void erase_monitor_unsafe(MonitorRef ref);
     void terminate_actor_chain_unsafe(
         const types::Pid& initial_pid,
@@ -178,6 +244,10 @@ private:
     std::unordered_map<MonitorRef, MonitorSubscription> monitor_refs_{};
     std::unordered_map<std::string, types::Pid> registry_by_name_{};
     std::unordered_map<types::Pid, std::string, PidHasher> registry_by_pid_{};
+    std::uint64_t local_node_id_{0};
+    std::string node_name_{"nonode@local"};
+    std::string node_cookie_{};
+    std::unique_ptr<NodeTransport> node_transport_{};
     std::atomic<std::uint64_t> next_actor_id_{1};
     std::atomic<MonitorRef> next_monitor_ref_{1};
     std::atomic<bool> shutting_down_{false};

@@ -141,6 +141,7 @@ namespace {
     if (name == "%actor-alive?") return "(%actor-alive? pid)";
     if (name == "%actor-spawn") return "(%actor-spawn thunk)";
     if (name == "%actor-send") return "(%actor-send pid payload)";
+    if (name == "%actor-send-checked") return "(%actor-send-checked pid payload)";
     if (name == "%actor-receive") return "(%actor-receive matcher timeout)";
     if (name == "%actor-mailbox-len") return "(%actor-mailbox-len)";
     if (name == "%actor-trap-exit!") return "(%actor-trap-exit! enabled?)";
@@ -154,6 +155,11 @@ namespace {
     if (name == "%actor-unregister") return "(%actor-unregister name)";
     if (name == "%actor-whereis") return "(%actor-whereis name)";
     if (name == "%actor-registered") return "(%actor-registered)";
+    if (name == "%actor-node-name") return "(%actor-node-name)";
+    if (name == "%actor-node-listen") return "(%actor-node-listen endpoint [key value] ...)";
+    if (name == "%actor-node-connect") return "(%actor-node-connect endpoint [key value] ...)";
+    if (name == "%actor-nodes") return "(%actor-nodes)";
+    if (name == "%actor-disconnect-node") return "(%actor-disconnect-node node-name)";
     return {};
 }
 

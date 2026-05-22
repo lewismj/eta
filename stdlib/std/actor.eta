@@ -7,6 +7,7 @@
     alive?
     spawn
     send
+    send/checked
     !
     trap-exit!
     link
@@ -36,6 +37,9 @@
 
     (defun send (pid payload)
       (%actor-send pid payload))
+
+    (defun send/checked (pid payload)
+      (%actor-send-checked pid payload))
 
     (define ! send)
     (define trap-exit! %actor-trap-exit!)

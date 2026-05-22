@@ -88,6 +88,7 @@ tutorials and longer examples see the [Language Guide](language_guide.md).
 ### Concurrency and networking
 
 - [std.actor](stdlib/actor.md) - Local PID/mailbox actor runtime wrappers.
+- [std.actor.node](stdlib/actor-node.md) - Distributed node handshake/routing for actor PIDs over NNG.
 - [std.actor.gen_server](stdlib/actor-gen-server.md) - OTP-style server behaviour on top of `std.actor`.
 - [std.actor.supervisor](stdlib/actor-supervisor.md) - Local actor supervisor helpers (strategies, child specs, restart intensity).
 - [std.net](stdlib/net.md) - Networking patterns over NNG.

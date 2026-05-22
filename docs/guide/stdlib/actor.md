@@ -8,8 +8,8 @@ Local actor runtime wrappers over `%actor-*` primitives.
 (import std.actor)
 ```
 
-Use `std.actor` for local PID and mailbox messaging. Use `std.net` for
-transport-level NNG socket workflows.
+Use `std.actor` for local PID and mailbox messaging. Use `std.actor.node`
+for distributed actor-node links and `std.net` for transport-level NNG sockets.
 
 | Symbol | Description |
 | --- | --- |
@@ -18,6 +18,7 @@ transport-level NNG socket workflows.
 | `(alive? pid)` | Return `#t` when `pid` is still alive in the local actor system. |
 | `(spawn thunk)` | Spawn a new actor running zero-argument `thunk`; returns PID. |
 | `(send pid payload)` | Send one message to `pid`; returns `payload` on success or `#f`. |
+| `(send/checked pid payload)` | Send with delivery status: `'ok`, `'no-process`, `'no-route`, or `'transport-error`. |
 | `(! pid payload)` | Alias for `send`. |
 | `(trap-exit! enabled?)` | Enable or disable trap-exit mode for the current actor. |
 | `(link pid)` | Link the current actor with `pid`. |

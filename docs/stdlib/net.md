@@ -4,6 +4,8 @@ High-level networking patterns built over NNG transport primitives.
 Available only when Eta is built with `-DETA_BUILD_NNG=ON`.
 
 For local PID and mailbox messaging inside one Eta runtime, use `std.actor`.
+For distributed actor nodes over the same NNG transport layer, use
+`std.actor.node`.
 
 ```scheme
 (import std.net)
@@ -19,6 +21,7 @@ For local PID and mailbox messaging inside one Eta runtime, use `std.actor`.
 | `(pub-sub url topic handler)` | Subscribe to `topic` and dispatch each message to `handler`. |
 | `(survey url request timeout-ms)` | Survey several responders, collect replies until timeout. |
 
-`std.actor` uses `monitor`/`demonitor` for PID monitoring. `std.net` exposes
-`nng-monitor`/`nng-demonitor` to keep socket monitoring explicit.
+`std.actor` / `std.actor.node` operate on actor PIDs and node handshakes.
+`std.net` exposes raw socket workflows and explicit socket monitoring via
+`nng-monitor` / `nng-demonitor`.
 

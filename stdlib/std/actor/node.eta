@@ -1,0 +1,21 @@
+;;; std/actor/node.eta - Distributed actor node transport helpers.
+
+(module std.actor.node
+  (export
+    node-name
+    node-listen
+    node-connect
+    nodes
+    disconnect-node)
+  (begin
+
+    (define node-name %actor-node-name)
+    (define nodes %actor-nodes)
+
+    (defun node-listen (endpoint . opts)
+      (apply %actor-node-listen endpoint opts))
+
+    (defun node-connect (endpoint . opts)
+      (apply %actor-node-connect endpoint opts))
+
+    (define disconnect-node %actor-disconnect-node)))

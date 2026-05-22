@@ -61,6 +61,7 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/value_formatter.cpp
         src/eta/runtime/actor/mailbox.cpp
         src/eta/runtime/actor/actor_system.cpp
+        src/eta/runtime/actor/node_transport.cpp
         src/eta/runtime/csv_builtins.cpp
         src/eta/runtime/regex_builtins.cpp
         src/eta/runtime/json_builtins.cpp

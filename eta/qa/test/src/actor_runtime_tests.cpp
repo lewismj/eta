@@ -1,12 +1,21 @@
 #include <boost/test/unit_test.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <sstream>
+#include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 
 #include "eta/interpreter/module_path.h"
+#include "eta/nng/wire_format.h"
+#include "eta/runtime/actor/actor_system.h"
+#include "eta/runtime/factory.h"
+#include "eta/runtime/memory/heap.h"
+#include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/nanbox.h"
 #include "eta/session/driver.h"
 
@@ -64,6 +73,100 @@ struct ActorHarness {
         return *decoded;
     }
 };
+
+[[nodiscard]] std::string unique_inproc_endpoint() {
+    const auto stamp =
+        std::chrono::steady_clock::now().time_since_epoch().count();
+    return "inproc://eta_actor_distribution_" + std::to_string(stamp);
+}
+
+template <typename Predicate>
+[[nodiscard]] bool wait_until(
+    Predicate&& predicate,
+    std::chrono::milliseconds timeout = std::chrono::milliseconds(1500)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (predicate()) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return predicate();
+}
+
+std::vector<std::uint8_t> encode_fixnum_payload(
+    eta::runtime::memory::heap::Heap& heap,
+    eta::runtime::memory::intern::InternTable& intern_table,
+    std::int64_t value) {
+    auto fixnum = eta::runtime::memory::factory::make_fixnum(heap, value);
+    BOOST_REQUIRE(fixnum.has_value());
+    auto payload = eta::nng::serialize_binary_strict(*fixnum, heap, intern_table);
+    BOOST_REQUIRE(payload.has_value());
+    return std::move(*payload);
+}
+
+std::vector<std::uint8_t> encode_symbol_payload(
+    eta::runtime::memory::heap::Heap& heap,
+    eta::runtime::memory::intern::InternTable& intern_table,
+    std::string_view symbol_name) {
+    auto symbol = eta::runtime::memory::factory::make_symbol(intern_table, std::string(symbol_name));
+    BOOST_REQUIRE(symbol.has_value());
+    auto payload = eta::nng::serialize_binary_strict(*symbol, heap, intern_table);
+    BOOST_REQUIRE(payload.has_value());
+    return std::move(*payload);
+}
+
+std::vector<std::uint8_t> encode_pid_payload(
+    eta::runtime::memory::heap::Heap& heap,
+    eta::runtime::memory::intern::InternTable& intern_table,
+    const eta::runtime::types::Pid& pid) {
+    auto pid_value = eta::runtime::memory::factory::make_pid(heap, pid);
+    BOOST_REQUIRE(pid_value.has_value());
+    auto payload = eta::nng::serialize_binary_strict(*pid_value, heap, intern_table);
+    BOOST_REQUIRE(payload.has_value());
+    return std::move(*payload);
+}
+
+std::optional<std::int64_t> decode_fixnum_payload(
+    std::span<const std::uint8_t> payload,
+    eta::runtime::memory::heap::Heap& heap,
+    eta::runtime::memory::intern::InternTable& intern_table) {
+    auto decoded = eta::nng::deserialize_binary(payload, heap, intern_table);
+    if (!decoded.has_value()) return std::nullopt;
+    auto value = eta::runtime::nanbox::ops::decode<std::int64_t>(*decoded);
+    if (!value.has_value()) return std::nullopt;
+    return *value;
+}
+
+std::optional<std::string> decode_symbol_payload(
+    std::span<const std::uint8_t> payload,
+    eta::runtime::memory::heap::Heap& heap,
+    eta::runtime::memory::intern::InternTable& intern_table) {
+    auto decoded = eta::nng::deserialize_binary(payload, heap, intern_table);
+    if (!decoded.has_value()) return std::nullopt;
+    if (!eta::runtime::nanbox::ops::is_boxed(*decoded)
+        || eta::runtime::nanbox::ops::tag(*decoded) != eta::runtime::nanbox::Tag::Symbol) {
+        return std::nullopt;
+    }
+    auto text = intern_table.get_string(eta::runtime::nanbox::ops::payload(*decoded));
+    if (!text.has_value()) return std::nullopt;
+    return std::string(*text);
+}
+
+std::optional<eta::runtime::types::Pid> decode_pid_payload(
+    std::span<const std::uint8_t> payload,
+    eta::runtime::memory::heap::Heap& heap,
+    eta::runtime::memory::intern::InternTable& intern_table) {
+    auto decoded = eta::nng::deserialize_binary(payload, heap, intern_table);
+    if (!decoded.has_value()) return std::nullopt;
+    if (!eta::runtime::nanbox::ops::is_boxed(*decoded)
+        || eta::runtime::nanbox::ops::tag(*decoded) != eta::runtime::nanbox::Tag::HeapObject) {
+        return std::nullopt;
+    }
+    auto* pid = heap.try_get_as<
+        eta::runtime::memory::heap::ObjectKind::Pid,
+        eta::runtime::types::Pid>(eta::runtime::nanbox::ops::payload(*decoded));
+    if (!pid) return std::nullopt;
+    return *pid;
+}
 
 } // namespace
 
@@ -617,6 +720,118 @@ BOOST_AUTO_TEST_CASE(actor_supervisor_restart_intensity_exits_with_shutdown_reas
          (not maybe-third))))
 )eta");
     BOOST_TEST(result == eta::runtime::nanbox::True);
+}
+
+BOOST_AUTO_TEST_CASE(actor_distribution_transport_handshake_and_remote_send_round_trip) {
+    using eta::runtime::actor::ActorSystem;
+    using eta::runtime::memory::heap::Heap;
+    using eta::runtime::memory::intern::InternTable;
+
+    ActorSystem server;
+    ActorSystem client;
+
+    auto server_pid = server.register_current_thread_actor();
+    auto client_pid = client.register_current_thread_actor();
+    BOOST_REQUIRE(server_pid.has_value());
+    BOOST_REQUIRE(client_pid.has_value());
+
+    std::string error;
+    BOOST_REQUIRE(server.configure_node("eta@server", "cookie-123", &error));
+    BOOST_REQUIRE(client.configure_node("eta@client", "cookie-123", &error));
+
+    const auto endpoint = unique_inproc_endpoint();
+    BOOST_REQUIRE(server.node_listen(endpoint, &error));
+    BOOST_REQUIRE(client.node_connect(endpoint, &error));
+
+    const bool handshake_complete = wait_until([&]() {
+        return server.connected_nodes().size() == 1u
+            && client.connected_nodes().size() == 1u;
+    });
+    BOOST_REQUIRE(handshake_complete);
+
+    Heap send_heap(4u * 1024u * 1024u);
+    InternTable send_intern;
+    auto to_server = encode_fixnum_payload(send_heap, send_intern, 42);
+
+    const auto first_status = client.send_checked(*server_pid, std::move(to_server));
+    BOOST_TEST(
+        static_cast<int>(first_status)
+        == static_cast<int>(ActorSystem::SendStatus::Delivered));
+
+    auto received_server = server.receive(*server_pid, std::chrono::milliseconds(1000));
+    BOOST_REQUIRE(received_server.has_value());
+    BOOST_TEST(
+        static_cast<int>(received_server->kind)
+        == static_cast<int>(ActorSystem::Message::Kind::Payload));
+
+    Heap recv_heap(4u * 1024u * 1024u);
+    InternTable recv_intern;
+    auto decoded_server = decode_fixnum_payload(
+        std::span<const std::uint8_t>(received_server->payload),
+        recv_heap,
+        recv_intern);
+    BOOST_REQUIRE(decoded_server.has_value());
+    BOOST_TEST(*decoded_server == 42);
+
+    auto pid_payload = encode_pid_payload(send_heap, send_intern, *client_pid);
+    const auto second_status = client.send_checked(*server_pid, std::move(pid_payload));
+    BOOST_TEST(
+        static_cast<int>(second_status)
+        == static_cast<int>(ActorSystem::SendStatus::Delivered));
+
+    auto pid_message = server.receive(*server_pid, std::chrono::milliseconds(1000));
+    BOOST_REQUIRE(pid_message.has_value());
+    auto reply_target = decode_pid_payload(
+        std::span<const std::uint8_t>(pid_message->payload),
+        recv_heap,
+        recv_intern);
+    BOOST_REQUIRE(reply_target.has_value());
+    BOOST_TEST(reply_target->node_id == client_pid->node_id);
+    BOOST_TEST(reply_target->actor_id == client_pid->actor_id);
+    BOOST_TEST(reply_target->incarnation == client_pid->incarnation);
+
+    auto ack_payload = encode_symbol_payload(send_heap, send_intern, "pong");
+    BOOST_TEST(server.bind_current_thread_pid(*server_pid));
+    const auto reply_status = server.send_checked(*reply_target, std::move(ack_payload));
+    BOOST_TEST(
+        static_cast<int>(reply_status)
+        == static_cast<int>(ActorSystem::SendStatus::Delivered));
+    server.unbind_current_thread_pid();
+
+    auto received_client = client.receive(*client_pid, std::chrono::milliseconds(1000));
+    BOOST_REQUIRE(received_client.has_value());
+    auto decoded_client = decode_symbol_payload(
+        std::span<const std::uint8_t>(received_client->payload),
+        recv_heap,
+        recv_intern);
+    BOOST_REQUIRE(decoded_client.has_value());
+    BOOST_TEST(*decoded_client == "pong");
+}
+
+BOOST_AUTO_TEST_CASE(actor_distribution_transport_rejects_bad_cookie) {
+    using eta::runtime::actor::ActorSystem;
+
+    ActorSystem server;
+    ActorSystem client;
+
+    auto server_pid = server.register_current_thread_actor();
+    auto client_pid = client.register_current_thread_actor();
+    BOOST_REQUIRE(server_pid.has_value());
+    BOOST_REQUIRE(client_pid.has_value());
+
+    std::string error;
+    BOOST_REQUIRE(server.configure_node("eta@server", "cookie-good", &error));
+    BOOST_REQUIRE(client.configure_node("eta@client", "cookie-bad", &error));
+
+    const auto endpoint = unique_inproc_endpoint();
+    BOOST_REQUIRE(server.node_listen(endpoint, &error));
+    const bool connected = client.node_connect(endpoint, &error);
+    BOOST_TEST(!connected);
+
+    const bool no_nodes = wait_until([&]() {
+        return server.connected_nodes().empty() && client.connected_nodes().empty();
+    });
+    BOOST_TEST(no_nodes);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -107,6 +107,88 @@ std::expected<std::string, RuntimeError> decode_registry_name(
     return std::string(*name);
 }
 
+std::expected<std::string, RuntimeError> decode_text_value(
+    InternTable& intern_table,
+    LispVal value,
+    std::string_view op_name,
+    std::string_view value_name) {
+    if (!ops::is_boxed(value)) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            std::string(op_name) + ": expected symbol or string for "
+                + std::string(value_name)}});
+    }
+
+    const auto tag = ops::tag(value);
+    if (tag != Tag::Symbol && tag != Tag::String) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            std::string(op_name) + ": expected symbol or string for "
+                + std::string(value_name)}});
+    }
+
+    auto text = intern_table.get_string(ops::payload(value));
+    if (!text.has_value()) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            std::string(op_name) + ": invalid " + std::string(value_name)}});
+    }
+    return std::string(*text);
+}
+
+struct NodeOptions {
+    std::optional<std::string> node_name{};
+    std::optional<std::string> cookie{};
+};
+
+std::expected<NodeOptions, RuntimeError> decode_node_options(
+    InternTable& intern_table,
+    std::span<const LispVal> args,
+    std::size_t start_index,
+    std::string_view op_name) {
+    NodeOptions options;
+    if (args.size() <= start_index) return options;
+
+    if (((args.size() - start_index) % 2u) != 0u) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            std::string(op_name) + ": expected key/value option pairs"}});
+    }
+
+    for (std::size_t index = start_index; index < args.size(); index += 2u) {
+        auto key = decode_registry_name(intern_table, args[index], op_name);
+        if (!key.has_value()) return std::unexpected(key.error());
+        auto value = decode_text_value(
+            intern_table,
+            args[index + 1u],
+            op_name,
+            "option value");
+        if (!value.has_value()) return std::unexpected(value.error());
+
+        if (*key == "name" || *key == "node-name") {
+            options.node_name = std::move(*value);
+            continue;
+        }
+        if (*key == "cookie") {
+            options.cookie = std::move(*value);
+            continue;
+        }
+
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            std::string(op_name) + ": unsupported option '" + *key + "'"}});
+    }
+
+    if (options.node_name.has_value() != options.cookie.has_value()) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::TypeError,
+            std::string(op_name)
+                + ": provide both 'node-name (or 'name) and 'cookie when overriding node identity"}});
+    }
+
+    return options;
+}
+
 std::expected<std::optional<std::chrono::milliseconds>, RuntimeError> decode_receive_timeout(
     Heap& heap,
     InternTable& intern_table,
@@ -244,6 +326,26 @@ std::expected<LispVal, RuntimeError> decode_actor_message(
         "actor message decode failed"}});
 }
 
+std::expected<LispVal, RuntimeError> encode_send_status(
+    actor::ActorSystem::SendStatus status,
+    InternTable& intern_table) {
+    switch (status) {
+        case actor::ActorSystem::SendStatus::Delivered:
+            return memory::factory::make_symbol(intern_table, "ok");
+        case actor::ActorSystem::SendStatus::NoSuchPid:
+        case actor::ActorSystem::SendStatus::DeadPid:
+            return memory::factory::make_symbol(intern_table, "no-process");
+        case actor::ActorSystem::SendStatus::NoRoute:
+            return memory::factory::make_symbol(intern_table, "no-route");
+        case actor::ActorSystem::SendStatus::TransportError:
+            return memory::factory::make_symbol(intern_table, "transport-error");
+    }
+
+    return std::unexpected(RuntimeError{VMError{
+        RuntimeErrorCode::InternalError,
+        "actor send status encode failed"}});
+}
+
 std::expected<DecodedExitSignal, RuntimeError> decode_exit_signal_reason(
     Heap& heap,
     InternTable& intern_table,
@@ -363,6 +465,42 @@ void PrimReg::register_actor_bridge() {
 
             const bool sent = vm->actor_system()->send(target_pid, std::move(*payload));
             return sent ? args[1] : nanbox::False;
+        });
+
+    env.register_builtin("%actor-send-checked", 2, false,
+        [&heap, &intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm || !vm->actor_system()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "%actor-send-checked: actor system is not available"}});
+            }
+
+            types::Pid target_pid{};
+            if (auto pid = try_decode_pid(heap, args[0]); pid.has_value()) {
+                target_pid = *pid;
+            } else {
+                auto name = decode_registry_name(intern_table, args[0], "%actor-send-checked");
+                if (!name.has_value()) return std::unexpected(name.error());
+                auto resolved = vm->actor_system()->whereis(*name);
+                if (!resolved.has_value()) {
+                    auto status = memory::factory::make_symbol(intern_table, "no-process");
+                    if (!status.has_value()) return std::unexpected(status.error());
+                    return *status;
+                }
+                target_pid = *resolved;
+            }
+
+            auto payload = eta::nng::serialize_binary_strict(args[1], heap, intern_table);
+            if (!payload.has_value()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError,
+                    "%actor-send-checked: payload is not serializable: " + payload.error()}});
+            }
+
+            const auto status = vm->actor_system()->send_checked(target_pid, std::move(*payload));
+            auto encoded = encode_send_status(status, intern_table);
+            if (!encoded.has_value()) return std::unexpected(encoded.error());
+            return *encoded;
         });
 
     env.register_builtin("%actor-receive", 2, false,
@@ -599,6 +737,162 @@ void PrimReg::register_actor_bridge() {
             }
 
             return make_list(heap, std::span<const LispVal>(symbols));
+        });
+
+    env.register_builtin("%actor-node-name", 0, false,
+        [&heap, &intern_table, vm](Args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm || !vm->actor_system()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "%actor-node-name: actor system is not available"}});
+            }
+
+            return memory::factory::make_string(
+                heap,
+                intern_table,
+                vm->actor_system()->node_name());
+        });
+
+    env.register_builtin("%actor-node-listen", 1, true,
+        [&intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm || !vm->actor_system()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "%actor-node-listen: actor system is not available"}});
+            }
+
+            auto endpoint = decode_text_value(
+                intern_table,
+                args[0],
+                "%actor-node-listen",
+                "endpoint");
+            if (!endpoint.has_value()) return std::unexpected(endpoint.error());
+
+            auto options = decode_node_options(
+                intern_table,
+                args,
+                1u,
+                "%actor-node-listen");
+            if (!options.has_value()) return std::unexpected(options.error());
+
+            if (options->node_name.has_value()) {
+                std::string configure_error;
+                if (!vm->actor_system()->configure_node(
+                        *options->node_name,
+                        *options->cookie,
+                        &configure_error)) {
+                    return nanbox::False;
+                }
+            }
+
+            std::string error_message;
+            const bool ok = vm->actor_system()->node_listen(
+                *endpoint,
+                &error_message);
+            return ok ? nanbox::True : nanbox::False;
+        });
+
+    env.register_builtin("%actor-node-connect", 1, true,
+        [&intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm || !vm->actor_system()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "%actor-node-connect: actor system is not available"}});
+            }
+
+            auto endpoint = decode_text_value(
+                intern_table,
+                args[0],
+                "%actor-node-connect",
+                "endpoint");
+            if (!endpoint.has_value()) return std::unexpected(endpoint.error());
+
+            auto options = decode_node_options(
+                intern_table,
+                args,
+                1u,
+                "%actor-node-connect");
+            if (!options.has_value()) return std::unexpected(options.error());
+
+            if (options->node_name.has_value()) {
+                std::string configure_error;
+                if (!vm->actor_system()->configure_node(
+                        *options->node_name,
+                        *options->cookie,
+                        &configure_error)) {
+                    return nanbox::False;
+                }
+            }
+
+            std::string error_message;
+            const bool ok = vm->actor_system()->node_connect(
+                *endpoint,
+                &error_message);
+            return ok ? nanbox::True : nanbox::False;
+        });
+
+    env.register_builtin("%actor-nodes", 0, false,
+        [&heap, &intern_table, vm](Args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm || !vm->actor_system()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "%actor-nodes: actor system is not available"}});
+            }
+
+            const auto nodes = vm->actor_system()->connected_nodes();
+            auto roots = heap.make_external_root_frame();
+            std::vector<LispVal> entries;
+            entries.reserve(nodes.size());
+
+            for (const auto& node : nodes) {
+                auto name = memory::factory::make_string(
+                    heap,
+                    intern_table,
+                    node.node_name);
+                if (!name.has_value()) return std::unexpected(name.error());
+                roots.push(*name);
+
+                auto node_id = memory::factory::make_fixnum(
+                    heap,
+                    static_cast<std::int64_t>(node.node_id));
+                if (!node_id.has_value()) return std::unexpected(node_id.error());
+                roots.push(*node_id);
+
+                auto endpoint = memory::factory::make_string(
+                    heap,
+                    intern_table,
+                    node.endpoint);
+                if (!endpoint.has_value()) return std::unexpected(endpoint.error());
+                roots.push(*endpoint);
+
+                std::array<LispVal, 3> node_values{*name, *node_id, *endpoint};
+                auto node_entry = make_list(heap, node_values);
+                if (!node_entry.has_value()) return std::unexpected(node_entry.error());
+                roots.push(*node_entry);
+                entries.push_back(*node_entry);
+            }
+
+            return make_list(heap, std::span<const LispVal>(entries));
+        });
+
+    env.register_builtin("%actor-disconnect-node", 1, false,
+        [&intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm || !vm->actor_system()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "%actor-disconnect-node: actor system is not available"}});
+            }
+
+            auto node_name = decode_text_value(
+                intern_table,
+                args[0],
+                "%actor-disconnect-node",
+                "node name");
+            if (!node_name.has_value()) return std::unexpected(node_name.error());
+
+            return vm->actor_system()->disconnect_node(*node_name)
+                ? nanbox::True
+                : nanbox::False;
         });
 }
 

@@ -205,13 +205,13 @@ Deferred but planned:
 | Scheduler | `eta/core/src/eta/runtime/actor/scheduler.{h,cpp}` | NEW |
 | Links / monitors | `eta/core/src/eta/runtime/actor/failure.{h,cpp}` | NEW |
 | Registry | `eta/core/src/eta/runtime/actor/registry.{h,cpp}` | NEW |
-| Distribution bridge | `eta/core/src/eta/runtime/actor/node_transport.{h,cpp}` | NEW (M5) |
+| Distribution bridge | `eta/core/src/eta/runtime/actor/node_transport.{h,cpp}` | NEW (M6.1) |
 | Builtin primitives | `eta/core/src/eta/runtime/actor/actor_primitives.{h,cpp}` | NEW |
 | Builtin catalog | `eta/core/src/eta/runtime/builtin_catalog.cpp` | EDIT |
 | Builtin metadata | `eta/core/src/eta/runtime/builtin_metadata.cpp` | EDIT |
 | Heap object kinds | `eta/core/src/eta/runtime/types/types.h` and heap factory files | EDIT for `Pid`, `MonitorRef`, possibly `ActorHandle` |
 | Driver wiring | `eta/session/*` / driver setup files | EDIT to allocate one `ActorSystem` per interpreter/session |
-| nng package bridge | `packages/stdlib/native/nng/src/eta/nng/*` | EDIT in M5 only, for remote transport bridge |
+| nng package bridge | `packages/stdlib/native/nng/src/eta/nng/*` | EDIT in M6.1 only, for remote transport bridge |
 
 ### 4.2 PID representation
 
@@ -932,7 +932,7 @@ Cookbook examples:
 | `cookbook/concurrency/monitor-down.eta` | `spawn-monitor`, `DOWN` messages. |
 | `cookbook/concurrency/supervisor-tree.eta` | Restart strategies and intensity. |
 | `cookbook/concurrency/gen-server-counter.eta` | OTP-style counter service. |
-| `cookbook/concurrency/distributed-actors.eta` | Remote send over nng (M5). |
+| `cookbook/concurrency/distributed-actors.eta` | Remote send over nng (M6.1). |
 
 ---
 
@@ -985,13 +985,20 @@ New tests under `stdlib/tests/actor*.test.eta`:
 4. Link storm: tree of 10,000 linked actors exits with bounded time.
 5. Supervisor restart storm hits restart-intensity gate reliably.
 
-### 14.4 Distributed tests (M5)
+### 14.4 Distributed transport tests (M6.1)
 
 1. Start two Eta nodes on loopback nng endpoints.
-2. Send local → remote and remote → local messages.
-3. Serialize PID inside message and reply to it.
-4. Node disconnect produces `nodedown` / monitor messages.
-5. Bad cookie rejects connection.
+2. Successful handshake includes node name and cookie check.
+3. Send local -> remote and remote -> local messages.
+4. Serialize PID inside message and reply to it.
+5. Bad cookie rejects connection and does not add a connected node entry.
+
+### 14.5 Distributed monitor/failure tests (M6.2)
+
+1. Node monitor receives `nodeup` exactly once per new connection.
+2. Node monitor receives `nodedown` on disconnect and on bad-cookie reconnect attempts.
+3. Remote process monitor receives one `DOWN` for normal exit, error exit, and node loss.
+4. `demonitor` flush option prevents stale `DOWN` delivery after local cancel.
 
 ---
 
@@ -1062,24 +1069,39 @@ restart intensity tests pass.
 1. Implement `std.actor.gen_server`.
 2. Add `gen-server-counter` cookbook.
 3. Add `std.actor.gen_event` if `gen_server` stabilises quickly;
-   otherwise defer to M6.
+   otherwise defer to M6.2.
 4. Document callback contracts and message protocols.
 
 Gate: `gen-server-call` / `cast` / stop / terminate callback tests pass.
 
-### M6 — Distribution bridge over nng (3–4 weeks)
+### M6.1 — Distribution transport bridge over nng (2–3 weeks)
 
 1. Add `NodeTransport` using nng sockets for node-to-node actor envelopes.
-2. Add node name, cookie, handshake, connected node table.
-3. Serialize PIDs in message payloads.
-4. Implement remote `send`.
-5. Add remote monitors/node monitors if schedule allows; otherwise M7.
+2. Add node name, cookie, handshake, and connected-node table lifecycle.
+3. Serialize PIDs (including node identity) in message payloads.
+4. Implement remote `send` plus `send/checked` delivery-status API.
+5. Add wire-envelope version byte/feature flags so incompatible nodes fail fast.
 6. Update `std.net` docs to show how low-level nng differs from
-   `std.actor.node`.
+   `std.actor.node`, and add first `std.actor.node` cookbook usage.
 
-Gate: two Eta nodes on loopback exchange PIDs and messages.
+Gate: two Eta nodes on loopback complete handshake, reject bad cookie,
+exchange PIDs, and exchange actor messages.
+
+### M6.2 — Distributed monitors and node lifecycle semantics (1–2 weeks)
+
+1. Implement node monitors: `monitor-node`, `nodeup`, `nodedown`.
+2. Implement remote process monitors and remote `DOWN` forwarding.
+3. Define node-loss `DOWN` reasons and enforce exactly-once monitor delivery.
+4. Add `demonitor` flush semantics for remote-monitor cancellation.
+5. Keep remote links deferred to M7 after failure-matrix documentation.
+6. Add docs section for distributed failure semantics and netsplit behaviour.
+
+Gate: node monitor and remote monitor tests pass for normal exit, abnormal
+exit, and node disconnect/reconnect scenarios.
 
 ### M7 — Scheduler and reductions (longer-term, 4–8 weeks)
+
+Detailed checkpoint plan: `docs/plan/actor_scheduler_plan.md` (M7.1-M7.6).
 
 1. Add VM reduction counter and yield points.
 2. Implement actor run queues and scheduler pool.
@@ -1145,7 +1167,7 @@ For one release cycle:
 | `worker-pool-worker.eta` uses `(current-mailbox)` | Worker uses `(receive ...)` and replies to sender PID included in task. |
 | `message-passing.eta` uses sockets | Keep as nng transport example; add actor-native version. |
 | `parallel-map.eta` spawns worker modules | Use `std.actor` worker pool with PIDs. |
-| `distributed-compute.eta` | Use `std.actor.node` in M6. |
+| `distributed-compute.eta` | Use `std.actor.node` in M6.1. |
 
 ---
 
@@ -1158,7 +1180,7 @@ For one release cycle:
    objects. The first implementation should serialize/deep-copy messages
    even for local actor sends, preserving isolation at the cost of speed.
 3. **One-thread-per-actor MVP.** Correct but not Erlang-scale. Be honest
-   in docs: M1–M6 are semantics parity; M7 is scalability parity.
+   in docs: M1–M6.2 are semantics parity; M7 is scalability parity.
 4. **Blocking native calls.** libtorch, future libcurl, HiGHS, DB drivers,
    and file IO can block scheduler threads. Need dirty scheduler or worker
    pool before M7 is considered complete.
@@ -1202,7 +1224,11 @@ For one release cycle:
 - [ ] Actor-native cookbook examples exist and pass.
 - [ ] Docs no longer claim Eta's actor mailbox is an nng socket except in
       legacy/transport sections.
-- [ ] Distributed actor send over nng works between two loopback nodes
-      (M6).
+- [x] Distributed actor send over nng works between two loopback nodes
+      (M6.1).
+- [x] Bad-cookie handshake rejection and node-table consistency checks pass
+      (M6.1).
+- [ ] Distributed node monitors and remote process monitors deliver expected
+      `nodeup` / `nodedown` / `DOWN` semantics exactly once (M6.2).
 - [ ] Scheduler/reduction stress goals pass when M7 is complete.
 

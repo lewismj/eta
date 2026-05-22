@@ -38,6 +38,15 @@
                 (assert-equal 20 (receive-after 0))
                 (assert-equal 0 (mailbox-length)))))
 
+          (make-test "send/checked reports delivery status"
+            (lambda ()
+              (let* ((me (self))
+                     (child (spawn (lambda () (receive-after 10000)))))
+                (assert-equal 'ok (send/checked me 123))
+                (assert-equal 123 (receive-after 100))
+                (assert-true (exit child 'shutdown))
+                (assert-equal 'no-process (send/checked child 'late-message)))))
+
           (make-test "spawn child and receive pid-tagged reply"
             (lambda ()
               (let* ((me (self))
