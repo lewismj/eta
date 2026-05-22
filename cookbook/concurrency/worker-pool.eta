@@ -1,42 +1,51 @@
-;;; cookbook/concurrency/worker-pool.eta — Parallel task distribution via std.net worker-pool.
-;;;
-;;; Demonstrates (worker-pool module-path tasks):
-;;;   - Spawns one child process per task
-;;;   - Sends each child its task
-;;;   - Collects all results in parallel
-;;;   - Returns results in task-submission order
-;;;
-;;; The worker module is cookbook/concurrency/worker-pool-worker.eta
+;;; cookbook/concurrency/worker-pool.eta - Actor worker-pool style fan-out/fan-in.
 ;;;
 ;;; Run:
 ;;;   etai cookbook/concurrency/worker-pool.eta
 
 (module worker-pool-demo
-  (import std.net)
-  (import std.io)
+  (import std.actor std.collections std.io)
   (begin
 
-    ;;@doc (tasks)
-    ;;@category Concurrency
-    ;;@module worker-pool-demo
-    ;; Tasks: a list of numbers to be doubled by workers
-    ;;@example
-    ;; (display tasks)
+    (defun %vector->list (vec)
+      (let loop ((i 0) (acc '()))
+        (if (= i (vector-length vec))
+            (reverse acc)
+            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
+
     (define tasks '(1 2 3 4 5))
+    (define indices (range 0 (length tasks)))
 
-    (println "Distributing tasks to worker pool...")
-    (println tasks)
+    (define workers
+      (map
+        (lambda (dummy)
+          (spawn
+            (lambda ()
+              (receive
+                (list
+                  (match-case
+                    (match-list 'task 3)
+                    (lambda (msg)
+                      (let ((reply-to (car (cdr msg)))
+                            (index (car (cdr (cdr msg))))
+                            (value (car (cdr (cdr (cdr msg))))))
+                        (send reply-to (list 'result index (* value 2)))))))
+                'wait))))
+        tasks))
 
-    (define results
-      (worker-pool "cookbook/concurrency/worker-pool-worker.eta" tasks))
+    (let dispatch ((rest-workers workers) (rest-indices indices) (rest-tasks tasks))
+      (when (and (pair? rest-workers)
+                 (pair? rest-indices)
+                 (pair? rest-tasks))
+        (send (car rest-workers)
+              (list 'task (self) (car rest-indices) (car rest-tasks)))
+        (dispatch (cdr rest-workers) (cdr rest-indices) (cdr rest-tasks))))
 
-    (print "Results: ")
-    (println results)
+    (define results (make-vector (length tasks) 0))
+    (let loop ((remaining (length tasks)))
+      (when (> remaining 0)
+        (let ((msg (receive-match (match-list 'result 2) 1000)))
+          (vector-set! results (car (cdr msg)) (car (cdr (cdr msg))))
+          (loop (- remaining 1)))))
 
-    ;; Verify: each result should be 2× the input
-    (define expected '(2 4 6 8 10))
-    (print "Correct?: ")
-    (println (equal? results expected))
-
-    (println "worker-pool demo done.")))
-
+    (println (%vector->list results))))

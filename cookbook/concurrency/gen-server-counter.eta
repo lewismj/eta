@@ -1,0 +1,49 @@
+;;; cookbook/concurrency/gen-server-counter.eta - OTP-style counter server.
+;;;
+;;; Run:
+;;;   etai cookbook/concurrency/gen-server-counter.eta
+
+(module gen-server-counter
+  (import std.io std.actor.gen_server)
+  (begin
+
+    (define counter-module
+      (list
+        (cons 'init
+              (lambda (initial)
+                (list 'ok initial)))
+        (cons 'handle-call
+              (lambda (request from state)
+                (cond
+                  ((eq? request 'get)
+                   (list 'reply state state))
+                  ((and (pair? request)
+                        (eq? (car request) 'add)
+                        (pair? (cdr request))
+                        (null? (cdr (cdr request))))
+                   (let ((next (+ state (car (cdr request)))))
+                     (list 'reply next next)))
+                  (else
+                   (list 'reply '(error unknown-request) state)))))
+        (cons 'handle-cast
+              (lambda (message state)
+                (if (and (pair? message)
+                         (eq? (car message) 'inc)
+                         (pair? (cdr message))
+                         (null? (cdr (cdr message))))
+                    (list 'noreply (+ state (car (cdr message))))
+                    (list 'noreply state))))
+        (cons 'terminate
+              (lambda (reason state)
+                'ok))))
+
+    (define server
+      (gen-server-start counter-module 5 '(name counter-server)))
+
+    (println (string-append "initial: " (number->string (gen-server-call 'counter-server 'get 1000))))
+    (gen-server-cast 'counter-server '(inc 4))
+    (println (string-append "after cast: " (number->string (gen-server-call server 'get 1000))))
+    (println (string-append "after add: "
+                            (number->string (gen-server-call 'counter-server '(add 10) 1000))))
+    (println (string-append "stopped: "
+                            (symbol->string (gen-server-stop 'counter-server 'shutdown 1000))))))

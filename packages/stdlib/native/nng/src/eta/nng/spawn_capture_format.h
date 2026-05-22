@@ -60,6 +60,7 @@ enum SpawnCaptureTag : uint8_t {
     SCT_ByteVec    = 13,
     SCT_ClosureRef = 14,
     SCT_GlobalRef  = 15,
+    SCT_Pid        = 16,
 };
 
 struct SpawnCapturedGlobal {
@@ -110,6 +111,10 @@ struct SpawnCaptureWriter {
     static void write_i64(std::vector<uint8_t>& out, int64_t v) {
         uint64_t u = static_cast<uint64_t>(v);
         for (int i = 0; i < 8; ++i) out.push_back(static_cast<uint8_t>(u >> (8 * i)));
+    }
+
+    static void write_u64(std::vector<uint8_t>& out, uint64_t v) {
+        for (int i = 0; i < 8; ++i) out.push_back(static_cast<uint8_t>(v >> (8 * i)));
     }
 
     static void write_f64(std::vector<uint8_t>& out, double v) {
@@ -175,6 +180,14 @@ struct SpawnCaptureWriter {
             write_u8(out, SCT_ByteVec);
             write_u32(out, static_cast<uint32_t>(bv->data.size()));
             out.insert(out.end(), bv->data.begin(), bv->data.end());
+            return true;
+        }
+
+        if (auto* pid = heap.try_get_as<ObjectKind::Pid, types::Pid>(id)) {
+            write_u8(out, SCT_Pid);
+            write_u64(out, pid->node_id);
+            write_u64(out, pid->actor_id);
+            write_u32(out, pid->incarnation);
             return true;
         }
 
@@ -308,6 +321,15 @@ struct SpawnCaptureReader {
         return true;
     }
 
+    bool read_u64(uint64_t& v) {
+        if (pos + 8 > data.size()) return false;
+        uint64_t u = 0;
+        for (int i = 0; i < 8; ++i) u |= (static_cast<uint64_t>(data[pos + i]) << (8 * i));
+        pos += 8;
+        v = u;
+        return true;
+    }
+
     bool read_f64(double& v) {
         if (pos + 8 > data.size()) return false;
         uint64_t u = 0;
@@ -425,6 +447,18 @@ struct SpawnCaptureReader {
                 }
                 return *v;
             }
+            case SCT_Pid: {
+                std::uint64_t node_id = 0;
+                std::uint64_t actor_id = 0;
+                std::uint32_t incarnation = 0;
+                if (!read_u64(node_id)) return err("truncated pid node id");
+                if (!read_u64(actor_id)) return err("truncated pid actor id");
+                if (!read_u32(incarnation)) return err("truncated pid incarnation");
+                auto r = make_pid(heap, types::Pid{node_id, actor_id, incarnation});
+                if (!r) return std::unexpected(r.error());
+                roots.push(*r);
+                return *r;
+            }
             default:
                 return err("unknown value tag");
         }
@@ -489,6 +523,8 @@ serialize_spawn_capture(
     for (const auto& node : writer.closures) {
         detail::SpawnCaptureWriter::write_u32(out, node.func_idx);
         detail::SpawnCaptureWriter::write_u32(out, static_cast<uint32_t>(node.encoded_upvals.size()));
+    }
+    for (const auto& node : writer.closures) {
         for (const auto& up_chunk : node.encoded_upvals) {
             out.insert(out.end(), up_chunk.begin(), up_chunk.end());
         }

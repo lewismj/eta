@@ -3505,6 +3505,91 @@ BOOST_FIXTURE_TEST_CASE(finalizer_and_guardian_primitives_validate_arity, VMTest
 
 BOOST_AUTO_TEST_SUITE_END() ///< guardian_primitive_tests
 
+BOOST_AUTO_TEST_CASE(vm_reduction_counter_resets_and_increments_monotonically) {
+    memory::heap::Heap heap(1024 * 1024);
+    memory::intern::InternTable intern_table;
+    VM vm(heap, intern_table);
+
+    BytecodeFunction func;
+    func.name = "reduction_counter_smoke";
+    func.stack_size = 1;
+    auto encoded = nanbox::ops::encode<int64_t>(42);
+    BOOST_REQUIRE(encoded.has_value());
+    func.constants.push_back(*encoded);
+    func.code.push_back({OpCode::LoadConst, 0u});
+    func.code.push_back({OpCode::Return, 0u});
+
+    auto first = vm.execute(func);
+    BOOST_REQUIRE(first.has_value());
+    const auto first_reductions = vm.reductions();
+    BOOST_TEST(first_reductions >= 2u);
+
+    auto second = vm.execute(func);
+    BOOST_REQUIRE(second.has_value());
+    const auto second_reductions = vm.reductions();
+    BOOST_TEST(second_reductions > first_reductions);
+
+    vm.reset_reductions();
+    BOOST_TEST(vm.reductions() == 0u);
+
+    auto third = vm.execute(func);
+    BOOST_REQUIRE(third.has_value());
+    BOOST_TEST(vm.reductions() >= 2u);
+}
+
+BOOST_AUTO_TEST_CASE(vm_execute_with_status_yields_and_resumes_at_budget_boundary) {
+    memory::heap::Heap heap(1024 * 1024);
+    memory::intern::InternTable intern_table;
+    VM vm(heap, intern_table);
+
+    BytecodeFunction func;
+    func.name = "execute_with_status_budget_resume";
+    func.stack_size = 2;
+
+    auto forty = nanbox::ops::encode<int64_t>(40);
+    auto two = nanbox::ops::encode<int64_t>(2);
+    BOOST_REQUIRE(forty.has_value());
+    BOOST_REQUIRE(two.has_value());
+    func.constants.push_back(*forty);
+    func.constants.push_back(*two);
+    func.code.push_back({OpCode::LoadConst, 0u});
+    func.code.push_back({OpCode::LoadConst, 1u});
+    func.code.push_back({OpCode::Add, 0u});
+    func.code.push_back({OpCode::Return, 0u});
+
+    VM::ExecuteSliceOptions options;
+    options.enable_yield = true;
+    options.reduction_budget = 1;
+
+    auto first = vm.execute_with_status(func, options);
+    BOOST_REQUIRE(first.has_value());
+    BOOST_TEST(
+        static_cast<int>(first->status)
+        == static_cast<int>(VM::ExecuteSliceStatus::BudgetExhausted));
+
+    auto second = vm.execute_with_status(func, options);
+    BOOST_REQUIRE(second.has_value());
+    BOOST_TEST(
+        static_cast<int>(second->status)
+        == static_cast<int>(VM::ExecuteSliceStatus::BudgetExhausted));
+
+    auto third = vm.execute_with_status(func, options);
+    BOOST_REQUIRE(third.has_value());
+    BOOST_TEST(
+        static_cast<int>(third->status)
+        == static_cast<int>(VM::ExecuteSliceStatus::BudgetExhausted));
+
+    auto fourth = vm.execute_with_status(func, options);
+    BOOST_REQUIRE(fourth.has_value());
+    BOOST_TEST(
+        static_cast<int>(fourth->status)
+        == static_cast<int>(VM::ExecuteSliceStatus::Finished));
+
+    auto value = nanbox::ops::decode<std::int64_t>(fourth->value);
+    BOOST_REQUIRE(value.has_value());
+    BOOST_TEST(*value == 42);
+}
+
 /**
  * VM runtime bounds-check tests (bug fix: unchecked stack/upval ops, bug #1)
  * These tests directly construct BytecodeFunctions that bypass the deserializer

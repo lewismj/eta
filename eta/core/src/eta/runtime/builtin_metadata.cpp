@@ -38,6 +38,10 @@ namespace {
         || name == "enable-heartbeat";
 }
 
+[[nodiscard]] bool is_actor_builtin(std::string_view name) {
+    return name.starts_with("%actor-");
+}
+
 [[nodiscard]] std::optional<std::string_view> native_sidecar_from_owner(
     std::string_view owner) {
     constexpr std::string_view prefix = "sidecar:";
@@ -112,6 +116,7 @@ namespace {
         || name == "write-u8") {
         return "Port";
     }
+    if (is_actor_builtin(name)) return "Actor";
     if (is_nng_builtin(name)) return "NNG";
     return "Builtin";
 }
@@ -131,6 +136,32 @@ namespace {
     if (name == "nng-socket") return "(nng-socket type-symbol)";
     if (name == "send!") return "(send! sock value [flag])";
     if (name == "recv!") return "(recv! sock [flag])";
+    if (name == "%actor-self") return "(%actor-self)";
+    if (name == "%actor-pid?") return "(%actor-pid? value)";
+    if (name == "%actor-alive?") return "(%actor-alive? pid)";
+    if (name == "%actor-spawn") return "(%actor-spawn thunk)";
+    if (name == "%actor-send") return "(%actor-send pid payload)";
+    if (name == "%actor-send-checked") return "(%actor-send-checked pid payload)";
+    if (name == "%actor-receive") return "(%actor-receive matcher timeout)";
+    if (name == "%actor-mailbox-len") return "(%actor-mailbox-len)";
+    if (name == "%actor-process-info") return "(%actor-process-info pid [key])";
+    if (name == "%actor-trap-exit!") return "(%actor-trap-exit! enabled?)";
+    if (name == "%actor-link") return "(%actor-link pid)";
+    if (name == "%actor-unlink") return "(%actor-unlink pid)";
+    if (name == "%actor-monitor") return "(%actor-monitor pid)";
+    if (name == "%actor-demonitor") return "(%actor-demonitor ref [flush?])";
+    if (name == "%actor-exit") return "(%actor-exit pid reason)";
+    if (name == "%actor-kill") return "(%actor-kill pid)";
+    if (name == "%actor-register") return "(%actor-register name pid)";
+    if (name == "%actor-unregister") return "(%actor-unregister name)";
+    if (name == "%actor-whereis") return "(%actor-whereis name)";
+    if (name == "%actor-registered") return "(%actor-registered)";
+    if (name == "%actor-node-name") return "(%actor-node-name)";
+    if (name == "%actor-monitor-node") return "(%actor-monitor-node node-name)";
+    if (name == "%actor-node-listen") return "(%actor-node-listen endpoint [key value] ...)";
+    if (name == "%actor-node-connect") return "(%actor-node-connect endpoint [key value] ...)";
+    if (name == "%actor-nodes") return "(%actor-nodes)";
+    if (name == "%actor-disconnect-node") return "(%actor-disconnect-node node-name)";
     return {};
 }
 
@@ -142,6 +173,33 @@ namespace {
     if (name == "write") return "Write a machine-readable representation to a port.";
     if (name == "newline") return "Write a newline to a port.";
     if (name == "error") return "Raise a runtime error.";
+    if (name == "%actor-self") return "Return the PID for the currently executing actor.";
+    if (name == "%actor-pid?") return "Return #t when the argument is a PID.";
+    if (name == "%actor-alive?") return "Return #t when the target PID is still alive.";
+    if (name == "%actor-spawn") return "Spawn a local actor from a zero-argument closure.";
+    if (name == "%actor-send") return "Send one message to a PID or registered actor name.";
+    if (name == "%actor-send-checked") return "Send with explicit delivery status.";
+    if (name == "%actor-receive") return "Receive one mailbox message using matcher and timeout.";
+    if (name == "%actor-mailbox-len") return "Return queued message count for current actor.";
+    if (name == "%actor-process-info") return "Return actor process metadata or one keyed field.";
+    if (name == "%actor-trap-exit!") return "Enable or disable trapped linked exits for current actor.";
+    if (name == "%actor-link") return "Create a bidirectional link with another actor PID.";
+    if (name == "%actor-unlink") return "Remove a link with another actor PID.";
+    if (name == "%actor-monitor") return "Create a monitor for one actor PID and return monitor ref.";
+    if (name == "%actor-demonitor") return "Remove a monitor; optional flush removes queued DOWN.";
+    if (name == "%actor-exit") return "Send an exit signal with reason to target PID.";
+    if (name == "%actor-kill") return "Send an untrappable kill signal to target PID.";
+    if (name == "%actor-register") return "Register a local actor name to PID.";
+    if (name == "%actor-unregister") return "Remove a local actor name registration.";
+    if (name == "%actor-whereis") return "Resolve a local actor name to PID or #f.";
+    if (name == "%actor-registered") return "List locally registered actor names.";
+    if (name == "%actor-node-name") return "Return local distributed actor node name.";
+    if (name == "%actor-monitor-node") return "Monitor a remote node and receive nodeup/nodedown.";
+    if (name == "%actor-node-listen") return "Listen for distributed actor node connections.";
+    if (name == "%actor-node-connect") return "Connect to a remote distributed actor node.";
+    if (name == "%actor-nodes") return "List currently connected distributed nodes.";
+    if (name == "%actor-disconnect-node") return "Disconnect one remote distributed actor node.";
+    if (is_actor_builtin(name)) return "Local actor runtime primitive.";
     if (is_nng_builtin(name)) return "NNG/message-passing primitive.";
     return "Builtin primitive.";
 }
@@ -151,6 +209,7 @@ namespace {
     metadata.name = entry.name;
     metadata.arity = entry.arity;
     metadata.has_rest = entry.has_rest;
+    metadata.is_blocking = entry.is_blocking;
     metadata.category = entry.category.value_or(category_for_builtin(entry.name));
     metadata.signature = entry.signature.value_or(signature_override(entry.name));
     metadata.summary = entry.summary.value_or(summary_for_builtin(entry.name));

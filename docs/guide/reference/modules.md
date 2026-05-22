@@ -826,15 +826,41 @@ Import modules explicitly.
 
 ---
 
-### `std.net` — Networking & Message Passing
+### `std.actor` — PID-based Actors
+
+```scheme
+(import std.actor)
+```
+
+`std.actor` is the primary local concurrency API.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `self` | `(self)` | Return current actor PID |
+| `spawn` | `(spawn thunk)` | Spawn one local actor |
+| `send` | `(send pid payload)` | Send one message to PID or registered name |
+| `receive` | `(receive cases [timeout-ms [timeout-thunk]])` | Selective receive with optional timeout |
+| `receive-after` | `(receive-after timeout-ms)` | Receive one message or `#f` on timeout |
+| `monitor` | `(monitor pid)` | Register process monitor and return monitor ref |
+| `demonitor` | `(demonitor ref [flush?])` | Remove monitor; optional flush removes queued `DOWN` |
+| `link` / `unlink` | `(link pid)` / `(unlink pid)` | Link or unlink actor exits |
+| `trap-exit!` | `(trap-exit! enabled?)` | Toggle trapped linked exits as mailbox messages |
+| `register` / `whereis` | `(register name pid)` / `(whereis name)` | Local name registry |
+| `process-info` | `(process-info pid [key])` | Process metadata/introspection |
+
+Related modules: `std.actor.supervisor`, `std.actor.gen_server`,
+and `std.actor.node`.
+
+---
+
+### `std.net` — Networking Transport
 
 ```scheme
 (import std.net)
 ```
 
-nng is the networking layer; the low-level primitives (`nng-socket`,
-`send!`, `recv!`, `spawn`, etc.) are registered as global builtins.
-`std.net` adds high-level Erlang-inspired patterns on top.
+`std.net` is the explicit NNG transport layer. Use it for socket-level
+communication patterns and endpoint management.
 
 #### High-level helpers
 
@@ -842,7 +868,7 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 |----------|-----------|-------------|
 | `with-socket` | `(with-socket type thunk)` | Create a socket, run `(thunk sock)`, close via `dynamic-wind` — safe even on exceptions |
 | `request-reply` | `(request-reply endpoint message)` | Open a REQ socket, dial, send, receive exactly one reply, close |
-| `worker-pool` | `(worker-pool module-path tasks)` | Spawn one child per task, dispatch, collect results in order, clean up |
+| `worker-pool` | `(worker-pool module-path tasks)` | Compatibility helper over socket-based child workers |
 | `pub-sub` | `(pub-sub endpoint topics handler)` | Connect a SUB socket, subscribe to `topics`, call `handler` on each message |
 | `survey` | `(survey endpoint question timeout-ms)` | Open a SURVEYOR socket, broadcast `question`, collect all responses before deadline |
 
@@ -861,7 +887,7 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 | `nng-subscribe` | `(nng-subscribe sock topic)` | Set SUB topic filter (byte prefix) |
 | `nng-set-option` | `(nng-set-option sock option value)` | Set socket option (`'recv-timeout`, `'send-timeout`, `'survey-time`, …) |
 
-#### Actor model builtins (globally available)
+#### Legacy process-spawn socket helpers (compatibility)
 
 | Primitive | Signature | Description |
 |-----------|-----------|-------------|
@@ -873,9 +899,9 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 | `thread-join` | `(thread-join sock)` | Wait for an in-process actor thread to finish |
 | `thread-alive?` | `(thread-alive? sock)` | Non-blocking thread liveness check |
 | `monitor` | `(monitor sock)` | Receive a `(down ...)` message when the peer (process or thread) exits |
-| `current-mailbox` | `(current-mailbox)` | Inside a spawned child or thread: return the PAIR socket to the parent |
+| `current-mailbox` | `(current-mailbox)` | Child-side PAIR socket for legacy socket-mailbox workflows |
 
-#### Usage examples
+#### Transport usage examples
 
 ```scheme
 ;; Safe socket management
@@ -888,9 +914,6 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 ;; One-shot synchronous RPC
 (request-reply "tcp://localhost:5555" '(compute 42))
 
-;; Parallel fan-out
-(worker-pool "worker.eta" '(1 2 3 4 5))
-
 ;; Subscribe to a topic stream
 (pub-sub "tcp://localhost:5556"
          '("prices" "alerts")
@@ -901,9 +924,9 @@ nng is the networking layer; the low-level primitives (`nng-socket`,
 ```
 
 > **Full documentation:**
-> [Networking Primitives](networking.md) ·
-> [Message Passing & Actors](message-passing.md) ·
-> [Examples](../examples-tour.md#concurrency)
+> [std.actor](../../stdlib/actor.md) ·
+> [std.actor.node](../../stdlib/actor-node.md) ·
+> [std.net](../../stdlib/net.md)
 
 ---
 

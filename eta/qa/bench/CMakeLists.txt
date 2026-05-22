@@ -14,6 +14,10 @@ set_target_properties(eta_prof_off_bench PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 target_link_libraries(eta_qp_bench PRIVATE eta_core)
 target_link_libraries(eta_prof_off_bench PRIVATE eta_core)
+if(TARGET nng)
+    target_link_libraries(eta_qp_bench PRIVATE nng)
+    target_link_libraries(eta_prof_off_bench PRIVATE nng)
+endif()
 
 if(NOT MSVC)
     target_link_libraries(eta_qp_bench PRIVATE stdc++ m)

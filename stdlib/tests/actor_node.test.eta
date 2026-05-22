@@ -1,0 +1,29 @@
+;;; stdlib/tests/actor_node.test.eta - Unit tests for std.actor.node.
+
+(module actor_node.tests
+  (import std.test std.actor.node)
+  (begin
+
+    (define suite
+      (make-group "std.actor.node"
+        (list
+
+          (make-test "node-name returns string"
+            (lambda ()
+              (assert-true (string? (node-name)))))
+
+          (make-test "nodes returns a list"
+            (lambda ()
+              (let ((connected (nodes)))
+                (assert-true (or (null? connected)
+                                 (pair? connected))))))
+
+          (make-test "monitor-node returns monitor ref"
+            (lambda ()
+              (let ((ref (monitor-node "eta@test-node")))
+                (assert-true ref)
+                (assert-true (integer? ref)))))
+
+          )))
+
+    (print-tap (run suite))))

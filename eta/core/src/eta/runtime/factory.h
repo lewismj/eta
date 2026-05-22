@@ -240,6 +240,11 @@ namespace eta::runtime::memory::factory {
     }
 
     inline_always
+    std::expected<LispVal, RuntimeError> make_pid(Heap& heap, const types::Pid& pid) {
+        return make_heap_object<types::Pid, ObjectKind::Pid>(heap, pid);
+    }
+
+    inline_always
     std::expected<LispVal, RuntimeError> make_compound(Heap& heap, LispVal functor,
                                                        std::vector<LispVal> args) {
         return make_heap_object<types::CompoundTerm, ObjectKind::CompoundTerm>(

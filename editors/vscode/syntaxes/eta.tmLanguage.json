@@ -218,6 +218,13 @@
                     }
                 },
                 {
+                    "comment": "Actor API forms (std.actor / std.actor.node / std.actor.gen_server)",
+                    "match": "(?<=\\()\\s*(self|pid\\?|alive\\?|spawn|send|send/checked|receive|receive-match|receive-after|mailbox-length|trap-exit!|link|unlink|monitor|demonitor|kill|register|unregister|whereis|registered|process-info|match-case|match-list|match-symbol|match-predicate|node-name|monitor-node|node-listen|node-connect|nodes|disconnect-node|gen-server-start|gen-server-start-link|gen-server-call|gen-server-cast|gen-server-stop)(?=[\\s()\\[\\]])",
+                    "captures": {
+                        "1": { "name": "support.function.actor.eta" }
+                    }
+                },
+                {
                     "comment": "nng / message-passing builtins and std.net helpers",
                     "match": "(?<=\\()\\s*(nng-socket|nng-listen|nng-dial|nng-close|nng-socket\\?|send!|recv!|nng-poll|nng-subscribe|nng-set-option|spawn|spawn-kill|spawn-wait|current-mailbox|spawn-thread-with|spawn-thread|thread-join|thread-alive\\?|with-socket|request-reply|worker-pool|pub-sub|survey)(?=[\\s()\\[\\]])",
                     "captures": {

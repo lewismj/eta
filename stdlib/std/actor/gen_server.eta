@@ -1,0 +1,378 @@
+;;; std/actor/gen_server.eta - OTP-style server behaviour over std.actor.
+
+(module std.actor.gen_server
+  (export
+    gen-server-start
+    gen-server-start-link
+    gen-server-call
+    gen-server-cast
+    gen-server-stop)
+  (import std.actor std.time)
+  (begin
+
+    (defun %plist-get (plist key default)
+      (if (or (null? plist) (not (pair? plist)))
+          default
+          (if (null? (cdr plist))
+              default
+              (if (eq? (car plist) key)
+                  (car (cdr plist))
+                  (%plist-get (cdr (cdr plist)) key default)))))
+
+    (defun %callback-ref (callbacks key default)
+      (if (or (null? callbacks) (not (pair? callbacks)))
+          default
+          (let ((entry (assoc key callbacks)))
+            (if entry (cdr entry) default))))
+
+    (defun %init-callback (callbacks)
+      (%callback-ref callbacks 'init #f))
+
+    (defun %handle-call-callback (callbacks)
+      (%callback-ref callbacks 'handle-call #f))
+
+    (defun %handle-cast-callback (callbacks)
+      (%callback-ref callbacks 'handle-cast #f))
+
+    (defun %handle-info-callback (callbacks)
+      (%callback-ref
+        callbacks
+        'handle-info
+        (lambda (message state)
+          (list 'noreply state))))
+
+    (defun %terminate-callback (callbacks)
+      (%callback-ref
+        callbacks
+        'terminate
+        (lambda (reason state)
+          'ok)))
+
+    (defun %callbacks-valid? (callbacks)
+      (and (procedure? (%init-callback callbacks))
+           (procedure? (%handle-call-callback callbacks))
+           (procedure? (%handle-cast-callback callbacks))
+           (procedure? (%handle-info-callback callbacks))
+           (procedure? (%terminate-callback callbacks))))
+
+    (defun %call-message? (msg)
+      (and (pair? msg)
+           (eq? (car msg) 'gen-call)
+           (pair? (cdr msg))
+           (pair? (cdr (cdr msg)))
+           (pair? (cdr (cdr (cdr msg))))
+           (null? (cdr (cdr (cdr (cdr msg)))))))
+
+    (defun %call-ref (msg) (car (cdr msg)))
+    (defun %call-from (msg) (car (cdr (cdr msg))))
+    (defun %call-request (msg) (car (cdr (cdr (cdr msg)))))
+
+    (defun %cast-message? (msg)
+      (and (pair? msg)
+           (eq? (car msg) 'gen-cast)
+           (pair? (cdr msg))
+           (null? (cdr (cdr msg)))))
+
+    (defun %cast-payload (msg) (car (cdr msg)))
+
+    (defun %stop-message? (msg)
+      (and (pair? msg)
+           (eq? (car msg) 'gen-stop)
+           (pair? (cdr msg))
+           (pair? (cdr (cdr msg)))
+           (pair? (cdr (cdr (cdr msg))))
+           (null? (cdr (cdr (cdr (cdr msg)))))))
+
+    (defun %stop-ref (msg) (car (cdr msg)))
+    (defun %stop-from (msg) (car (cdr (cdr msg))))
+    (defun %stop-reason (msg) (car (cdr (cdr (cdr msg)))))
+
+    (defun %init-ok-result? (value)
+      (and (pair? value)
+           (eq? (car value) 'ok)
+           (pair? (cdr value))
+           (null? (cdr (cdr value)))))
+
+    (defun %init-stop-result? (value)
+      (and (pair? value)
+           (eq? (car value) 'stop)
+           (pair? (cdr value))
+           (null? (cdr (cdr value)))))
+
+    (defun %init-state (value) (car (cdr value)))
+    (defun %init-reason (value) (car (cdr value)))
+
+    (defun %call-reply-result? (value)
+      (and (pair? value)
+           (eq? (car value) 'reply)
+           (pair? (cdr value))
+           (pair? (cdr (cdr value)))
+           (null? (cdr (cdr (cdr value))))))
+
+    (defun %call-reply-value (value) (car (cdr value)))
+    (defun %call-reply-state (value) (car (cdr (cdr value))))
+
+    (defun %call-noreply-result? (value)
+      (and (pair? value)
+           (eq? (car value) 'noreply)
+           (pair? (cdr value))
+           (null? (cdr (cdr value)))))
+
+    (defun %call-noreply-state (value) (car (cdr value)))
+
+    (defun %call-stop-reply-result? (value)
+      (and (pair? value)
+           (eq? (car value) 'stop)
+           (pair? (cdr value))
+           (pair? (cdr (cdr value)))
+           (pair? (cdr (cdr (cdr value))))
+           (null? (cdr (cdr (cdr (cdr value)))))))
+
+    (defun %call-stop-reason (value) (car (cdr value)))
+    (defun %call-stop-reply-value (value) (car (cdr (cdr value))))
+    (defun %call-stop-reply-state (value) (car (cdr (cdr (cdr value)))))
+
+    (defun %call-stop-noreply-result? (value)
+      (and (pair? value)
+           (eq? (car value) 'stop)
+           (pair? (cdr value))
+           (pair? (cdr (cdr value)))
+           (null? (cdr (cdr (cdr value))))))
+
+    (defun %call-stop-noreply-state (value) (car (cdr (cdr value))))
+
+    (defun %cast-noreply-result? (value)
+      (and (pair? value)
+           (eq? (car value) 'noreply)
+           (pair? (cdr value))
+           (null? (cdr (cdr value)))))
+
+    (defun %cast-next-state (value) (car (cdr value)))
+
+    (defun %cast-stop-result? (value)
+      (and (pair? value)
+           (eq? (car value) 'stop)
+           (pair? (cdr value))
+           (pair? (cdr (cdr value)))
+           (null? (cdr (cdr (cdr value))))))
+
+    (defun %cast-stop-reason (value) (car (cdr value)))
+    (defun %cast-stop-state (value) (car (cdr (cdr value))))
+
+    (defun %reply-message? (msg)
+      (and (pair? msg)
+           (eq? (car msg) 'gen-reply)
+           (pair? (cdr msg))
+           (pair? (cdr (cdr msg)))
+           (null? (cdr (cdr (cdr msg))))))
+
+    (defun %reply-message-ref (msg) (car (cdr msg)))
+    (defun %reply-message-value (msg) (car (cdr (cdr msg))))
+
+    (defun %stopped-message? (msg)
+      (and (pair? msg)
+           (eq? (car msg) 'gen-stopped)
+           (pair? (cdr msg))
+           (pair? (cdr (cdr msg)))
+           (null? (cdr (cdr (cdr msg))))))
+
+    (defun %stopped-message-ref (msg) (car (cdr msg)))
+    (defun %stopped-message-value (msg) (car (cdr (cdr msg))))
+
+    (defun %reply-message-matcher (ref)
+      (lambda (msg)
+        (and (%reply-message? msg)
+             (equal? (%reply-message-ref msg) ref))))
+
+    (defun %stopped-message-matcher (ref)
+      (lambda (msg)
+        (and (%stopped-message? msg)
+             (equal? (%stopped-message-ref msg) ref))))
+
+    (defun %down-message-matcher (monitor-ref)
+      (lambda (msg)
+        (and (pair? msg)
+             (eq? (car msg) 'DOWN)
+             (pair? (cdr msg))
+             (equal? (car (cdr msg)) monitor-ref))))
+
+    (defun %make-ref (tag)
+      (list tag (time:monotonic-ms) (mailbox-length)))
+
+    (defun %resolve-server-pid (server)
+      (if (pid? server)
+          server
+          (whereis server)))
+
+    (defun %terminate-server (callbacks reason state)
+      ((%terminate-callback callbacks) reason state)
+      (exit (self) reason)
+      'ok)
+
+    (defun %server-loop (callbacks state)
+      (let ((msg (receive-after 'wait)))
+        (cond
+          ((not msg)
+           (if (alive? (self))
+               (%server-loop callbacks state)
+               'ok))
+
+          ((%call-message? msg)
+           (let* ((ref (%call-ref msg))
+                  (from (%call-from msg))
+                  (request (%call-request msg))
+                  (result ((%handle-call-callback callbacks) request from state)))
+             (cond
+               ((%call-reply-result? result)
+                (send from (list 'gen-reply ref (%call-reply-value result)))
+                (%server-loop callbacks (%call-reply-state result)))
+               ((%call-noreply-result? result)
+                (%server-loop callbacks (%call-noreply-state result)))
+               ((%call-stop-reply-result? result)
+                (send from (list 'gen-reply ref (%call-stop-reply-value result)))
+                (%terminate-server callbacks
+                                   (%call-stop-reason result)
+                                   (%call-stop-reply-state result)))
+               ((%call-stop-noreply-result? result)
+                (%terminate-server callbacks
+                                   (%call-stop-reason result)
+                                   (%call-stop-noreply-state result)))
+               (else
+                (%terminate-server callbacks
+                                   (list 'bad-return 'handle-call result)
+                                   state)))))
+
+          ((%cast-message? msg)
+           (let* ((result ((%handle-cast-callback callbacks) (%cast-payload msg) state)))
+             (cond
+               ((%cast-noreply-result? result)
+                (%server-loop callbacks (%cast-next-state result)))
+               ((%cast-stop-result? result)
+                (%terminate-server callbacks
+                                   (%cast-stop-reason result)
+                                   (%cast-stop-state result)))
+               (else
+                (%terminate-server callbacks
+                                   (list 'bad-return 'handle-cast result)
+                                   state)))))
+
+          ((%stop-message? msg)
+           (send (%stop-from msg) (list 'gen-stopped (%stop-ref msg) 'ok))
+           (%terminate-server callbacks (%stop-reason msg) state))
+
+          (else
+           (let ((result ((%handle-info-callback callbacks) msg state)))
+             (cond
+               ((%cast-noreply-result? result)
+                (%server-loop callbacks (%cast-next-state result)))
+               ((%cast-stop-result? result)
+                (%terminate-server callbacks
+                                   (%cast-stop-reason result)
+                                   (%cast-stop-state result)))
+               (else
+                (%terminate-server callbacks
+                                   (list 'bad-return 'handle-info result)
+                                   state))))))))
+
+    (defun %spawn-server (link? callbacks init-arg opts)
+      (if (not (%callbacks-valid? callbacks))
+          #f
+          (let* ((trap-exit? (%plist-get opts 'trap-exit #f))
+                 (pid (spawn
+                        (lambda ()
+                          (when trap-exit? (trap-exit! #t))
+                          (let* ((init-result ((%init-callback callbacks) init-arg)))
+                            (cond
+                              ((%init-ok-result? init-result)
+                               (%server-loop callbacks (%init-state init-result)))
+                              ((%init-stop-result? init-result)
+                               (%terminate-server callbacks (%init-reason init-result) #f))
+                              (else
+                               (%terminate-server callbacks
+                                                  (list 'bad-return 'init init-result)
+                                                  #f))))))))
+            (if (and link? (not (link pid)))
+                (begin
+                  (exit pid '(shutdown link-failed))
+                  #f)
+                (let ((name (%plist-get opts 'name #f)))
+                  (if name
+                      (if (register name pid)
+                          pid
+                          (begin
+                            (exit pid '(shutdown register-failed))
+                            #f))
+                      pid))))))
+
+    (defun gen-server-start (callbacks init-arg opts)
+      (%spawn-server #f callbacks init-arg opts))
+
+    (defun gen-server-start-link (callbacks init-arg opts)
+      (%spawn-server #t callbacks init-arg opts))
+
+    (defun gen-server-call (server request timeout-ms)
+      (let ((pid (%resolve-server-pid server)))
+        (if (not pid)
+            #f
+            (let ((monitor-ref (monitor pid)))
+              (if (not monitor-ref)
+                  #f
+                  (let ((ref (%make-ref 'gen-call)))
+                    (if (not (send pid (list 'gen-call ref (self) request)))
+                        (begin
+                          (demonitor monitor-ref #t)
+                          #f)
+                        (let ((result
+                                (receive
+                                  (list
+                                    (match-case (%reply-message-matcher ref)
+                                                (lambda (msg)
+                                                  (list 'reply (%reply-message-value msg))))
+                                    (match-case (%down-message-matcher monitor-ref)
+                                                (lambda (msg)
+                                                  (list 'down msg))))
+                                  timeout-ms
+                                  (lambda () #f))))
+                          (demonitor monitor-ref #t)
+                          (if (and result
+                                   (pair? result)
+                                   (eq? (car result) 'reply))
+                              (car (cdr result))
+                              #f)))))))))
+
+    (defun gen-server-cast (server message)
+      (if (send server (list 'gen-cast message))
+          'ok
+          #f))
+
+    (defun gen-server-stop (server reason timeout-ms)
+      (let ((pid (%resolve-server-pid server)))
+        (if (not pid)
+            #f
+            (let ((monitor-ref (monitor pid)))
+              (if (not monitor-ref)
+                  #f
+                  (let ((ref (%make-ref 'gen-stop)))
+                    (if (not (send pid (list 'gen-stop ref (self) reason)))
+                        (begin
+                          (demonitor monitor-ref #t)
+                          #f)
+                        (let ((result
+                                (receive
+                                  (list
+                                    (match-case (%stopped-message-matcher ref)
+                                                (lambda (msg)
+                                                  (list 'stopped (%stopped-message-value msg))))
+                                    (match-case (%down-message-matcher monitor-ref)
+                                                (lambda (msg)
+                                                  (list 'down msg))))
+                                  timeout-ms
+                                  (lambda () #f))))
+                          (demonitor monitor-ref #t)
+                          (if (and result
+                                   (pair? result)
+                                   (eq? (car result) 'stopped))
+                              (car (cdr result))
+                              #f)))))))))
+
+  ))

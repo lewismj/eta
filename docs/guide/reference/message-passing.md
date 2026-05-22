@@ -11,6 +11,11 @@
 
 ---
 
+> [!WARNING]
+> This page documents the current socket-based concurrency compatibility
+> APIs. The actor roadmap transitions local actors to VM mailboxes with PID
+> addressing; NNG remains as transport/distribution infrastructure.
+
 ## Overview
 
 Eta's actor model is built on a simple principle: **share nothing, communicate

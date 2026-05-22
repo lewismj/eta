@@ -35,6 +35,7 @@ struct PrimReg {
     void register_strings();
     void register_misc();
     void register_misc_lifecycle_bridge();
+    void register_actor_bridge();
     void register_misc_eval_bridge();
     void register_logic();
     void register_logic_prop_attr_bridge();

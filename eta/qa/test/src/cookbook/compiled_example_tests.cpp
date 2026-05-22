@@ -121,6 +121,26 @@ static fs::path unique_temp_file_path(const std::string& prefix,
 #endif
 }
 
+static std::string module_path_list_for_cli(const fs::path& stdlib_root,
+                                            const fs::path& example_dir) {
+#ifdef _WIN32
+    constexpr char sep = ';';
+#else
+    constexpr char sep = ':';
+#endif
+    if (example_dir.empty()) return stdlib_root.string();
+
+    std::error_code ec;
+    if (fs::equivalent(stdlib_root, example_dir, ec) && !ec) {
+        return stdlib_root.string();
+    }
+
+    auto path_list = stdlib_root.string();
+    path_list.push_back(sep);
+    path_list += example_dir.string();
+    return path_list;
+}
+
 static fs::path cookbook_dir() {
     fs::path p(ETA_COOKBOOK_DIR);
     if (!p.empty() && fs::is_directory(p)) return fs::canonical(p);
@@ -417,6 +437,7 @@ struct CompiledExampleFixture {
         if (stdlib.empty()) return {false, ""};
         const auto etac = etac_binary_path();
         if (etac.empty()) return {false, "missing ETA_ETAC_PATH"};
+        const auto module_path_list = module_path_list_for_cli(stdlib, file.parent_path());
 
         auto temp_etac = unique_temp_file_path(
             optimize ? "eta_roundtrip_cli_O" : "eta_roundtrip_cli_O0",
@@ -428,7 +449,7 @@ struct CompiledExampleFixture {
         args.push_back(fs::path(etac).wstring());
         if (optimize) args.emplace_back(L"-O");
         args.emplace_back(L"--path");
-        args.push_back(stdlib.wstring());
+        args.push_back(fs::path(module_path_list).wstring());
         args.push_back(file.wstring());
         args.emplace_back(L"-o");
         args.push_back(temp_etac.wstring());
@@ -457,7 +478,7 @@ struct CompiledExampleFixture {
         const std::string mode_flag = optimize ? "-O " : "";
         const std::string cmd =
             shell_quote(etac) + " " + mode_flag
-            + "--path " + shell_quote(stdlib.string()) + " "
+            + "--path " + shell_quote(module_path_list) + " "
             + shell_quote(file.string()) + " -o " + shell_quote(temp_etac.string())
             + " > " + shell_quote(temp_log.string()) + " 2>&1";
 

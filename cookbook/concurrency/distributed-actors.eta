@@ -1,0 +1,40 @@
+;;; cookbook/concurrency/distributed-actors.eta - Node handshake over std.actor.node
+;;;
+;;; Run server:
+;;;   etai cookbook/concurrency/distributed-actors.eta server
+;;;
+;;; Run client:
+;;;   etai cookbook/concurrency/distributed-actors.eta client
+;;;
+;;; Both sides use the same endpoint and cookie. After connect, each side can
+;;; inspect `(nodes)` to confirm the distributed actor-node link.
+
+(module distributed-actors
+  (import std.actor.node std.os std.io std.time)
+  (begin
+    (define args (command-line-arguments))
+    (define role (if (null? args) "demo" (car args)))
+    (define endpoint "tcp://127.0.0.1:7601")
+    (define cookie "eta-dev-cookie")
+
+    (cond
+      ((equal? role "server")
+       (println (string-append "server node: " (node-name)))
+       (println (string-append "listening on " endpoint))
+       (if (node-listen endpoint 'name "eta@server" 'cookie cookie)
+           (begin
+             (println "listener active for 3 seconds; run client in another shell")
+             (time:sleep-ms 3000)
+             (println (nodes)))
+           (println "node-listen failed")))
+      ((equal? role "client")
+       (println (string-append "client node: " (node-name)))
+       (println (string-append "connecting to " endpoint))
+       (if (node-connect endpoint 'name "eta@client" 'cookie cookie)
+           (begin
+             (println "connected nodes:")
+             (println (nodes)))
+           (println "node-connect failed")))
+      (else
+       (println "usage: etai distributed-actors.eta [server|client]")
+       (println "run one shell as server, another as client")))))

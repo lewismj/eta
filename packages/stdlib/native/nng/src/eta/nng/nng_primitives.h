@@ -252,7 +252,8 @@ inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_seri
     const std::vector<LispVal>& vm_globals,
     const semantics::BytecodeFunctionRegistry& src_reg,
     Heap& heap,
-    InternTable& intern)
+    InternTable& intern,
+    std::size_t primitive_global_ref_slot_limit = std::numeric_limits<std::size_t>::max())
 {
     auto internal_error = [](std::string msg) -> std::unexpected<RuntimeError> {
         return std::unexpected(RuntimeError{VMError{
@@ -364,8 +365,12 @@ inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_seri
 
     /**
      * Global slots referenced by reachable functions.
-     * Primitive-valued globals are treated as by-reference globals (resolved by
-     * slot in the child VM) and are not serialized into the payload.
+     *
+     * Note: primitive-valued globals must still be captured. Alias globals such
+     * as `(define self %actor-self)` are non-builtin slots that need to be
+     * rehydrated in the child VM. Primitive values are encoded as GlobalRef
+     * during capture serialization, but the owning global slot assignment is
+     * retained in `captured_globals`.
      */
     std::unordered_set<uint32_t> seen_globals;
     std::vector<SpawnCapturedGlobal> captured_globals;
@@ -411,15 +416,7 @@ inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_seri
                 if (!sr) return std::unexpected(sr.error());
             }
 
-            bool is_primitive_global = false;
-            if (ops::is_boxed(gv) && ops::tag(gv) == Tag::HeapObject) {
-                is_primitive_global =
-                    heap.try_get_as<ObjectKind::Primitive, runtime::types::Primitive>(
-                        ops::payload(gv)) != nullptr;
-            }
-            if (!is_primitive_global) {
-                captured_globals.push_back(SpawnCapturedGlobal{slot, gv});
-            }
+            captured_globals.push_back(SpawnCapturedGlobal{slot, gv});
         }
     }
 
@@ -469,12 +466,20 @@ inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_seri
     sc.funcs_bytes = std::vector<uint8_t>(str.begin(), str.end());
 
     std::unordered_map<LispVal, uint32_t> primitive_global_slots;
-    for (uint32_t i = 0; i < static_cast<uint32_t>(vm_globals.size()); ++i) {
+    std::unordered_map<std::string, uint32_t> primitive_slot_by_name;
+    const std::size_t max_primitive_slot = primitive_global_ref_slot_limit < vm_globals.size()
+        ? primitive_global_ref_slot_limit
+        : vm_globals.size();
+    for (uint32_t i = 0; i < static_cast<uint32_t>(max_primitive_slot); ++i) {
         const auto gv = vm_globals[i];
         if (!ops::is_boxed(gv) || ops::tag(gv) != Tag::HeapObject) continue;
-        if (heap.try_get_as<ObjectKind::Primitive, runtime::types::Primitive>(
-                ops::payload(gv))) {
+        auto* primitive = heap.try_get_as<ObjectKind::Primitive, runtime::types::Primitive>(
+            ops::payload(gv));
+        if (primitive) {
             primitive_global_slots.try_emplace(gv, i);
+            if (!primitive->debug_name.empty()) {
+                primitive_slot_by_name.try_emplace(primitive->debug_name, i);
+            }
         }
     }
 
@@ -499,6 +504,16 @@ inline std::expected<ProcessManager::SerializedClosure, RuntimeError> build_seri
     };
 
     auto global_ref_slot = [&](LispVal v) -> std::optional<uint32_t> {
+        if (ops::is_boxed(v) && ops::tag(v) == Tag::HeapObject) {
+            auto* primitive = heap.try_get_as<ObjectKind::Primitive, runtime::types::Primitive>(
+                ops::payload(v));
+            if (primitive && !primitive->debug_name.empty()) {
+                if (auto it = primitive_slot_by_name.find(primitive->debug_name);
+                    it != primitive_slot_by_name.end()) {
+                    return it->second;
+                }
+            }
+        }
         auto it = primitive_global_slots.find(v);
         if (it == primitive_global_slots.end()) return std::nullopt;
         return it->second;

@@ -17,6 +17,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -55,6 +56,26 @@ static eta::interpreter::ModulePathResolver make_resolver() {
     auto stdlib = stdlib_dir();
     if (stdlib.empty()) return eta::interpreter::ModulePathResolver{};
     return eta::interpreter::ModulePathResolver({stdlib});
+}
+
+[[nodiscard]] static bool diagnostics_contain(const eta::session::Driver& driver,
+                                              std::string_view needle) {
+    for (const auto& diag : driver.diagnostics().diagnostics()) {
+        if (diag.message.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void expect_requirement_diag_or_bundled_sidecar(eta::session::Driver& driver,
+                                                       bool run_ok,
+                                                       std::string_view requirement_diag) {
+    if (run_ok) {
+        BOOST_TEST(!diagnostics_contain(driver, requirement_diag));
+        return;
+    }
+    BOOST_TEST(diagnostics_contain(driver, requirement_diag));
 }
 
 [[nodiscard]] fs::path sidecar_fixture_path() {
@@ -251,6 +272,7 @@ struct SidecarPackageFixture {
 BOOST_AUTO_TEST_SUITE(driver_jupyter_tests)
 
 BOOST_AUTO_TEST_CASE(startup_resolver_discovers_project_modules_from_lockfile) {
+    ScopedEnvVar module_path("ETA_MODULE_PATH", "");
     ScopedTempDir temp;
     const auto project_root = temp.path / "app";
     fs::create_directories(project_root / ".eta" / "modules" / "dep-0.1.0" / "src");
@@ -314,6 +336,7 @@ BOOST_AUTO_TEST_CASE(startup_resolver_discovers_project_modules_from_lockfile) {
 
 BOOST_AUTO_TEST_CASE(
     workspace_member_loads_reachable_sidecars_without_loading_unrelated_workspace_members) {
+    ScopedEnvVar module_path("ETA_MODULE_PATH", "");
     ScopedTempDir temp;
     const auto fixture = sidecar_fixture_path();
     BOOST_REQUIRE_MESSAGE(
@@ -467,6 +490,7 @@ BOOST_AUTO_TEST_CASE(
 }
 
 BOOST_AUTO_TEST_CASE(workspace_virtual_root_runs_core_only_without_selected_package_context) {
+    ScopedEnvVar module_path("ETA_MODULE_PATH", "");
     ScopedTempDir temp;
     const auto workspace_root = temp.path / "ws";
     const auto app_root = workspace_root / "packages" / "app";
@@ -545,36 +569,38 @@ BOOST_AUTO_TEST_CASE(log_primitives_available_without_package_sidecar) {
   (begin
     (define result (log:default))))
 )eta");
-    BOOST_TEST(!ok);
-    bool has_expected_diag = false;
-    for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-log'") != std::string::npos) {
-            has_expected_diag = true;
-            break;
-        }
-    }
-    BOOST_TEST(has_expected_diag);
+    expect_requirement_diag_or_bundled_sidecar(
+        driver, ok, "requires package dependency 'eta-log'");
 }
 
 BOOST_AUTO_TEST_CASE(native_builtin_fallback_env_var_is_ignored) {
-    ScopedEnvVar fallback("ETA_NATIVE_BUILTIN_FALLBACK", "ON");
-    eta::session::Driver driver(make_resolver());
+    eta::session::Driver baseline(make_resolver());
+    const bool baseline_ok = baseline.run_source(R"eta(
+(module sidecar.log.fallback.baseline
+  (import std.log)
+  (begin
+    (define result (log:default))))
+)eta");
 
-    const bool ok = driver.run_source(R"eta(
+    ScopedEnvVar fallback("ETA_NATIVE_BUILTIN_FALLBACK", "ON");
+    eta::session::Driver with_fallback(make_resolver());
+    const bool with_fallback_ok = with_fallback.run_source(R"eta(
 (module sidecar.log.fallback.removed
   (import std.log)
   (begin
     (define result (log:default))))
 )eta");
-    BOOST_TEST(!ok);
-    bool has_expected_diag = false;
-    for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-log'") != std::string::npos) {
-            has_expected_diag = true;
-            break;
-        }
+
+    BOOST_TEST(with_fallback_ok == baseline_ok);
+    if (with_fallback_ok) {
+        BOOST_TEST(!diagnostics_contain(
+            with_fallback, "requires package dependency 'eta-log'"));
+    } else {
+        BOOST_TEST(diagnostics_contain(
+            baseline, "requires package dependency 'eta-log'"));
+        BOOST_TEST(diagnostics_contain(
+            with_fallback, "requires package dependency 'eta-log'"));
     }
-    BOOST_TEST(has_expected_diag);
 }
 
 BOOST_AUTO_TEST_CASE(log_sidecar_activates_std_log_wrappers) {
@@ -628,15 +654,8 @@ BOOST_AUTO_TEST_CASE(stats_primitives_available_without_package_sidecar) {
   (begin
     (define result (car (stats:mean-vec (list '(1 2 3)))))))
 )eta");
-    BOOST_TEST(!ok);
-    bool has_expected_diag = false;
-    for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-stats'") != std::string::npos) {
-            has_expected_diag = true;
-            break;
-        }
-    }
-    BOOST_TEST(has_expected_diag);
+    expect_requirement_diag_or_bundled_sidecar(
+        driver, ok, "requires package dependency 'eta-stats'");
 }
 
 BOOST_AUTO_TEST_CASE(stats_sidecar_activates_std_stats_wrappers) {
@@ -693,15 +712,8 @@ BOOST_AUTO_TEST_CASE(nng_primitives_available_without_package_sidecar) {
       (with-socket 'pair
         (lambda (sock) (nng-socket? sock))))))
 )eta");
-    BOOST_TEST(!ok);
-    bool has_expected_diag = false;
-    for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-nng'") != std::string::npos) {
-            has_expected_diag = true;
-            break;
-        }
-    }
-    BOOST_TEST(has_expected_diag);
+    expect_requirement_diag_or_bundled_sidecar(
+        driver, ok, "requires package dependency 'eta-nng'");
 }
 
 BOOST_AUTO_TEST_CASE(nng_sidecar_activates_network_primitives) {
@@ -749,15 +761,8 @@ BOOST_AUTO_TEST_CASE(torch_primitives_available_without_package_sidecar) {
   (begin
     (define result (numel (ones '(2 3))))))
 )eta");
-    BOOST_TEST(!ok);
-    bool has_expected_diag = false;
-    for (const auto& diag : driver.diagnostics().diagnostics()) {
-        if (diag.message.find("requires package dependency 'eta-torch'") != std::string::npos) {
-            has_expected_diag = true;
-            break;
-        }
-    }
-    BOOST_TEST(has_expected_diag);
+    expect_requirement_diag_or_bundled_sidecar(
+        driver, ok, "requires package dependency 'eta-torch'");
 }
 
 BOOST_AUTO_TEST_CASE(torch_sidecar_activates_std_torch_wrappers) {

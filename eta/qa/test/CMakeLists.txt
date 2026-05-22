@@ -57,6 +57,9 @@ set(SOURCES
         src/log_tests.cpp
         src/nng_tests.cpp
         src/nng_session_runtime_tests.cpp
+        src/actor_runtime_tests.cpp
+        src/actor_scheduler_tests.cpp
+        src/actor_scheduler_scale_tests.cpp
         src/clp_linear_tests.cpp
         src/clp_qp_linearize_tests.cpp
         src/clp_qp_matrix_tests.cpp
@@ -257,3 +260,5 @@ endif()
 # Register with CTest
 enable_testing()
 add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
+set_tests_properties(${PROJECT_NAME} PROPERTIES
+    ENVIRONMENT "ETA_MODULE_PATH=")

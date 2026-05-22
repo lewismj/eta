@@ -261,6 +261,13 @@ std::string format_value(LispVal v, FormatMode mode, Heap& heap, InternTable& in
             return "#<process-handle pid=" + std::to_string(pid) + ">";
         }
 
+        /// Actor process identifier
+        if (auto* pid = heap.try_get_as<ObjectKind::Pid, types::Pid>(id)) {
+            return "#<pid " + std::to_string(pid->node_id)
+                + "." + std::to_string(pid->actor_id)
+                + "." + std::to_string(pid->incarnation) + ">";
+        }
+
         /// Logic variable
         if (auto* lv = heap.try_get_as<ObjectKind::LogicVar, types::LogicVar>(id)) {
             if (lv->binding.has_value()) {

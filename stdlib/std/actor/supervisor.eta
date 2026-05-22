@@ -1,0 +1,398 @@
+;;; std/actor/supervisor.eta - Local actor supervision helpers.
+
+(module std.actor.supervisor
+  (export
+    child-spec
+    make-child-spec
+    supervisor-start
+    supervisor-start-link
+    supervisor-pid?
+    supervisor-which-children
+    supervisor-count-children
+    supervisor-start-child
+    supervisor-terminate-child
+    supervisor-restart-child
+    supervisor-delete-child
+    one-for-one
+    one-for-all
+    rest-for-one)
+  (import std.actor std.collections std.time)
+  (begin
+
+    (defun %plist-get (plist key default)
+      (if (null? plist)
+          default
+          (if (null? (cdr plist))
+              default
+              (if (eq? (car plist) key)
+                  (car (cdr plist))
+                  (%plist-get (cdr (cdr plist)) key default)))))
+
+    (defun %spec-ref (spec key default)
+      (let ((entry (assoc key spec)))
+        (if entry (cdr entry) default)))
+
+    (defun make-child-spec (id start . rest)
+      (let ((restart (%plist-get rest 'restart 'permanent))
+            (shutdown (%plist-get rest 'shutdown 5000))
+            (kind (%plist-get rest 'type 'worker))
+            (modules (%plist-get rest 'modules '())))
+        (list
+          (cons 'id id)
+          (cons 'start start)
+          (cons 'restart restart)
+          (cons 'shutdown shutdown)
+          (cons 'type kind)
+          (cons 'modules modules))))
+
+    (defun child-spec (id start . rest)
+      (apply make-child-spec (cons id (cons start rest))))
+
+    (defun %normalize-spec (spec)
+      (make-child-spec
+        (%spec-ref spec 'id #f)
+        (%spec-ref spec 'start #f)
+        'restart (%spec-ref spec 'restart 'permanent)
+        'shutdown (%spec-ref spec 'shutdown 5000)
+        'type (%spec-ref spec 'type 'worker)
+        'modules (%spec-ref spec 'modules '())))
+
+    (defun %make-entry (spec pid ref)
+      (vector
+        (%spec-ref spec 'id #f)
+        spec
+        pid
+        ref))
+
+    (defun %entry-id (entry) (vector-ref entry 0))
+    (defun %entry-spec (entry) (vector-ref entry 1))
+    (defun %entry-pid (entry) (vector-ref entry 2))
+    (defun %entry-ref (entry) (vector-ref entry 3))
+
+    (defun %start-one (spec)
+      (let* ((start (%spec-ref spec 'start #f))
+             (pid (spawn start))
+             (ref (monitor pid)))
+        (%make-entry spec pid ref)))
+
+    (defun %start-children (specs)
+      (let* ((count (length specs))
+             (children (make-vector count #f)))
+        (let loop ((i 0) (rest specs))
+          (when (< i count)
+            (vector-set! children i (%start-one (car rest)))
+            (loop (+ i 1) (cdr rest))))
+        children))
+
+    (defun %find-index-by-ref (children ref)
+      (let ((n (vector-length children)))
+        (let loop ((i 0))
+          (if (>= i n)
+              #f
+              (if (equal? (%entry-ref (vector-ref children i)) ref)
+                  i
+                  (loop (+ i 1)))))))
+
+    (defun %find-index-by-id (children id)
+      (let ((n (vector-length children)))
+        (let loop ((i 0))
+          (if (>= i n)
+              #f
+              (if (equal? (%entry-id (vector-ref children i)) id)
+                  i
+                  (loop (+ i 1)))))))
+
+    (defun %down-message? (msg)
+      (and (pair? msg)
+           (eq? (car msg) 'DOWN)
+           (pair? (cdr msg))
+           (pair? (cdr (cdr msg)))
+           (pair? (cdr (cdr (cdr msg))))
+           (pair? (cdr (cdr (cdr (cdr msg))))))
+      )
+
+    (defun %down-ref (msg) (car (cdr msg)))
+    (defun %down-reason (msg)
+      (car (cdr (cdr (cdr (cdr msg))))))
+
+    (defun %control-message? (msg)
+      (and (pair? msg)
+           (eq? (car msg) 'supervisor-call)
+           (pair? (cdr msg))
+           (pair? (cdr (cdr msg)))
+           (pair? (cdr (cdr (cdr msg))))
+           (null? (cdr (cdr (cdr (cdr msg)))))))
+
+    (defun %control-from (msg) (car (cdr msg)))
+    (defun %control-ref (msg) (car (cdr (cdr msg))))
+    (defun %control-request (msg) (car (cdr (cdr (cdr msg)))))
+
+    (defun %reply (to ref value)
+      (send to (list 'supervisor-reply ref value)))
+
+    (defun %reply-matcher (ref)
+      (lambda (msg)
+        (and (pair? msg)
+             (eq? (car msg) 'supervisor-reply)
+             (pair? (cdr msg))
+             (pair? (cdr (cdr msg)))
+             (null? (cdr (cdr (cdr msg))))
+             (equal? (car (cdr msg)) ref))))
+
+    (defun %supervisor-call (supervisor request timeout-ms)
+      (let ((ref (list 'supervisor-ref (time:monotonic-ms) (mailbox-length))))
+        (send supervisor (list 'supervisor-call (self) ref request))
+        (receive
+          (list
+            (match-case (%reply-matcher ref)
+                        (lambda (msg) (car (cdr (cdr msg))))))
+          timeout-ms
+          (lambda () #f))))
+
+    (defun %stop-entry! (entry)
+      (let ((ref (%entry-ref entry))
+            (pid (%entry-pid entry)))
+        (when ref (demonitor ref #t))
+        (when pid (kill pid))
+        (vector-set! entry 2 #f)
+        (vector-set! entry 3 #f)))
+
+    (defun %stop-range! (children start end)
+      (let loop ((i end))
+        (when (>= i start)
+          (%stop-entry! (vector-ref children i))
+          (loop (- i 1)))))
+
+    (defun %start-range! (children start end)
+      (let loop ((i start))
+        (when (<= i end)
+          (let* ((entry (vector-ref children i))
+                 (spec (%entry-spec entry)))
+            (vector-set! children i (%start-one spec)))
+          (loop (+ i 1)))))
+
+    (defun %restart-range! (children start end)
+      (%stop-range! children start end)
+      (%start-range! children start end)
+      children)
+
+    (defun %shutdown-reason? (reason)
+      (or (eq? reason 'shutdown)
+          (and (pair? reason) (eq? (car reason) 'shutdown))))
+
+    (defun %normal-reason? (reason)
+      (or (eq? reason 'normal) (%shutdown-reason? reason)))
+
+    (defun %should-restart? (spec reason)
+      (let ((policy (%spec-ref spec 'restart 'permanent)))
+        (cond
+          ((eq? policy 'temporary) #f)
+          ((eq? policy 'transient) (not (%normal-reason? reason)))
+          (else #t))))
+
+    (defun %prune-restart-history (history now window-ms)
+      (if (null? history)
+          '()
+          (let ((tail (%prune-restart-history (cdr history) now window-ms)))
+            (if (<= (- now (car history)) window-ms)
+                (cons (car history) tail)
+                tail))))
+
+    (defun %record-restart (history window-ms)
+      (let ((now (time:monotonic-ms)))
+        (cons now (%prune-restart-history history now window-ms))))
+
+    (defun %children-snapshot (children)
+      (let ((n (vector-length children)))
+        (let loop ((i 0) (acc '()))
+          (if (>= i n)
+              (reverse acc)
+              (let ((entry (vector-ref children i)))
+                (loop (+ i 1)
+                      (cons (list (%entry-id entry) (%entry-pid entry)) acc)))))))
+
+    (defun %children-alive-count (children)
+      (let ((n (vector-length children)))
+        (let loop ((i 0) (count 0))
+          (if (>= i n)
+              count
+              (let ((entry (vector-ref children i)))
+                (loop (+ i 1)
+                      (if (%entry-pid entry) (+ count 1) count)))))))
+
+    (defun %append-child (children spec)
+      (let* ((n (vector-length children))
+             (out (make-vector (+ n 1) #f)))
+        (let copy ((i 0))
+          (when (< i n)
+            (vector-set! out i (vector-ref children i))
+            (copy (+ i 1))))
+        (vector-set! out n (%start-one (%normalize-spec spec)))
+        out))
+
+    (defun %remove-index (children idx)
+      (let* ((n (vector-length children))
+             (out (make-vector (- n 1) #f)))
+        (let loop ((i 0) (j 0))
+          (if (>= i n)
+              out
+              (if (= i idx)
+                  (loop (+ i 1) j)
+                  (begin
+                    (vector-set! out j (vector-ref children i))
+                    (loop (+ i 1) (+ j 1))))))))
+
+    (defun %handle-request (children request)
+      (if (not (pair? request))
+          (cons children #f)
+          (let ((op (car request)))
+            (cond
+              ((eq? op 'which-children)
+               (cons children (%children-snapshot children)))
+              ((eq? op 'count-children)
+               (cons children (%children-alive-count children)))
+              ((and (eq? op 'start-child) (pair? (cdr request)))
+               (let ((next (%append-child children (car (cdr request)))))
+                 (cons next (%children-snapshot next))))
+              ((and (eq? op 'terminate-child) (pair? (cdr request)))
+               (let* ((id (car (cdr request)))
+                      (idx (%find-index-by-id children id)))
+                 (if idx
+                     (begin
+                       (%stop-entry! (vector-ref children idx))
+                       (cons children #t))
+                     (cons children #f))))
+              ((and (eq? op 'restart-child) (pair? (cdr request)))
+               (let* ((id (car (cdr request)))
+                      (idx (%find-index-by-id children id)))
+                 (if idx
+                     (begin
+                       (%restart-range! children idx idx)
+                       (cons children #t))
+                     (cons children #f))))
+              ((and (eq? op 'delete-child) (pair? (cdr request)))
+               (let* ((id (car (cdr request)))
+                      (idx (%find-index-by-id children id)))
+                 (if idx
+                     (begin
+                       (%stop-entry! (vector-ref children idx))
+                       (cons (%remove-index children idx) #t))
+                     (cons children #f))))
+              (else
+               (cons children #f))))))
+
+    (defun %apply-strategy-restart! (children strategy failed-index)
+      (let ((last (- (vector-length children) 1)))
+        (if (< last 0)
+            children
+            (cond
+              ((eq? strategy 'one-for-all)
+               (%restart-range! children 0 last))
+              ((eq? strategy 'rest-for-one)
+               (%restart-range! children failed-index last))
+              (else
+               (%restart-range! children failed-index failed-index))))))
+
+    (defun %shutdown-all! (children)
+      (let ((last (- (vector-length children) 1)))
+        (when (>= last 0)
+          (%stop-range! children 0 last))))
+
+    (defun %supervisor-loop (children strategy max-restarts window-ms restart-history)
+      (let ((msg (receive-after 100)))
+        (cond
+          ((not msg)
+           (if (alive? (self))
+               (%supervisor-loop children strategy max-restarts window-ms restart-history)
+               'ok))
+
+          ((%control-message? msg)
+           (let* ((result (%handle-request children (%control-request msg)))
+                  (next-children (car result))
+                  (reply-value (cdr result)))
+             (%reply (%control-from msg) (%control-ref msg) reply-value)
+             (%supervisor-loop next-children strategy max-restarts window-ms restart-history)))
+
+          ((%down-message? msg)
+           (let* ((idx (%find-index-by-ref children (%down-ref msg))))
+             (if (not idx)
+                 (%supervisor-loop children strategy max-restarts window-ms restart-history)
+                 (let* ((entry (vector-ref children idx))
+                        (spec (%entry-spec entry))
+                        (reason (%down-reason msg)))
+                   (vector-set! entry 2 #f)
+                   (vector-set! entry 3 #f)
+                   (if (%should-restart? spec reason)
+                       (if (alive? (self))
+                           (let ((history (%record-restart restart-history window-ms)))
+                             (if (> (length history) max-restarts)
+                                 (begin
+                                   (%shutdown-all! children)
+                                   (exit (self) '(shutdown restart-intensity-exceeded)))
+                                 (begin
+                                   (%apply-strategy-restart! children strategy idx)
+                                   (%supervisor-loop children strategy max-restarts window-ms history))))
+                           'ok)
+                       (%supervisor-loop children strategy max-restarts window-ms restart-history))))))
+
+          (else
+           (%supervisor-loop children strategy max-restarts window-ms restart-history)))))
+
+    (defun %spawn-supervisor (link? options)
+      (let* ((strategy (%plist-get options 'strategy 'one-for-one))
+             (max-restarts (%plist-get options 'max-restarts 3))
+             (max-seconds (%plist-get options 'max-seconds 5))
+             (children-specs (%plist-get options 'children '()))
+             (window-ms (* max-seconds 1000))
+             (specs (map* %normalize-spec children-specs))
+             (pid (spawn
+                    (lambda ()
+                      (%supervisor-loop
+                        (%start-children specs)
+                        strategy
+                        max-restarts
+                        window-ms
+                        '())))))
+        (when link? (link pid))
+        pid))
+
+    (defun supervisor-start (key value . rest)
+      (%spawn-supervisor #f (cons key (cons value rest))))
+
+    (defun supervisor-start-link (key value . rest)
+      (%spawn-supervisor #t (cons key (cons value rest))))
+
+    (defun supervisor-pid? (value)
+      (pid? value))
+
+    (defun supervisor-which-children (supervisor)
+      (%supervisor-call supervisor '(which-children) 1000))
+
+    (defun supervisor-count-children (supervisor)
+      (%supervisor-call supervisor '(count-children) 1000))
+
+    (defun supervisor-start-child (supervisor spec)
+      (%supervisor-call supervisor (list 'start-child (%normalize-spec spec)) 1000))
+
+    (defun supervisor-terminate-child (supervisor id)
+      (%supervisor-call supervisor (list 'terminate-child id) 1000))
+
+    (defun supervisor-restart-child (supervisor id)
+      (%supervisor-call supervisor (list 'restart-child id) 1000))
+
+    (defun supervisor-delete-child (supervisor id)
+      (%supervisor-call supervisor (list 'delete-child id) 1000))
+
+    (defun one-for-one (children-specs . rest)
+      (apply supervisor-start
+             (append (list 'strategy 'one-for-one 'children children-specs) rest)))
+
+    (defun one-for-all (children-specs . rest)
+      (apply supervisor-start
+             (append (list 'strategy 'one-for-all 'children children-specs) rest)))
+
+    (defun rest-for-one (children-specs . rest)
+      (apply supervisor-start
+             (append (list 'strategy 'rest-for-one 'children children-specs) rest)))
+
+  ))

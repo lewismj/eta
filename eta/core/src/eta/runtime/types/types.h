@@ -22,3 +22,4 @@
 #include "regex.h"
 #include "log_types.h"
 #include "process_handle.h"
+#include "pid.h"

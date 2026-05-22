@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-05-22
+
+### Actor M8 Polish (Docs, Examples, Tooling)
+
+Implemented the M8 cleanup pass for actor adoption:
+
+- replaced legacy socket-mailbox cookbook actor examples with actor-native
+  `std.actor` examples (message passing, worker-pool, parallel map/fib,
+  Monte Carlo, scatter-gather, pub-sub, and local in-process workers);
+- removed obsolete worker-only cookbook files that depended on
+  `current-mailbox` workflows;
+- updated `docs/cookbook/concurrency.md` and the language guide concurrency
+  section to present PID/mailbox actors as the primary model, with `std.net`
+  scoped to explicit transport workflows;
+- refreshed the actor improvement plan wording to remove deprecation-warning
+  guidance for old socket-mailbox examples and require direct replacement;
+- updated editor/tooling surfaces to prioritize actor APIs in snippets and
+  syntax highlighting, and expanded builtin metadata descriptions for actor
+  primitives.
+
+### Actor Scheduler M7.6 (Scale Validation + Default Cutover)
+
+Implemented the M7.6 scheduler checkpoint:
+
+- default actor scheduler mode is now `pool` (Driver/runtime startup);
+- `thread-per-actor` remains available as an explicit fallback via
+  `ETA_ACTOR_SCHEDULER=thread-per-actor`;
+- added `eta/qa/test/src/actor_scheduler_scale_tests.cpp` with:
+  - idle-scale validation (thread and resident-memory ceilings),
+  - active ping/pong throughput with mixed monitor/link traffic,
+  - opt-in soak coverage for non-PR perf lanes;
+- added scheduler scale/profile environment controls:
+  `ETA_ACTOR_SCALE_FULL_PROFILE`, `ETA_ACTOR_SCALE_SOAK_SECONDS`,
+  `ETA_ACTOR_ACTIVE_SCALE_ACK_SLACK`, and related actor-count/timeout knobs;
+- updated scheduler plan and actor/build docs with the new defaults and
+  scale-gate execution notes.
+
 ## 2026-05-17
 
 ### eta-http Sidecar M4 (libcurl)

@@ -54,6 +54,7 @@ namespace eta::runtime::memory::heap {
         LogSink,         ///< Logging sink wrapper (spdlog sink + sink traits)
         LogLogger,       ///< Logging logger wrapper (spdlog logger + formatter mode)
         ProcessHandle,   ///< Native subprocess lifecycle handle + optional stdio ports
+        Pid,             ///< Actor process identifier
         NngSocket,       ///< nng socket (wraps NngSocketPtr from packages/stdlib/native/nng/)
         CompoundTerm,    ///< Structured logic term: functor symbol + argument list
         NativeObject,    ///< Sidecar-managed opaque object wrapper
@@ -86,6 +87,7 @@ namespace eta::runtime::memory::heap {
         ETA_ENUM_CASE(LogSink)
         ETA_ENUM_CASE(LogLogger)
         ETA_ENUM_CASE(ProcessHandle)
+        ETA_ENUM_CASE(Pid)
         ETA_ENUM_CASE(NngSocket)
         ETA_ENUM_CASE(CompoundTerm)
         ETA_ENUM_CASE(NativeObject)

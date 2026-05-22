@@ -1,51 +1,41 @@
-;;; cookbook/concurrency/message-passing.eta — Erlang-style parent/child messaging.
+;;; cookbook/concurrency/message-passing.eta - Basic PID-based actor messaging.
 ;;;
-;;; Demonstrates the std.net module:
-;;;   - (spawn module-path)        → parent-side socket
-;;;   - (send! sock value)         → send a serialised value
-;;;   - (recv! sock 'wait)         → blocking receive
-;;;   - (current-mailbox)          → child side: socket to parent
-;;;
-;;; Run (two separate terminals or as background):
-;;;   terminal 1 (child is launched automatically by spawn):
-;;;     etai cookbook/concurrency/message-passing.eta
-;;;
-;;; The child module is cookbook/concurrency/message-passing-worker.eta
+;;; Run:
+;;;   etai cookbook/concurrency/message-passing.eta
 
 (module message-passing
-  (import std.net)
-  (import std.io)
+  (import std.actor std.io)
   (begin
 
-    (println "parent: spawning worker...")
-    ;;@doc (worker)
-    ;;@category Concurrency
-    ;;@module message-passing
-    ;; Erlang-style parent/child messaging Uses `worker`.
-    ;;@example
-    ;; (display worker)
-    (define worker (spawn "cookbook/concurrency/message-passing-worker.eta"))
+    (define worker
+      (spawn
+        (lambda ()
+          (let loop ()
+            (receive
+              (list
+                (match-case
+                  (match-list 'hello 1)
+                  (lambda (msg)
+                    (let ((from (car (cdr msg))))
+                      (send from '(hello from-worker))
+                      (loop))))
+                (match-case
+                  (match-list 'compute 2)
+                  (lambda (msg)
+                    (let ((from (car (cdr msg)))
+                          (n (car (cdr (cdr msg)))))
+                      (send from (list 'result n (* n 2)))
+                      (loop))))
+                (match-case
+                  (match-symbol 'stop)
+                  (lambda (msg)
+                    'ok)))
+              'wait)))))
 
-    ;; Send a greeting
-    (send! worker '(hello from-parent) 'wait)
-    (println "parent: sent (hello from-parent)")
+    (send worker (list 'hello (self)))
+    (println (receive-after 1000))
 
-    ;; Receive the reply
-    (define reply (recv! worker 'wait))
-    (print "parent: received: ")
-    (println reply)
+    (send worker (list 'compute (self) 21))
+    (println (receive-after 1000))
 
-    ;; Send a compute request
-    (send! worker '(compute 21) 'wait)
-    (define result (recv! worker 'wait))
-    (print "parent: compute result: ")
-    (println result)
-
-    ;; Tell child to exit
-    (send! worker '(exit) 'wait)
-
-    ;; Clean up
-    (spawn-wait worker)
-    (nng-close worker)
-    (println "parent: done.")))
-
+    (send worker 'stop)))

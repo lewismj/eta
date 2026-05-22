@@ -22,6 +22,7 @@
 #include "eta/runtime/port.h"
 #include "eta/runtime/value_formatter.h"
 #include "eta/runtime/vm/vm.h"
+#include "eta/runtime/actor/actor_system.h"
 #include "eta/semantics/emitter.h"
 #include "eta/semantics/optimization_pipeline.h"
 #include "eta/session/compilation_session.h"
@@ -355,6 +356,12 @@ public:
 private:
     friend class eta::nng::SessionActorRuntime;
 
+    enum class ActorSchedulerMode : std::uint8_t {
+        ThreadPerActor,
+        Pool,
+        PoolShadow,
+    };
+
     [[nodiscard]] bool can_register_extension_primitives() const noexcept override;
     void register_builtin_primitive(std::string name,
                                     uint32_t arity,
@@ -378,6 +385,18 @@ private:
     [[nodiscard]] std::string diagnostics_to_string() const override;
     [[nodiscard]] std::vector<std::string> discover_module_names() const override;
     void collect_garbage_with_registry_roots();
+    std::expected<runtime::types::Pid, runtime::error::RuntimeError> spawn_actor_for_vm(
+        runtime::vm::VM& source_vm,
+        runtime::nanbox::LispVal thunk);
+    std::expected<runtime::types::Pid, runtime::error::RuntimeError> spawn_actor_for_vm(
+        runtime::vm::VM& source_vm,
+        runtime::nanbox::LispVal thunk,
+        const semantics::BytecodeFunctionRegistry& source_registry,
+        std::size_t primitive_global_ref_slot_limit);
+    void run_spawned_actor(
+        runtime::types::Pid pid,
+        std::vector<std::uint8_t> funcs_bytes,
+        std::vector<std::uint8_t> captures_bytes);
 
     /**
      * Auto-detect the path to the etai binary at startup.
@@ -385,6 +404,11 @@ private:
      * falls back to PATH lookup.
      */
     static std::string detect_etai_path();
+    static ActorSchedulerMode parse_actor_scheduler_mode_env() noexcept;
+    static runtime::actor::ActorSystem::SchedulerMode to_actor_scheduler_mode(
+        ActorSchedulerMode mode) noexcept;
+    static std::uint64_t parse_actor_reduction_budget_env() noexcept;
+    static bool actor_scheduler_supports_vm_yield(ActorSchedulerMode mode) noexcept;
 
     /// File ID registry used by diagnostics and debugger file lookups.
     uint32_t allocate_file_id(const std::string& raw_path);
@@ -406,6 +430,9 @@ private:
     native::NativeSidecarManager sidecar_manager_;
     native::SidecarRuntimeBindingV1 sidecar_runtime_binding_{};
     runtime::vm::VM vm_;
+    std::shared_ptr<runtime::actor::ActorSystem> actor_system_;
+    ActorSchedulerMode actor_scheduler_mode_{ActorSchedulerMode::Pool};
+    std::uint64_t actor_reduction_budget_{2000};
 
     diagnostic::DiagnosticEngine diag_engine_;
 

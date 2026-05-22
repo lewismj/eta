@@ -4,17 +4,20 @@
 #include <deque>
 #include <expected>
 #include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <atomic>
+#include <cstdint>
 #include <condition_variable>
 #include <mutex>
 #include "eta/runtime/nanbox.h"
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/error.h"
+#include "eta/runtime/types/pid.h"
 #include "eta/reader/lexer.h"
 #include "eta/runtime/clp/constraint_store.h"
 #include "eta/runtime/clp/real_store.h"
@@ -23,6 +26,7 @@
 #include "debug_state.h"   ///< DebugState, BreakLocation, StopEvent, StopReason
 
 namespace eta::runtime::memory::gc { class MarkSweepGC; }
+namespace eta::runtime::actor { class ActorSystem; }
 
 namespace eta::runtime::vm {
 
@@ -167,6 +171,30 @@ using FunctionResolver = std::function<const BytecodeFunction*(uint32_t)>;
 
 class VM {
 public:
+    using ActorSpawnHook = std::function<std::expected<types::Pid, RuntimeError>(VM&, LispVal)>;
+
+    enum class ExecuteSliceStatus : std::uint8_t {
+        Finished,
+        BudgetExhausted,
+        BlockedOnReceive,
+    };
+
+    struct ExecuteSliceOptions {
+        bool enable_yield{false};
+        std::uint64_t reduction_budget{0};
+    };
+
+    struct ExecuteSliceResult {
+        ExecuteSliceStatus status{ExecuteSliceStatus::Finished};
+        LispVal value{nanbox::Nil};
+    };
+
+    struct PendingBlockingPrimitive {
+        std::size_t args_start{0};
+        reader::lexer::Span call_span{};
+        std::shared_future<std::expected<LispVal, RuntimeError>> result{};
+    };
+
     struct ExecutionSnapshot {
         std::vector<LispVal> stack;
         std::vector<Frame> frames;
@@ -180,6 +208,12 @@ public:
         uint32_t pc{0};
         uint32_t fp{0};
         LispVal current_closure{nanbox::Nil};
+        ExecuteSliceOptions execute_slice_options{};
+        const BytecodeFunction* active_slice_entry{nullptr};
+        bool slice_active{false};
+        std::uint64_t slice_reduction_budget_remaining{0};
+        std::optional<ExecuteSliceStatus> pending_run_loop_status{};
+        std::optional<PendingBlockingPrimitive> pending_blocking_primitive{};
     };
 
     class ExecutionScope {
@@ -322,7 +356,51 @@ public:
 
     std::expected<LispVal, RuntimeError> execute(const BytecodeFunction& main);
 
+    /**
+     * @brief Execute or resume one VM slice with optional cooperative yielding.
+     *
+     * When @p options enables yielding and a reduction budget, this returns
+     * `BudgetExhausted` deterministically when the budget is consumed. The
+     * caller can resume by invoking the same method again with the same entry
+     * function.
+     */
+    std::expected<ExecuteSliceResult, RuntimeError> execute_with_status(
+        const BytecodeFunction& main,
+        ExecuteSliceOptions options = {});
+
     std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);
+
+    /**
+     * @brief Shared actor system bound to this VM.
+     */
+    void set_actor_system(std::shared_ptr<actor::ActorSystem> actor_system) {
+        actor_system_ = std::move(actor_system);
+    }
+
+    [[nodiscard]] const std::shared_ptr<actor::ActorSystem>& actor_system() const noexcept {
+        return actor_system_;
+    }
+
+    /**
+     * @brief Install actor spawn callback used by `%actor-spawn`.
+     */
+    void set_actor_spawn_hook(ActorSpawnHook hook) {
+        actor_spawn_hook_ = std::move(hook);
+    }
+
+    [[nodiscard]] std::expected<types::Pid, RuntimeError> spawn_actor(LispVal thunk) {
+        if (!actor_spawn_hook_) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::InternalError,
+                "actor spawn hook is not installed"}});
+        }
+        return actor_spawn_hook_(*this, thunk);
+    }
+
+    [[nodiscard]] Heap& heap() noexcept { return heap_; }
+    [[nodiscard]] const Heap& heap() const noexcept { return heap_; }
+    [[nodiscard]] InternTable& intern_table() noexcept { return intern_table_; }
+    [[nodiscard]] const InternTable& intern_table() const noexcept { return intern_table_; }
 
     void save_execution_state();
     void restore_execution_state();
@@ -330,6 +408,23 @@ public:
     [[nodiscard]] const std::vector<ExecutionSnapshot>& saved_executions() const noexcept {
         return saved_executions_;
     }
+
+    [[nodiscard]] bool yielding_enabled() const noexcept {
+        return slice_active_
+            && execute_slice_options_.enable_yield
+            && execute_slice_options_.reduction_budget > 0
+            && execute_depth_ == 1;
+    }
+
+    /**
+     * @brief Total reductions charged since the last reset.
+     */
+    [[nodiscard]] std::uint64_t reductions() const noexcept { return reductions_; }
+
+    /**
+     * @brief Reset the VM-local reduction counter.
+     */
+    void reset_reductions() noexcept { reductions_ = 0; }
 
     /// operand is a TapeRef, enabling tape-based reverse-mode AD.
     std::expected<LispVal, RuntimeError> tape_binary_op(OpCode op, LispVal a, LispVal b);
@@ -483,6 +578,8 @@ private:
 
     Heap& heap_;
     InternTable& intern_table_;
+    std::shared_ptr<actor::ActorSystem> actor_system_{};
+    ActorSpawnHook actor_spawn_hook_{};
     FunctionResolver func_resolver_;
     std::vector<LispVal> stack_;
     std::vector<Frame> frames_;
@@ -553,6 +650,15 @@ private:
      * refuse to execute and instead surface a SandboxViolation error.
      */
     bool sandbox_mode_{false};
+    std::uint64_t reductions_{0};
+    ExecuteSliceOptions execute_slice_options_{};
+    const BytecodeFunction* active_slice_entry_{nullptr};
+    bool slice_active_{false};
+    std::uint64_t slice_reduction_budget_remaining_{0};
+    std::optional<ExecuteSliceStatus> pending_run_loop_status_{};
+    std::optional<PendingBlockingPrimitive> pending_blocking_primitive_{};
+
+    void charge_reductions(std::uint64_t units = 1) noexcept;
 
     /**
      * Drain pending heap finalizers at VM-safe points.
@@ -560,7 +666,8 @@ private:
      */
     void process_pending_finalizers(std::size_t budget = kDefaultFinalizerBudget);
 
-    std::expected<void, RuntimeError> run_loop();
+    std::expected<ExecuteSliceStatus, RuntimeError> run_loop();
+    std::expected<void, RuntimeError> complete_pending_blocking_primitive();
     std::expected<void, RuntimeError> handle_return(LispVal result);
     void push(LispVal val) { stack_.push_back(val); }
     LispVal pop() {

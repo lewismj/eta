@@ -78,6 +78,8 @@ packages/**/eta.lock
 
 gha_build_logs/*
 
+*.pdb
+
 
 
 

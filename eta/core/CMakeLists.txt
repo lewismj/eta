@@ -59,6 +59,10 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/vm/bytecode_serializer.cpp
         src/eta/runtime/vm/sandbox.cpp
         src/eta/runtime/value_formatter.cpp
+        src/eta/runtime/actor/mailbox.cpp
+        src/eta/runtime/actor/scheduler.cpp
+        src/eta/runtime/actor/actor_system.cpp
+        src/eta/runtime/actor/node_transport.cpp
         src/eta/runtime/csv_builtins.cpp
         src/eta/runtime/regex_builtins.cpp
         src/eta/runtime/json_builtins.cpp
@@ -74,6 +78,7 @@ target_sources(${PROJECT_NAME}
         src/eta/runtime/primitives/core_primitives_clp.cpp
         src/eta/runtime/primitives/core_primitives_aad.cpp
         src/eta/runtime/primitives/core_primitives_stats.cpp
+        src/eta/runtime/primitives/core_primitives_actor.cpp
         src/eta/docs/stdlib_docs.cpp
         src/eta/runtime/process_primitives.cpp
         src/eta/runtime/prof/profiler.cpp

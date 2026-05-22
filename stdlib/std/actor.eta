@@ -1,0 +1,147 @@
+;;; std/actor.eta - Local PID-based actor runtime wrappers.
+
+(module std.actor
+  (export
+    self
+    pid?
+    alive?
+    spawn
+    send
+    send/checked
+    !
+    trap-exit!
+    link
+    unlink
+    monitor
+    demonitor
+    exit
+    kill
+    register
+    unregister
+    whereis
+    registered
+    process-info
+    match-case
+    match-list
+    match-symbol
+    match-predicate
+    receive
+    receive-match
+    receive-after
+    mailbox-length)
+  (begin
+
+    (define self %actor-self)
+    (define pid? %actor-pid?)
+    (define alive? %actor-alive?)
+    (define spawn %actor-spawn)
+
+    (defun send (pid payload)
+      (%actor-send pid payload))
+
+    (defun send/checked (pid payload)
+      (%actor-send-checked pid payload))
+
+    (define ! send)
+    (define trap-exit! %actor-trap-exit!)
+    (define link %actor-link)
+    (define unlink %actor-unlink)
+    (define monitor %actor-monitor)
+
+    (defun demonitor (ref . rest)
+      (if (null? rest)
+          (%actor-demonitor ref)
+          (%actor-demonitor ref (car rest))))
+
+    (define exit %actor-exit)
+    (define kill %actor-kill)
+    (define register %actor-register)
+    (define unregister %actor-unregister)
+    (define whereis %actor-whereis)
+    (define registered %actor-registered)
+
+    (defun process-info (pid . rest)
+      (if (null? rest)
+          (%actor-process-info pid)
+          (%actor-process-info pid (car rest))))
+
+    (defun match-case (matcher handler)
+      (cons matcher handler))
+
+    (defun match-symbol (symbol-value)
+      (lambda (message)
+        (and (symbol? message) (eq? message symbol-value))))
+
+    (defun match-predicate (predicate)
+      (lambda (message)
+        (predicate message)))
+
+    (defun %proper-list-length (value)
+      (let loop ((cursor value) (count 0))
+        (cond
+          ((null? cursor) count)
+          ((pair? cursor) (loop (cdr cursor) (+ count 1)))
+          (else #f))))
+
+    (defun match-list (head . rest)
+      (let ((expected-count (if (null? rest) #f (car rest))))
+        (lambda (message)
+          (and (pair? message)
+               (equal? (car message) head)
+               (let ((tail-count (%proper-list-length (cdr message))))
+                 (and tail-count
+                      (if expected-count
+                          (= tail-count expected-count)
+                          #t)))))))
+
+    (defun %find-case (cases message)
+      (if (null? cases)
+          #f
+          (let* ((entry (car cases))
+                 (matcher (car entry)))
+            (if (matcher message)
+                entry
+                (%find-case (cdr cases) message)))))
+
+    (defun %timeout-value (timeout-handler)
+      (if (and timeout-handler (procedure? timeout-handler))
+          (timeout-handler)
+          #f))
+
+    (defun %receive-cases (cases timeout timeout-handler)
+      (let ((message
+              (%actor-receive
+                (lambda (payload)
+                  (if (%find-case cases payload) #t #f))
+                timeout)))
+        (if message
+            (let ((selected (%find-case cases message)))
+              (if selected
+                  ((cdr selected) message)
+                  #f))
+            (%timeout-value timeout-handler))))
+
+    (defun receive-match (matcher-or-cases . rest)
+      (let* ((timeout (if (null? rest) 'wait (car rest)))
+             (timeout-handler
+               (if (or (null? rest) (null? (cdr rest)))
+                   #f
+                   (car (cdr rest)))))
+        (if (procedure? matcher-or-cases)
+            (let ((message (%actor-receive matcher-or-cases timeout)))
+              (if message
+                  message
+                  (%timeout-value timeout-handler)))
+            (%receive-cases matcher-or-cases timeout timeout-handler))))
+
+    (defun receive-after (timeout-ms)
+      (%actor-receive #f timeout-ms))
+
+    (defun receive (cases . rest)
+      (if (null? rest)
+          (receive-match cases 'wait)
+          (if (null? (cdr rest))
+              (receive-match cases (car rest))
+              (receive-match cases (car rest) (car (cdr rest))))))
+
+    (define mailbox-length %actor-mailbox-len)))

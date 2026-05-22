@@ -45,6 +45,15 @@ namespace {
         || name == "enable-heartbeat";
 }
 
+[[nodiscard]] bool is_blocking_builtin(std::string_view name) {
+    return name == "%process-run"
+        || name == "%process-wait"
+        || name == "%time-sleep-ms"
+        || name == "recv!"
+        || name == "spawn-wait"
+        || name == "thread-join";
+}
+
 [[nodiscard]] std::string owner_for_builtin(std::string_view name) {
     if (is_torch_builtin(name)) return "sidecar:eta-torch";
     if (is_stats_sidecar_builtin(name)) return "sidecar:eta-stats";
@@ -65,6 +74,7 @@ namespace {
             entry.name = spec.name;
             entry.arity = spec.arity;
             entry.has_rest = spec.has_rest;
+            entry.is_blocking = is_blocking_builtin(spec.name);
             entry.owner = owner_for_builtin(spec.name);
             out.push_back(std::move(entry));
         }
@@ -78,6 +88,10 @@ namespace {
 std::span<const BuiltinCatalogEntry> builtin_catalog() {
     const auto& catalog = builtin_catalog_storage();
     return std::span<const BuiltinCatalogEntry>(catalog.data(), catalog.size());
+}
+
+bool builtin_is_blocking(std::string_view name) {
+    return is_blocking_builtin(name);
 }
 
 void register_builtin_specs(BuiltinEnvironment& env) {

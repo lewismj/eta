@@ -1,5 +1,11 @@
 #include "vm.h"
 #include <algorithm>
+#include <chrono>
+#include <exception>
+#include <future>
+#include <limits>
+#include "eta/runtime/actor/actor_system.h"
+#include "eta/runtime/builtin_catalog.h"
 #include "eta/runtime/factory.h"
 #include "eta/runtime/ad_error.h"
 #include "eta/runtime/types/types.h"
@@ -16,7 +22,6 @@
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/prof/profiler.h"
 #include <bit>
-#include <limits>
 
 namespace eta::runtime::vm {
 
@@ -98,6 +103,12 @@ void VM::save_execution_state() {
     snapshot.pc = pc_;
     snapshot.fp = fp_;
     snapshot.current_closure = current_closure_;
+    snapshot.execute_slice_options = execute_slice_options_;
+    snapshot.active_slice_entry = active_slice_entry_;
+    snapshot.slice_active = slice_active_;
+    snapshot.slice_reduction_budget_remaining = slice_reduction_budget_remaining_;
+    snapshot.pending_run_loop_status = pending_run_loop_status_;
+    snapshot.pending_blocking_primitive = pending_blocking_primitive_;
     saved_executions_.push_back(std::move(snapshot));
 
     clear_exception_transfer();
@@ -112,6 +123,12 @@ void VM::save_execution_state() {
     pc_ = 0;
     fp_ = 0;
     current_closure_ = nanbox::Nil;
+    execute_slice_options_ = ExecuteSliceOptions{};
+    active_slice_entry_ = nullptr;
+    slice_active_ = false;
+    slice_reduction_budget_remaining_ = 0;
+    pending_run_loop_status_.reset();
+    pending_blocking_primitive_.reset();
 }
 
 void VM::restore_execution_state() {
@@ -132,6 +149,12 @@ void VM::restore_execution_state() {
     pc_ = snapshot.pc;
     fp_ = snapshot.fp;
     current_closure_ = snapshot.current_closure;
+    execute_slice_options_ = snapshot.execute_slice_options;
+    active_slice_entry_ = snapshot.active_slice_entry;
+    slice_active_ = snapshot.slice_active;
+    slice_reduction_budget_remaining_ = snapshot.slice_reduction_budget_remaining;
+    pending_run_loop_status_ = snapshot.pending_run_loop_status;
+    pending_blocking_primitive_ = snapshot.pending_blocking_primitive;
 }
 
 bool VM::values_eqv(LispVal a, LispVal b) const {
@@ -471,28 +494,87 @@ std::vector<GCRootInfo> VM::enumerate_gc_roots() const {
 }
 
 std::expected<LispVal, RuntimeError> VM::execute(const BytecodeFunction& main) {
-    ExecuteDepthScope depth_scope(*this);
-    clear_exception_transfer();
-    /**
-     * Push a sentinel frame to mark the bottom of this execution call.
-     * This prevents CallCC from capturing frames above the point where execute() was called.
-     */
-    frames_.push_back({nullptr, 0, 0, Nil, FrameKind::Sentinel});
+    auto run_result = execute_with_status(main, ExecuteSliceOptions{});
+    if (!run_result) return std::unexpected(run_result.error());
+    if (run_result->status != ExecuteSliceStatus::Finished) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "execute: unexpected non-finished VM status"}});
+    }
+    return run_result->value;
+}
 
-    current_func_ = &main;
-    pc_ = 0;
-    fp_ = 0;
-    current_closure_ = 0; ///< Top-level
-    
-    /// Initial stack resize for main
-    stack_.resize(main.stack_size, Nil);
-    
-    auto res = run_loop();
-    if (!res) return std::unexpected(res.error());
+std::expected<VM::ExecuteSliceResult, RuntimeError> VM::execute_with_status(
+    const BytecodeFunction& main,
+    ExecuteSliceOptions options) {
+    ExecuteDepthScope depth_scope(*this);
+
+    if (!slice_active_) {
+        clear_exception_transfer();
+        pending_run_loop_status_.reset();
+        pending_blocking_primitive_.reset();
+        /**
+         * Push a sentinel frame to mark the bottom of this execution call.
+         * This prevents CallCC from capturing frames above the point where execute() was called.
+         */
+        frames_.push_back({nullptr, 0, 0, Nil, FrameKind::Sentinel});
+
+        current_func_ = &main;
+        pc_ = 0;
+        fp_ = 0;
+        current_closure_ = 0; ///< Top-level
+
+        /// Initial stack resize for main
+        stack_.resize(main.stack_size, Nil);
+        active_slice_entry_ = &main;
+        slice_active_ = true;
+    } else if (active_slice_entry_ != &main) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "execute_with_status: cannot switch entry function while execution is active"}});
+    }
+
+    execute_slice_options_ = options;
+    if (yielding_enabled()) {
+        slice_reduction_budget_remaining_ = execute_slice_options_.reduction_budget;
+    } else {
+        slice_reduction_budget_remaining_ = 0;
+    }
+
+    auto run_result = run_loop();
+    if (!run_result) {
+        slice_active_ = false;
+        active_slice_entry_ = nullptr;
+        pending_run_loop_status_.reset();
+        pending_blocking_primitive_.reset();
+        slice_reduction_budget_remaining_ = 0;
+        return std::unexpected(run_result.error());
+    }
+
+    ExecuteSliceResult out;
+    switch (*run_result) {
+        case ExecuteSliceStatus::BudgetExhausted:
+            out.status = ExecuteSliceStatus::BudgetExhausted;
+            out.value = nanbox::Nil;
+            return out;
+        case ExecuteSliceStatus::BlockedOnReceive:
+            out.status = ExecuteSliceStatus::BlockedOnReceive;
+            out.value = nanbox::Nil;
+            return out;
+        case ExecuteSliceStatus::Finished:
+            break;
+    }
 
     process_pending_finalizers();
-    
-    return pop();
+    out.status = ExecuteSliceStatus::Finished;
+    out.value = pop();
+
+    slice_active_ = false;
+    active_slice_entry_ = nullptr;
+    pending_run_loop_status_.reset();
+    pending_blocking_primitive_.reset();
+    slice_reduction_budget_remaining_ = 0;
+    return out;
 }
 
 std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<LispVal> args) {
@@ -500,6 +582,7 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     const auto process_finalizers_if_host = [&]() {
         if (host_call) process_pending_finalizers();
     };
+    charge_reductions();
 
     if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(proc)) {
         uint32_t argc = static_cast<uint32_t>(args.size());
@@ -615,6 +698,14 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
         return std::unexpected(run_res.error());
     }
 
+    if (*run_res != ExecuteSliceStatus::Finished) {
+        restore();
+        process_finalizers_if_host();
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "call_value: yielded during nested VM execution"}});
+    }
+
     /**
      * A non-local transfer (raise/catch or runtime catch) may unwind past
      * this synthetic call boundary. In that case, control has already moved
@@ -642,6 +733,32 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     return result;
 }
 
+void VM::charge_reductions(std::uint64_t units) noexcept {
+    if (units == 0) return;
+
+    constexpr std::uint64_t max_reductions = std::numeric_limits<std::uint64_t>::max();
+    if (reductions_ > (max_reductions - units)) {
+        reductions_ = max_reductions;
+    } else {
+        reductions_ += units;
+    }
+
+    if (actor_system_) {
+        actor_system_->add_current_thread_reductions(units);
+    }
+
+    if (!yielding_enabled()) return;
+
+    if (slice_reduction_budget_remaining_ <= units) {
+        slice_reduction_budget_remaining_ = 0;
+        if (!pending_run_loop_status_.has_value()) {
+            pending_run_loop_status_ = ExecuteSliceStatus::BudgetExhausted;
+        }
+    } else {
+        slice_reduction_budget_remaining_ -= units;
+    }
+}
+
 std::expected<LispVal, RuntimeError> VM::tape_binary_op(OpCode op, LispVal a, LispVal b) {
     auto saved_size = stack_.size();
     push(a);
@@ -658,6 +775,8 @@ std::expected<LispVal, RuntimeError> VM::tape_binary_op(OpCode op, LispVal a, Li
 /// Unified helper to dispatch a callee (Closure, Continuation, or Primitive)
 std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
     LispVal callee, uint32_t argc, bool is_tail, reader::lexer::Span call_span) {
+    charge_reductions();
+
     /// Use try_get_as for consistent heap access pattern
     auto route_runtime_error = [&](RuntimeError err) -> std::expected<DispatchResult, RuntimeError> {
         auto handled = do_runtime_error(err, call_span);
@@ -815,6 +934,67 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
                                                  static_cast<std::size_t>(argc)};
 
         const char* prim_name = prim->debug_name.empty() ? nullptr : prim->debug_name.c_str();
+        const bool blocking_builtin = prim_name != nullptr
+            && builtin_is_blocking(prim->debug_name);
+        const bool allow_dirty_dispatch = !is_tail
+            && execute_depth_ == 1
+            && !pending_blocking_primitive_.has_value()
+            && actor_system_
+            && actor_system_->scheduler_mode() == actor::ActorSystem::SchedulerMode::Pool
+            && blocking_builtin;
+
+        if (allow_dirty_dispatch) {
+            auto actor_pid = actor_system_->current_pid();
+            if (actor_pid.has_value()) {
+                auto task_promise =
+                    std::make_shared<std::promise<std::expected<LispVal, RuntimeError>>>();
+                auto task_future = task_promise->get_future().share();
+                auto captured_args = std::vector<LispVal>(args_span.begin(), args_span.end());
+                auto prim_label = prim->debug_name;
+
+                const bool queued = actor_system_->enqueue_dirty_task(
+                    [task_promise,
+                     actor_system = actor_system_,
+                     actor_pid = *actor_pid,
+                     prim_func = prim->func,
+                     prim_label = std::move(prim_label),
+                     captured_args = std::move(captured_args)]() mutable {
+                        std::expected<LispVal, RuntimeError> result;
+                        try {
+                            result = prim_func(std::span<const LispVal>(
+                                captured_args.data(),
+                                captured_args.size()));
+                        } catch (const std::exception& ex) {
+                            result = std::unexpected(RuntimeError{VMError{
+                                RuntimeErrorCode::InternalError,
+                                "dirty primitive '" + prim_label + "' threw: " + ex.what()}});
+                        } catch (...) {
+                            result = std::unexpected(RuntimeError{VMError{
+                                RuntimeErrorCode::InternalError,
+                                "dirty primitive '" + prim_label + "' threw"}});
+                        }
+
+                        try {
+                            task_promise->set_value(std::move(result));
+                        } catch (...) {
+                        }
+
+                        if (actor_system) {
+                            actor_system->notify_external_runnable(actor_pid);
+                        }
+                    });
+
+                if (queued) {
+                    pending_blocking_primitive_ = PendingBlockingPrimitive{
+                        .args_start = args_start,
+                        .call_span = call_span,
+                        .result = std::move(task_future)};
+                    pending_run_loop_status_ = ExecuteSliceStatus::BlockedOnReceive;
+                    return DispatchResult{DispatchAction::Continue, nullptr, 0};
+                }
+            }
+        }
+
         prof::ScopedPrimitiveCall primitive_scope(prim_name);
         auto res = prim->func(args_span);
         stack_.resize(args_start);
@@ -843,8 +1023,72 @@ void VM::unpack_to_stack(LispVal value) {
     }
 }
 
-std::expected<void, RuntimeError> VM::run_loop() {
+std::expected<void, RuntimeError> VM::complete_pending_blocking_primitive() {
+    if (!pending_blocking_primitive_.has_value()) return {};
+
+    auto& pending = *pending_blocking_primitive_;
+    if (pending.result.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+        pending_run_loop_status_ = ExecuteSliceStatus::BlockedOnReceive;
+        return {};
+    }
+
+    std::expected<LispVal, RuntimeError> result;
+    try {
+        result = pending.result.get();
+    } catch (const std::exception& ex) {
+        result = std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            std::string("dirty primitive completion failed: ") + ex.what()}});
+    } catch (...) {
+        result = std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "dirty primitive completion failed"}});
+    }
+
+    const auto args_start = pending.args_start;
+    const auto call_span = pending.call_span;
+    pending_blocking_primitive_.reset();
+
+    if (args_start > stack_.size()) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "dirty primitive restored invalid stack state"}});
+    }
+    stack_.resize(args_start);
+
+    if (!result) {
+        if (is_non_local_transfer_error(result.error())) {
+            return {};
+        }
+        auto handled = do_runtime_error(result.error(), call_span);
+        if (!handled) return std::unexpected(handled.error());
+        return {};
+    }
+
+    push(*result);
+    return {};
+}
+
+std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
+    auto pending_primitive = complete_pending_blocking_primitive();
+    if (!pending_primitive) return std::unexpected(pending_primitive.error());
+
+    if (pending_run_loop_status_.has_value()) {
+        const auto pending = *pending_run_loop_status_;
+        pending_run_loop_status_.reset();
+        return pending;
+    }
+
     while (current_func_ && pc_ < current_func_->code.size()) {
+        pending_primitive = complete_pending_blocking_primitive();
+        if (!pending_primitive) return std::unexpected(pending_primitive.error());
+
+        if (pending_run_loop_status_.has_value()) {
+            const auto pending = *pending_run_loop_status_;
+            pending_run_loop_status_.reset();
+            return pending;
+        }
+
         if (prof::runtime_profiler().sampling_active()) [[unlikely]] {
             prof::runtime_profiler().on_vm_safepoint();
         }
@@ -869,6 +1113,7 @@ std::expected<void, RuntimeError> VM::run_loop() {
             }
         }
         const auto& instr = current_func_->code[pc_++];
+        charge_reductions();
         const auto instr_span = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)
                                               : reader::lexer::Span{};
         switch (instr.opcode) {
@@ -1418,7 +1663,8 @@ std::expected<void, RuntimeError> VM::run_loop() {
                     std::string("OpCode not implemented: ") + to_string(instr.opcode)}});
         }
     }
-    return {};
+    pending_run_loop_status_.reset();
+    return ExecuteSliceStatus::Finished;
 }
 
 /**

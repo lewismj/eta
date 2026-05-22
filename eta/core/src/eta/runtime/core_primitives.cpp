@@ -113,6 +113,7 @@ void register_core_primitives(BuiltinEnvironment& env, Heap& heap, InternTable& 
     reg.register_stats();
     reg.register_logic_prop_attr_bridge();
     reg.register_clp_prop_queue_size_bridge();
+    reg.register_actor_bridge();
     reg.register_misc_eval_bridge();
 }
 
