@@ -1108,6 +1108,9 @@ Detailed checkpoint plan: `docs/plan/actor_scheduler_plan.md` (M7.1-M7.6).
 3. Move from one-thread-per-actor to lightweight actor scheduling.
 4. Add dirty scheduler path for blocking native calls.
 5. Stress-test 100k mostly-idle actors.
+6. Cut over the default scheduler mode to `pool` while keeping
+   `ETA_ACTOR_SCHEDULER=thread-per-actor` as a documented fallback for one
+   release cycle.
 
 Gate: 100k idle actors can exist with bounded memory; 10k active actors
 complete ping/pong stress test without OS thread exhaustion.

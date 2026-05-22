@@ -431,7 +431,7 @@ private:
     native::SidecarRuntimeBindingV1 sidecar_runtime_binding_{};
     runtime::vm::VM vm_;
     std::shared_ptr<runtime::actor::ActorSystem> actor_system_;
-    ActorSchedulerMode actor_scheduler_mode_{ActorSchedulerMode::ThreadPerActor};
+    ActorSchedulerMode actor_scheduler_mode_{ActorSchedulerMode::Pool};
     std::uint64_t actor_reduction_budget_{2000};
 
     diagnostic::DiagnosticEngine diag_engine_;

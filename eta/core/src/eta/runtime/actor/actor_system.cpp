@@ -955,7 +955,7 @@ void ActorSystem::dispatch_pool_runnable(const types::Pid& pid, std::size_t work
         if (!refreshed) return;
         if (!refreshed->alive.load(std::memory_order_acquire)) return;
         refreshed->run_state.store(RunState::Runnable, std::memory_order_relaxed);
-        enqueue_runnable_unsafe(refreshed, worker_index);
+        enqueue_runnable_unsafe(refreshed);
         return;
     }
 
@@ -965,12 +965,12 @@ void ActorSystem::dispatch_pool_runnable(const types::Pid& pid, std::size_t work
         if (!refreshed) return;
         if (!refreshed->alive.load(std::memory_order_acquire)) return;
         if (refreshed->run_state.load(std::memory_order_relaxed) == RunState::Runnable) {
-            enqueue_runnable_unsafe(refreshed, worker_index);
+            enqueue_runnable_unsafe(refreshed);
             return;
         }
         if (refreshed->mailbox->size() > 0) {
             refreshed->run_state.store(RunState::Runnable, std::memory_order_relaxed);
-            enqueue_runnable_unsafe(refreshed, worker_index);
+            enqueue_runnable_unsafe(refreshed);
         } else {
             refreshed->run_state.store(RunState::Waiting, std::memory_order_relaxed);
         }

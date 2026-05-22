@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-05-22
+
+### Actor Scheduler M7.6 (Scale Validation + Default Cutover)
+
+Implemented the M7.6 scheduler checkpoint:
+
+- default actor scheduler mode is now `pool` (Driver/runtime startup);
+- `thread-per-actor` remains available as an explicit fallback via
+  `ETA_ACTOR_SCHEDULER=thread-per-actor`;
+- added `eta/qa/test/src/actor_scheduler_scale_tests.cpp` with:
+  - idle-scale validation (thread and resident-memory ceilings),
+  - active ping/pong throughput with mixed monitor/link traffic,
+  - opt-in soak coverage for non-PR perf lanes;
+- added scheduler scale/profile environment controls:
+  `ETA_ACTOR_SCALE_FULL_PROFILE`, `ETA_ACTOR_SCALE_SOAK_SECONDS`,
+  `ETA_ACTOR_ACTIVE_SCALE_ACK_SLACK`, and related actor-count/timeout knobs;
+- updated scheduler plan and actor/build docs with the new defaults and
+  scale-gate execution notes.
+
 ## 2026-05-17
 
 ### eta-http Sidecar M4 (libcurl)

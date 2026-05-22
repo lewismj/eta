@@ -278,6 +278,20 @@ Gate:
 1. M7 acceptance gate in `actor_improvement_plan.md` is met.
 2. Default `pool` mode is stable in CI + perf lane.
 
+Implementation notes (current):
+
+1. Driver scheduler default is now `pool`; `ETA_ACTOR_SCHEDULER=thread-per-actor`
+   remains the fallback override for one release cycle.
+2. Added dedicated M7.6 scale coverage in
+   `eta/qa/test/src/actor_scheduler_scale_tests.cpp`:
+   - idle-scale gate with thread and resident-memory ceilings
+   - active ping/pong throughput with monitor/link traffic mixed in
+   - opt-in soak coverage for non-PR perf lanes
+3. Full-scale gate values are now controllable from CI/perf lanes without
+   changing test code:
+   - `ETA_ACTOR_SCALE_FULL_PROFILE=1` enables 100k idle and 10k active defaults
+   - optional overrides are available for actor counts, timeouts, ceilings, and reduced-profile ACK slack (`ETA_ACTOR_ACTIVE_SCALE_ACK_SLACK`)
+
 ---
 
 ## 4) Test matrix per checkpoint

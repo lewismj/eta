@@ -39,6 +39,13 @@ distributed actor-node links and `std.net` for transport-level NNG sockets.
 | `(receive-after timeout-ms)` | Receive one message with timeout; returns `#f` on timeout. |
 | `(mailbox-length)` | Return queued message count for the current actor. |
 
+Scheduler runtime controls:
+
+- Default scheduler mode is `pool`.
+- `ETA_ACTOR_SCHEDULER=thread-per-actor|pool|pool-shadow`
+- `ETA_ACTOR_REDUCTION_BUDGET=<int>` (default `2000`)
+- `ETA_ACTOR_DIRTY_SCHEDULERS=<int>` (default `0`)
+
 `case` is a language keyword in Eta, so the clause constructor is named
 `match-case`.
 

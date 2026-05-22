@@ -37,7 +37,7 @@ std::size_t Driver::parse_heap_env_var(const char* env_var,
 Driver::ActorSchedulerMode Driver::parse_actor_scheduler_mode_env() noexcept {
     const char* value = std::getenv("ETA_ACTOR_SCHEDULER");
     if (!value || value[0] == '\0') {
-        return ActorSchedulerMode::ThreadPerActor;
+        return ActorSchedulerMode::Pool;
     }
 
     std::string normalized(value);
@@ -51,7 +51,7 @@ Driver::ActorSchedulerMode Driver::parse_actor_scheduler_mode_env() noexcept {
 
     if (normalized == "pool") return ActorSchedulerMode::Pool;
     if (normalized == "pool-shadow") return ActorSchedulerMode::PoolShadow;
-    return ActorSchedulerMode::ThreadPerActor;
+    return ActorSchedulerMode::Pool;
 }
 
 runtime::actor::ActorSystem::SchedulerMode Driver::to_actor_scheduler_mode(
@@ -64,7 +64,7 @@ runtime::actor::ActorSystem::SchedulerMode Driver::to_actor_scheduler_mode(
         case ActorSchedulerMode::PoolShadow:
             return runtime::actor::ActorSystem::SchedulerMode::PoolShadow;
     }
-    return runtime::actor::ActorSystem::SchedulerMode::ThreadPerActor;
+    return runtime::actor::ActorSystem::SchedulerMode::Pool;
 }
 
 std::uint64_t Driver::parse_actor_reduction_budget_env() noexcept {
@@ -934,6 +934,7 @@ void Driver::run_spawned_actor(runtime::types::Pid pid,
     actor_entry.code.push_back({runtime::vm::OpCode::Return, 0u});
 
     const bool enable_yield = actor_scheduler_supports_vm_yield(actor_scheduler_mode_);
+    const bool scheduler_pool_mode = actor_scheduler_mode_ == ActorSchedulerMode::Pool;
     runtime::vm::VM::ExecuteSliceOptions execute_options;
     execute_options.enable_yield = enable_yield;
     execute_options.reduction_budget = actor_reduction_budget_;
@@ -975,6 +976,9 @@ void Driver::run_spawned_actor(runtime::types::Pid pid,
                 actor_system_->set_current_thread_last_yield_reason(
                     runtime::actor::ActorSystem::YieldReason::BudgetExhausted);
             }
+            if (scheduler_pool_mode) {
+                return;
+            }
             continue;
         }
 
@@ -982,6 +986,9 @@ void Driver::run_spawned_actor(runtime::types::Pid pid,
             if (actor_system_) {
                 actor_system_->set_current_thread_last_yield_reason(
                     runtime::actor::ActorSystem::YieldReason::BlockedOnReceive);
+            }
+            if (scheduler_pool_mode) {
+                return;
             }
             std::this_thread::yield();
             continue;

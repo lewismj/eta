@@ -195,6 +195,27 @@ cmake --build build
 ctest --test-dir build
 ```
 
+### Actor Scheduler Scale Gates (M7.6)
+
+`eta_core_test` now includes `actor_scheduler_scale_tests` with two profiles:
+
+- default reduced profile for normal CI/local runs
+- full M7.6 scale profile (`100k` idle, `10k` active ping/pong) for perf lanes
+
+PowerShell full-scale example:
+
+```powershell
+$env:ETA_ACTOR_SCALE_FULL_PROFILE = "1"
+$env:ETA_ACTOR_SCALE_SOAK_SECONDS = "120"
+ctest --test-dir out\msvc-release --output-on-failure -R eta_core_test
+Remove-Item Env:ETA_ACTOR_SCALE_FULL_PROFILE -ErrorAction SilentlyContinue
+Remove-Item Env:ETA_ACTOR_SCALE_SOAK_SECONDS -ErrorAction SilentlyContinue
+```
+
+Optional reduced-profile stability knob:
+
+- `ETA_ACTOR_ACTIVE_SCALE_ACK_SLACK` (default `2`; full-profile default is `0`)
+
 ### Torch Test Suite
 
 
