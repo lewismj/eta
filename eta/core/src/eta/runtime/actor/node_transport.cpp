@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstring>
+#include <expected>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -21,6 +22,8 @@ namespace {
 
 constexpr std::uint8_t kEnvelopeVersion = 1;
 constexpr std::uint32_t kFeatureRemoteSend = 1u << 0;
+constexpr std::uint32_t kFeatureRemoteMonitor = 1u << 1;
+constexpr std::uint32_t kHandshakeFeatureFlags = kFeatureRemoteSend | kFeatureRemoteMonitor;
 constexpr int kSocketReceiveTimeoutMs = 100;
 constexpr auto kHandshakeTimeout = std::chrono::seconds(3);
 
@@ -28,6 +31,9 @@ enum class FrameType : std::uint8_t {
     Hello = 1,
     HelloAck = 2,
     ActorMessage = 3,
+    MonitorRequest = 4,
+    DemonitorRequest = 5,
+    DownSignal = 6,
 };
 
 enum class HandshakeStatus : std::uint8_t {
@@ -55,6 +61,23 @@ struct ActorEnvelope {
     types::Pid from{};
     types::Pid to{};
     std::vector<std::uint8_t> payload{};
+};
+
+struct MonitorControlEnvelope {
+    std::uint32_t feature_flags{0};
+    std::uint64_t monitor_ref{0};
+    types::Pid watcher{};
+    types::Pid target{};
+};
+
+struct DownEnvelope {
+    std::uint32_t feature_flags{0};
+    std::uint64_t monitor_ref{0};
+    types::Pid watcher{};
+    types::Pid target{};
+    NodeTransport::RemoteDownReasonKind reason_kind{
+        NodeTransport::RemoteDownReasonKind::Error};
+    std::vector<std::uint8_t> reason_payload{};
 };
 
 void write_u8(std::vector<std::uint8_t>& out, std::uint8_t value) {
@@ -236,6 +259,87 @@ std::optional<ActorEnvelope> decode_actor_frame(std::span<const std::uint8_t> fr
     return out;
 }
 
+std::vector<std::uint8_t> encode_monitor_control_frame(
+    FrameType type,
+    const MonitorControlEnvelope& envelope) {
+    std::vector<std::uint8_t> out;
+    out.reserve(80);
+    write_u8(out, kEnvelopeVersion);
+    write_u8(out, static_cast<std::uint8_t>(type));
+    write_u32(out, envelope.feature_flags);
+    write_u64(out, envelope.monitor_ref);
+    write_pid(out, envelope.watcher);
+    write_pid(out, envelope.target);
+    return out;
+}
+
+std::optional<MonitorControlEnvelope> decode_monitor_control_frame(
+    std::span<const std::uint8_t> frame,
+    FrameType expected_type) {
+    std::size_t cursor = 0;
+    std::uint8_t version = 0;
+    std::uint8_t type = 0;
+    std::uint32_t feature_flags = 0;
+    if (!read_u8(frame, cursor, version)) return std::nullopt;
+    if (!read_u8(frame, cursor, type)) return std::nullopt;
+    if (!read_u32(frame, cursor, feature_flags)) return std::nullopt;
+    if (version != kEnvelopeVersion) return std::nullopt;
+    if (type != static_cast<std::uint8_t>(expected_type)) return std::nullopt;
+
+    MonitorControlEnvelope out;
+    out.feature_flags = feature_flags;
+    if (!read_u64(frame, cursor, out.monitor_ref)) return std::nullopt;
+    if (!read_pid(frame, cursor, out.watcher)) return std::nullopt;
+    if (!read_pid(frame, cursor, out.target)) return std::nullopt;
+    if (cursor != frame.size()) return std::nullopt;
+    return out;
+}
+
+std::vector<std::uint8_t> encode_down_frame(const DownEnvelope& envelope) {
+    std::vector<std::uint8_t> out;
+    out.reserve(96 + envelope.reason_payload.size());
+    write_u8(out, kEnvelopeVersion);
+    write_u8(out, static_cast<std::uint8_t>(FrameType::DownSignal));
+    write_u32(out, envelope.feature_flags);
+    write_u64(out, envelope.monitor_ref);
+    write_pid(out, envelope.watcher);
+    write_pid(out, envelope.target);
+    write_u8(out, static_cast<std::uint8_t>(envelope.reason_kind));
+    write_u32(out, static_cast<std::uint32_t>(envelope.reason_payload.size()));
+    out.insert(out.end(), envelope.reason_payload.begin(), envelope.reason_payload.end());
+    return out;
+}
+
+std::optional<DownEnvelope> decode_down_frame(std::span<const std::uint8_t> frame) {
+    std::size_t cursor = 0;
+    std::uint8_t version = 0;
+    std::uint8_t type = 0;
+    std::uint32_t feature_flags = 0;
+    if (!read_u8(frame, cursor, version)) return std::nullopt;
+    if (!read_u8(frame, cursor, type)) return std::nullopt;
+    if (!read_u32(frame, cursor, feature_flags)) return std::nullopt;
+    if (version != kEnvelopeVersion) return std::nullopt;
+    if (type != static_cast<std::uint8_t>(FrameType::DownSignal)) return std::nullopt;
+
+    DownEnvelope out;
+    out.feature_flags = feature_flags;
+    if (!read_u64(frame, cursor, out.monitor_ref)) return std::nullopt;
+    if (!read_pid(frame, cursor, out.watcher)) return std::nullopt;
+    if (!read_pid(frame, cursor, out.target)) return std::nullopt;
+
+    std::uint8_t reason_kind = 0;
+    if (!read_u8(frame, cursor, reason_kind)) return std::nullopt;
+    out.reason_kind = static_cast<NodeTransport::RemoteDownReasonKind>(reason_kind);
+
+    std::uint32_t payload_size = 0;
+    if (!read_u32(frame, cursor, payload_size)) return std::nullopt;
+    if (cursor + payload_size != frame.size()) return std::nullopt;
+    out.reason_payload.assign(
+        frame.begin() + static_cast<std::ptrdiff_t>(cursor),
+        frame.end());
+    return out;
+}
+
 [[nodiscard]] std::string decode_ack_error(HandshakeStatus status) {
     switch (status) {
         case HandshakeStatus::Ok:
@@ -257,6 +361,7 @@ public:
         bool socket_open{false};
         bool listener_side{false};
         bool handshake_complete{false};
+        std::uint32_t remote_feature_flags{0};
         std::atomic<bool> stop{false};
         std::thread reader{};
         std::mutex send_mutex{};
@@ -265,9 +370,9 @@ public:
         std::uint64_t remote_node_id{0};
     };
 
-    Impl(std::uint64_t local_node_id, DeliverCallback deliver_message)
+    Impl(std::uint64_t local_node_id, NodeTransport::Callbacks callbacks)
         : local_node_id_(local_node_id),
-          deliver_message_(std::move(deliver_message)) {}
+          callbacks_(std::move(callbacks)) {}
 
     ~Impl() {
         shutdown();
@@ -402,7 +507,7 @@ public:
         }
 
         HelloPayload hello;
-        hello.feature_flags = kFeatureRemoteSend;
+        hello.feature_flags = kHandshakeFeatureFlags;
         hello.node_id = local_node_id_;
         hello.node_name = node_name;
         hello.cookie = cookie;
@@ -469,14 +574,19 @@ public:
         connection->socket_open = true;
         connection->listener_side = false;
         connection->handshake_complete = true;
+        connection->remote_feature_flags = ack.feature_flags;
         connection->endpoint = std::move(endpoint);
         connection->remote_node_id = ack.node_id;
         connection->remote_node_name = std::move(ack.node_name);
 
+        std::optional<ConnectedNode> node_up_event;
         {
             std::lock_guard lock(mutex_);
             connection_ = connection;
-            register_connected_locked(*connection);
+            node_up_event = register_connected_locked(*connection);
+        }
+        if (node_up_event.has_value() && callbacks_.node_up) {
+            callbacks_.node_up(*node_up_event);
         }
 
         connection->reader = std::thread([this, connection] {
@@ -487,13 +597,17 @@ public:
 
     [[nodiscard]] bool disconnect_node(std::string_view node_name) {
         std::shared_ptr<ConnectionState> connection;
+        std::optional<ConnectedNode> node_down_event;
         {
             std::lock_guard lock(mutex_);
             if (!connection_) return false;
             if (connection_->remote_node_name != node_name) return false;
             connection = connection_;
-            unregister_connected_locked(*connection);
+            node_down_event = unregister_connected_locked(*connection);
             connection_.reset();
+        }
+        if (node_down_event.has_value() && callbacks_.node_down) {
+            callbacks_.node_down(*node_down_event, NodeDownReason::Disconnected);
         }
 
         close_connection(connection);
@@ -517,25 +631,14 @@ public:
         const types::Pid& from,
         const types::Pid& to,
         BinaryMessage payload) {
-        std::shared_ptr<ConnectionState> connection;
-        {
-            std::lock_guard lock(mutex_);
-            if (!connection_) {
-                return SendResult{
-                    .code = SendResultCode::NoRoute,
-                    .detail = "no active node transport connection"};
-            }
-            if (!connection_->handshake_complete) {
-                return SendResult{
-                    .code = SendResultCode::NoRoute,
-                    .detail = "node handshake is not complete"};
-            }
-            if (connection_->remote_node_id != to.node_id) {
-                return SendResult{
-                    .code = SendResultCode::NoRoute,
-                    .detail = "no route for destination node id"};
-            }
-            connection = connection_;
+        auto lookup = route_to_node(to.node_id);
+        if (!lookup.has_value()) return lookup.error();
+        auto& connection = lookup->connection;
+
+        if ((connection->remote_feature_flags & kFeatureRemoteSend) == 0u) {
+            return SendResult{
+                .code = SendResultCode::NoRoute,
+                .detail = "remote node does not support remote actor send"};
         }
 
         ActorEnvelope envelope;
@@ -545,38 +648,139 @@ public:
         envelope.payload = std::move(payload);
         auto frame = encode_actor_frame(envelope);
 
+        return send_frame(*connection, std::move(frame));
+    }
+
+    [[nodiscard]] SendResult send_remote_monitor(
+        const types::Pid& watcher,
+        const types::Pid& target,
+        MonitorRef monitor_ref) {
+        auto lookup = route_to_node(target.node_id);
+        if (!lookup.has_value()) return lookup.error();
+        auto& connection = lookup->connection;
+
+        if ((connection->remote_feature_flags & kFeatureRemoteMonitor) == 0u) {
+            return SendResult{
+                .code = SendResultCode::NoRoute,
+                .detail = "remote node does not support remote monitors"};
+        }
+
+        MonitorControlEnvelope envelope;
+        envelope.feature_flags = kFeatureRemoteMonitor;
+        envelope.monitor_ref = monitor_ref;
+        envelope.watcher = watcher;
+        envelope.target = target;
+        auto frame = encode_monitor_control_frame(FrameType::MonitorRequest, envelope);
+        return send_frame(*connection, std::move(frame));
+    }
+
+    [[nodiscard]] SendResult send_remote_demonitor(
+        const types::Pid& watcher,
+        const types::Pid& target,
+        MonitorRef monitor_ref) {
+        auto lookup = route_to_node(target.node_id);
+        if (!lookup.has_value()) return lookup.error();
+        auto& connection = lookup->connection;
+
+        if ((connection->remote_feature_flags & kFeatureRemoteMonitor) == 0u) {
+            return SendResult{
+                .code = SendResultCode::NoRoute,
+                .detail = "remote node does not support remote monitors"};
+        }
+
+        MonitorControlEnvelope envelope;
+        envelope.feature_flags = kFeatureRemoteMonitor;
+        envelope.monitor_ref = monitor_ref;
+        envelope.watcher = watcher;
+        envelope.target = target;
+        auto frame = encode_monitor_control_frame(FrameType::DemonitorRequest, envelope);
+        return send_frame(*connection, std::move(frame));
+    }
+
+    [[nodiscard]] SendResult send_remote_down(RemoteDownSignal signal) {
+        auto lookup = route_to_node(signal.watcher.node_id);
+        if (!lookup.has_value()) return lookup.error();
+        auto& connection = lookup->connection;
+
+        if ((connection->remote_feature_flags & kFeatureRemoteMonitor) == 0u) {
+            return SendResult{
+                .code = SendResultCode::NoRoute,
+                .detail = "remote node does not support remote monitors"};
+        }
+
+        DownEnvelope envelope;
+        envelope.feature_flags = kFeatureRemoteMonitor;
+        envelope.monitor_ref = signal.monitor_ref;
+        envelope.watcher = signal.watcher;
+        envelope.target = signal.target;
+        envelope.reason_kind = signal.reason_kind;
+        envelope.reason_payload = std::move(signal.reason_payload);
+        auto frame = encode_down_frame(envelope);
+        return send_frame(*connection, std::move(frame));
+    }
+
+    void shutdown() {
+        std::shared_ptr<ConnectionState> connection;
+        std::optional<ConnectedNode> node_down_event;
+        {
+            std::lock_guard lock(mutex_);
+            connection = connection_;
+            if (connection_) {
+                node_down_event = unregister_connected_locked(*connection_);
+                connection_.reset();
+            }
+            nodes_by_id_.clear();
+            node_ids_by_name_.clear();
+        }
+        if (node_down_event.has_value() && callbacks_.node_down) {
+            callbacks_.node_down(*node_down_event, NodeDownReason::Disconnected);
+        }
+        close_connection(connection);
+    }
+
+private:
+    struct RouteLookup {
+        std::shared_ptr<ConnectionState> connection{};
+    };
+
+    [[nodiscard]] std::expected<RouteLookup, SendResult> route_to_node(std::uint64_t node_id) const {
+        std::lock_guard lock(mutex_);
+        if (!connection_) {
+            return std::unexpected(SendResult{
+                .code = SendResultCode::NoRoute,
+                .detail = "no active node transport connection"});
+        }
+        if (!connection_->handshake_complete) {
+            return std::unexpected(SendResult{
+                .code = SendResultCode::NoRoute,
+                .detail = "node handshake is not complete"});
+        }
+        if (connection_->remote_node_id != node_id) {
+            return std::unexpected(SendResult{
+                .code = SendResultCode::NoRoute,
+                .detail = "no route for destination node id"});
+        }
+        return RouteLookup{.connection = connection_};
+    }
+
+    [[nodiscard]] SendResult send_frame(
+        ConnectionState& connection,
+        std::vector<std::uint8_t> frame) const {
         int rv = 0;
         {
-            std::lock_guard send_lock(connection->send_mutex);
-            rv = nng_send(connection->socket, frame.data(), frame.size(), 0);
+            std::lock_guard send_lock(connection.send_mutex);
+            rv = nng_send(connection.socket, frame.data(), frame.size(), 0);
         }
         if (rv != 0) {
             return SendResult{
                 .code = SendResultCode::TransportError,
                 .detail = std::string("nng-send failed: ") + nng_strerror(rv)};
         }
-
         return SendResult{
             .code = SendResultCode::Delivered,
             .detail = {}};
     }
 
-    void shutdown() {
-        std::shared_ptr<ConnectionState> connection;
-        {
-            std::lock_guard lock(mutex_);
-            connection = connection_;
-            if (connection_) {
-                unregister_connected_locked(*connection_);
-                connection_.reset();
-            }
-            nodes_by_id_.clear();
-            node_ids_by_name_.clear();
-        }
-        close_connection(connection);
-    }
-
-private:
     void reader_loop(const std::shared_ptr<ConnectionState>& connection) {
         for (;;) {
             if (connection->stop.load(std::memory_order_acquire)) break;
@@ -599,6 +803,13 @@ private:
                 }
                 if ((hello->feature_flags & kFeatureRemoteSend) == 0u) {
                     send_handshake_ack(*connection, HandshakeStatus::Incompatible);
+                    if (callbacks_.node_down) {
+                        ConnectedNode node;
+                        node.node_id = hello->node_id;
+                        node.node_name = hello->node_name;
+                        node.endpoint = connection->endpoint;
+                        callbacks_.node_down(node, NodeDownReason::Incompatible);
+                    }
                     break;
                 }
 
@@ -609,35 +820,96 @@ private:
                 }
                 if (hello->cookie != cookie) {
                     send_handshake_ack(*connection, HandshakeStatus::BadCookie);
+                    if (callbacks_.node_down) {
+                        ConnectedNode node;
+                        node.node_id = hello->node_id;
+                        node.node_name = hello->node_name;
+                        node.endpoint = connection->endpoint;
+                        callbacks_.node_down(node, NodeDownReason::BadCookie);
+                    }
                     break;
                 }
 
                 connection->remote_node_id = hello->node_id;
                 connection->remote_node_name = std::move(hello->node_name);
                 connection->handshake_complete = true;
+                connection->remote_feature_flags = hello->feature_flags;
 
+                std::optional<ConnectedNode> node_up_event;
                 {
                     std::lock_guard lock(mutex_);
-                    register_connected_locked(*connection);
+                    node_up_event = register_connected_locked(*connection);
+                }
+                if (node_up_event.has_value() && callbacks_.node_up) {
+                    callbacks_.node_up(*node_up_event);
                 }
 
                 send_handshake_ack(*connection, HandshakeStatus::Ok);
                 continue;
             }
 
+            auto monitor_request = decode_monitor_control_frame(frame, FrameType::MonitorRequest);
+            if (monitor_request.has_value()) {
+                if ((monitor_request->feature_flags & kFeatureRemoteMonitor) == 0u) continue;
+                if (monitor_request->target.node_id != local_node_id_) continue;
+                if (monitor_request->watcher.node_id != connection->remote_node_id) continue;
+                if (callbacks_.remote_monitor) {
+                    callbacks_.remote_monitor(
+                        monitor_request->watcher,
+                        monitor_request->target,
+                        monitor_request->monitor_ref);
+                }
+                continue;
+            }
+
+            auto demonitor_request = decode_monitor_control_frame(frame, FrameType::DemonitorRequest);
+            if (demonitor_request.has_value()) {
+                if ((demonitor_request->feature_flags & kFeatureRemoteMonitor) == 0u) continue;
+                if (demonitor_request->target.node_id != local_node_id_) continue;
+                if (demonitor_request->watcher.node_id != connection->remote_node_id) continue;
+                if (callbacks_.remote_demonitor) {
+                    callbacks_.remote_demonitor(
+                        demonitor_request->watcher,
+                        demonitor_request->target,
+                        demonitor_request->monitor_ref);
+                }
+                continue;
+            }
+
+            auto down_signal = decode_down_frame(frame);
+            if (down_signal.has_value()) {
+                if ((down_signal->feature_flags & kFeatureRemoteMonitor) == 0u) continue;
+                if (down_signal->watcher.node_id != local_node_id_) continue;
+                if (down_signal->target.node_id != connection->remote_node_id) continue;
+                if (callbacks_.remote_down) {
+                    RemoteDownSignal signal;
+                    signal.watcher = down_signal->watcher;
+                    signal.target = down_signal->target;
+                    signal.monitor_ref = down_signal->monitor_ref;
+                    signal.reason_kind = down_signal->reason_kind;
+                    signal.reason_payload = std::move(down_signal->reason_payload);
+                    callbacks_.remote_down(signal);
+                }
+                continue;
+            }
+
             auto envelope = decode_actor_frame(frame);
             if (!envelope.has_value()) continue;
             if ((envelope->feature_flags & kFeatureRemoteSend) == 0u) continue;
-            if (!deliver_message_) continue;
-            (void)deliver_message_(envelope->to, std::move(envelope->payload));
+            if (!callbacks_.deliver_message) continue;
+            (void)callbacks_.deliver_message(envelope->to, std::move(envelope->payload));
         }
 
+        std::optional<ConnectedNode> node_down_event;
         {
             std::lock_guard lock(mutex_);
-            unregister_connected_locked(*connection);
+            node_down_event = unregister_connected_locked(*connection);
             if (connection_ == connection) {
                 connection_.reset();
             }
+        }
+        if (node_down_event.has_value() && callbacks_.node_down) {
+            callbacks_.node_down(*node_down_event, NodeDownReason::Disconnected);
         }
         close_socket_only(*connection);
         if (connection.use_count() == 1
@@ -655,7 +927,7 @@ private:
         }
 
         HelloAckPayload ack;
-        ack.feature_flags = kFeatureRemoteSend;
+        ack.feature_flags = kHandshakeFeatureFlags;
         ack.status = status;
         ack.node_id = local_node_id_;
         ack.node_name = std::move(node_name);
@@ -684,27 +956,38 @@ private:
         (void)nng_close(connection.socket);
     }
 
-    void register_connected_locked(const ConnectionState& connection) {
-        if (connection.remote_node_id == 0 || connection.remote_node_name.empty()) return;
+    [[nodiscard]] std::optional<ConnectedNode> register_connected_locked(
+        const ConnectionState& connection) {
+        if (connection.remote_node_id == 0 || connection.remote_node_name.empty()) return std::nullopt;
+        if (nodes_by_id_.contains(connection.remote_node_id)) return std::nullopt;
+        if (node_ids_by_name_.contains(connection.remote_node_name)) return std::nullopt;
         ConnectedNode node;
         node.node_id = connection.remote_node_id;
         node.node_name = connection.remote_node_name;
         node.endpoint = connection.endpoint;
         nodes_by_id_[node.node_id] = node;
         node_ids_by_name_[node.node_name] = node.node_id;
+        return node;
     }
 
-    void unregister_connected_locked(const ConnectionState& connection) {
+    [[nodiscard]] std::optional<ConnectedNode> unregister_connected_locked(
+        const ConnectionState& connection) {
+        std::optional<ConnectedNode> removed;
         if (connection.remote_node_id != 0) {
-            nodes_by_id_.erase(connection.remote_node_id);
+            auto it = nodes_by_id_.find(connection.remote_node_id);
+            if (it != nodes_by_id_.end()) {
+                removed = it->second;
+                nodes_by_id_.erase(it);
+            }
         }
         if (!connection.remote_node_name.empty()) {
             node_ids_by_name_.erase(connection.remote_node_name);
         }
+        return removed;
     }
 
     const std::uint64_t local_node_id_{0};
-    DeliverCallback deliver_message_{};
+    NodeTransport::Callbacks callbacks_{};
 
     mutable std::mutex mutex_{};
     std::string node_name_{"nonode@local"};
@@ -716,8 +999,8 @@ private:
 
 NodeTransport::NodeTransport(
     std::uint64_t local_node_id,
-    DeliverCallback deliver_message)
-    : impl_(std::make_unique<Impl>(local_node_id, std::move(deliver_message))) {}
+    Callbacks callbacks)
+    : impl_(std::make_unique<Impl>(local_node_id, std::move(callbacks))) {}
 
 NodeTransport::~NodeTransport() = default;
 
@@ -761,6 +1044,24 @@ NodeTransport::SendResult NodeTransport::send_remote(
     const types::Pid& to,
     BinaryMessage payload) {
     return impl_->send_remote(from, to, std::move(payload));
+}
+
+NodeTransport::SendResult NodeTransport::send_remote_monitor(
+    const types::Pid& watcher,
+    const types::Pid& target,
+    MonitorRef monitor_ref) {
+    return impl_->send_remote_monitor(watcher, target, monitor_ref);
+}
+
+NodeTransport::SendResult NodeTransport::send_remote_demonitor(
+    const types::Pid& watcher,
+    const types::Pid& target,
+    MonitorRef monitor_ref) {
+    return impl_->send_remote_demonitor(watcher, target, monitor_ref);
+}
+
+NodeTransport::SendResult NodeTransport::send_remote_down(RemoteDownSignal signal) {
+    return impl_->send_remote_down(std::move(signal));
 }
 
 void NodeTransport::shutdown() {

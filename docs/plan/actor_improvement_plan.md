@@ -1228,7 +1228,7 @@ For one release cycle:
       (M6.1).
 - [x] Bad-cookie handshake rejection and node-table consistency checks pass
       (M6.1).
-- [ ] Distributed node monitors and remote process monitors deliver expected
+- [x] Distributed node monitors and remote process monitors deliver expected
       `nodeup` / `nodedown` / `DOWN` semantics exactly once (M6.2).
 - [ ] Scheduler/reduction stress goals pass when M7 is complete.
 

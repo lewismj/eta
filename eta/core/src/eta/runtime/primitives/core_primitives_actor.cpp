@@ -269,6 +269,10 @@ std::expected<LispVal, RuntimeError> decode_exit_reason(
             return memory::factory::make_symbol(intern_table, "killed");
         case ExitKind::Error:
             return memory::factory::make_symbol(intern_table, "error");
+        case ExitKind::NoConnection:
+            return memory::factory::make_symbol(intern_table, "noconnection");
+        case ExitKind::BadCookie:
+            return memory::factory::make_symbol(intern_table, "bad-cookie");
         case ExitKind::Custom:
             return decode_binary_payload(reason.payload, heap, intern_table);
     }
@@ -316,6 +320,52 @@ std::expected<LispVal, RuntimeError> decode_actor_message(
                 *ref,
                 *sym_process,
                 *pid,
+                *reason};
+            return make_list(heap, values);
+        }
+
+        case MessageKind::NodeUp: {
+            auto sym_nodeup = memory::factory::make_symbol(intern_table, "nodeup");
+            if (!sym_nodeup.has_value()) return std::unexpected(sym_nodeup.error());
+            auto ref = memory::factory::make_fixnum(
+                heap,
+                static_cast<std::int64_t>(message.monitor_ref));
+            if (!ref.has_value()) return std::unexpected(ref.error());
+            auto node_name = memory::factory::make_string(
+                heap,
+                intern_table,
+                message.node_name);
+            if (!node_name.has_value()) return std::unexpected(node_name.error());
+            auto node_id = memory::factory::make_fixnum(
+                heap,
+                static_cast<std::int64_t>(message.node_id));
+            if (!node_id.has_value()) return std::unexpected(node_id.error());
+            std::array<LispVal, 4> values{
+                *sym_nodeup,
+                *ref,
+                *node_name,
+                *node_id};
+            return make_list(heap, values);
+        }
+
+        case MessageKind::NodeDown: {
+            auto sym_nodedown = memory::factory::make_symbol(intern_table, "nodedown");
+            if (!sym_nodedown.has_value()) return std::unexpected(sym_nodedown.error());
+            auto ref = memory::factory::make_fixnum(
+                heap,
+                static_cast<std::int64_t>(message.monitor_ref));
+            if (!ref.has_value()) return std::unexpected(ref.error());
+            auto node_name = memory::factory::make_string(
+                heap,
+                intern_table,
+                message.node_name);
+            if (!node_name.has_value()) return std::unexpected(node_name.error());
+            auto reason = decode_exit_reason(message.reason, heap, intern_table);
+            if (!reason.has_value()) return std::unexpected(reason.error());
+            std::array<LispVal, 4> values{
+                *sym_nodedown,
+                *ref,
+                *node_name,
                 *reason};
             return make_list(heap, values);
         }
@@ -751,6 +801,29 @@ void PrimReg::register_actor_bridge() {
                 heap,
                 intern_table,
                 vm->actor_system()->node_name());
+        });
+
+    env.register_builtin("%actor-monitor-node", 1, false,
+        [&heap, &intern_table, vm](Args args) -> std::expected<LispVal, RuntimeError> {
+            if (!vm || !vm->actor_system()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::InternalError,
+                    "%actor-monitor-node: actor system is not available"}});
+            }
+
+            auto watcher = expect_current_pid(vm, "%actor-monitor-node");
+            if (!watcher.has_value()) return std::unexpected(watcher.error());
+
+            auto node_name = decode_text_value(
+                intern_table,
+                args[0],
+                "%actor-monitor-node",
+                "node name");
+            if (!node_name.has_value()) return std::unexpected(node_name.error());
+
+            auto ref = vm->actor_system()->monitor_node(*watcher, *node_name);
+            if (!ref.has_value()) return nanbox::False;
+            return memory::factory::make_fixnum(heap, static_cast<std::int64_t>(*ref));
         });
 
     env.register_builtin("%actor-node-listen", 1, true,

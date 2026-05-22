@@ -40,8 +40,33 @@ ActorSystem::ActorSystem()
     node_name_ = "eta@node-" + std::to_string(local_node_id_);
     node_transport_ = std::make_unique<NodeTransport>(
         local_node_id_,
-        [this](const types::Pid& pid, BinaryMessage payload) {
-            return deliver_remote_payload(pid, std::move(payload));
+        NodeTransport::Callbacks{
+            .deliver_message = [this](const types::Pid& pid, BinaryMessage payload) {
+                return deliver_remote_payload(pid, std::move(payload));
+            },
+            .remote_monitor = [this](
+                                  const types::Pid& watcher,
+                                  const types::Pid& target,
+                                  MonitorRef ref) {
+                handle_remote_monitor_request(watcher, target, ref);
+            },
+            .remote_demonitor = [this](
+                                    const types::Pid& watcher,
+                                    const types::Pid& target,
+                                    MonitorRef ref) {
+                handle_remote_demonitor_request(watcher, target, ref);
+            },
+            .remote_down = [this](const NodeTransport::RemoteDownSignal& signal) {
+                handle_remote_down_signal(signal);
+            },
+            .node_up = [this](const NodeTransport::ConnectedNode& node) {
+                handle_node_up(node);
+            },
+            .node_down = [this](
+                             const NodeTransport::ConnectedNode& node,
+                             NodeTransport::NodeDownReason reason) {
+                handle_node_down(node, reason);
+            },
         });
     if (node_transport_) {
         (void)node_transport_->configure(node_name_, node_cookie_, nullptr);
@@ -324,6 +349,7 @@ std::optional<ActorSystem::MonitorRef> ActorSystem::monitor(
     const types::Pid& watcher,
     const types::Pid& target) {
     std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
+    bool enqueue_remote_failure = false;
 
     MonitorRef ref = 0;
     {
@@ -339,17 +365,97 @@ std::optional<ActorSystem::MonitorRef> ActorSystem::monitor(
             if (ref == 0) return std::nullopt;
         }
 
-        watcher_process->monitors[ref] = target;
-        monitor_refs_[ref] = MonitorSubscription{.ref = ref, .watcher = watcher, .target = target};
+        watcher_process->monitors.insert(ref);
+        MonitorSubscription subscription;
+        subscription.ref = ref;
+        subscription.watcher = watcher;
+        subscription.target = target;
+        subscription.kind = (target.node_id == local_node_id_)
+            ? MonitorSubscription::Kind::LocalProcess
+            : MonitorSubscription::Kind::RemoteProcess;
+        monitor_refs_[ref] = subscription;
 
-        auto target_process = lookup_process_unsafe(target);
-        if (!target_process || !target_process->alive.load(std::memory_order_acquire)) {
+        if (subscription.kind == MonitorSubscription::Kind::LocalProcess) {
+            auto target_process = lookup_process_unsafe(target);
+            if (!target_process || !target_process->alive.load(std::memory_order_acquire)) {
+                erase_monitor_unsafe(ref);
+                ExitReason down_reason;
+                down_reason.kind = ExitReason::Kind::Error;
+                (void)enqueue_message_unsafe(
+                    watcher,
+                    Message::make_down(ref, target, down_reason),
+                    outbox);
+            }
+        } else if (!node_transport_) {
+            erase_monitor_unsafe(ref);
+            enqueue_remote_failure = true;
+        }
+    }
+
+    if (!enqueue_remote_failure && target.node_id != local_node_id_ && node_transport_) {
+        auto sent = node_transport_->send_remote_monitor(watcher, target, ref);
+        if (sent.code != NodeTransport::SendResultCode::Delivered) {
+            enqueue_remote_failure = true;
+        }
+    }
+
+    if (enqueue_remote_failure) {
+        std::lock_guard lock(mutex_);
+        auto monitor_it = monitor_refs_.find(ref);
+        if (monitor_it != monitor_refs_.end() && monitor_it->second.watcher == watcher) {
             erase_monitor_unsafe(ref);
             ExitReason down_reason;
-            down_reason.kind = ExitReason::Kind::Error;
+            down_reason.kind = ExitReason::Kind::NoConnection;
             (void)enqueue_message_unsafe(
                 watcher,
                 Message::make_down(ref, target, down_reason),
+                outbox);
+        }
+    }
+
+    apply_outbox_messages(outbox);
+    return ref;
+}
+
+std::optional<ActorSystem::MonitorRef> ActorSystem::monitor_node(
+    const types::Pid& watcher,
+    std::string node_name) {
+    if (node_name.empty()) return std::nullopt;
+
+    std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
+    MonitorRef ref = 0;
+
+    {
+        std::lock_guard lock(mutex_);
+        auto watcher_process = lookup_process_unsafe(watcher);
+        if (!watcher_process) return std::nullopt;
+        if (!watcher_process->alive.load(std::memory_order_acquire)) return std::nullopt;
+
+        ref = next_monitor_ref_.fetch_add(1, std::memory_order_relaxed);
+        if (ref == 0) {
+            ref = next_monitor_ref_.fetch_add(1, std::memory_order_relaxed);
+            if (ref == 0) return std::nullopt;
+        }
+
+        watcher_process->monitors.insert(ref);
+        MonitorSubscription subscription;
+        subscription.ref = ref;
+        subscription.watcher = watcher;
+        subscription.kind = MonitorSubscription::Kind::Node;
+        subscription.node_name = node_name;
+        monitor_refs_[ref] = std::move(subscription);
+    }
+
+    if (node_transport_) {
+        const auto nodes = node_transport_->connected_nodes();
+        auto found = std::find_if(nodes.begin(), nodes.end(), [&node_name](const auto& node) {
+            return node.node_name == node_name;
+        });
+        if (found != nodes.end()) {
+            std::lock_guard lock(mutex_);
+            (void)enqueue_message_unsafe(
+                watcher,
+                Message::make_node_up(ref, found->node_name, found->node_id),
                 outbox);
         }
     }
@@ -363,6 +469,7 @@ bool ActorSystem::demonitor(
     MonitorRef ref,
     bool flush_down_message) {
     std::shared_ptr<Mailbox> watcher_mailbox;
+    std::optional<MonitorSubscription> removed_subscription;
     bool removed = false;
 
     {
@@ -373,17 +480,28 @@ bool ActorSystem::demonitor(
 
         watcher_mailbox = watcher_process->mailbox;
 
-        auto owned = watcher_process->monitors.find(ref);
-        if (owned != watcher_process->monitors.end()) {
+        if (watcher_process->monitors.contains(ref)) {
+            auto monitor_it = monitor_refs_.find(ref);
+            if (monitor_it != monitor_refs_.end()) {
+                removed_subscription = monitor_it->second;
+            }
             erase_monitor_unsafe(ref);
             removed = true;
         }
     }
 
+    if (removed
+        && removed_subscription.has_value()
+        && removed_subscription->kind == MonitorSubscription::Kind::RemoteProcess
+        && node_transport_) {
+        (void)node_transport_->send_remote_demonitor(
+            watcher,
+            removed_subscription->target,
+            ref);
+    }
+
     if (flush_down_message && watcher_mailbox) {
-        (void)watcher_mailbox->erase_if([ref](const Message& message) {
-            return message.kind == Message::Kind::DownSignal && message.monitor_ref == ref;
-        });
+        flush_monitor_messages_unsafe(watcher_mailbox, ref, flush_down_message);
     }
 
     return removed;
@@ -395,6 +513,8 @@ bool ActorSystem::signal_exit(
     ExitReason reason,
     bool untrappable) {
     std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
+    std::vector<NodeTransport::RemoteDownSignal> remote_down_signals;
+    std::vector<RemoteMonitorSubscription> remote_demonitors;
     bool handled = false;
 
     {
@@ -413,22 +533,38 @@ bool ActorSystem::signal_exit(
                 Message::make_exit(*from, std::move(reason)),
                 outbox);
         } else {
-            terminate_actor_chain_unsafe(target, std::move(reason), outbox);
+            terminate_actor_chain_unsafe(
+                target,
+                std::move(reason),
+                outbox,
+                remote_down_signals,
+                remote_demonitors);
             handled = true;
         }
     }
 
     apply_outbox_messages(outbox);
+    apply_remote_demonitors(remote_demonitors);
+    apply_remote_down_signals(remote_down_signals);
     return handled;
 }
 
 void ActorSystem::complete_actor(const types::Pid& pid, ExitReason reason) {
     std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
+    std::vector<NodeTransport::RemoteDownSignal> remote_down_signals;
+    std::vector<RemoteMonitorSubscription> remote_demonitors;
     {
         std::lock_guard lock(mutex_);
-        terminate_actor_chain_unsafe(pid, std::move(reason), outbox);
+        terminate_actor_chain_unsafe(
+            pid,
+            std::move(reason),
+            outbox,
+            remote_down_signals,
+            remote_demonitors);
     }
     apply_outbox_messages(outbox);
+    apply_remote_demonitors(remote_demonitors);
+    apply_remote_down_signals(remote_down_signals);
 }
 
 std::optional<ActorSystem::Message> ActorSystem::receive(
@@ -566,6 +702,7 @@ void ActorSystem::shutdown() {
     {
         std::lock_guard lock(mutex_);
         monitor_refs_.clear();
+        remote_watchers_by_target_.clear();
         registry_by_name_.clear();
         registry_by_pid_.clear();
         processes.reserve(processes_.size());
@@ -639,10 +776,200 @@ void ActorSystem::erase_monitor_unsafe(MonitorRef ref) {
     monitor_refs_.erase(monitor_it);
 }
 
+void ActorSystem::flush_monitor_messages_unsafe(
+    const std::shared_ptr<Mailbox>& mailbox,
+    MonitorRef ref,
+    bool flush_down_message) {
+    if (!flush_down_message || !mailbox) return;
+    (void)mailbox->erase_if([ref](const Message& message) {
+        if (message.monitor_ref != ref) return false;
+        return message.kind == Message::Kind::DownSignal
+            || message.kind == Message::Kind::NodeUp
+            || message.kind == Message::Kind::NodeDown;
+    });
+}
+
+void ActorSystem::handle_remote_monitor_request(
+    const types::Pid& watcher,
+    const types::Pid& target,
+    MonitorRef ref) {
+    bool target_alive = false;
+    {
+        std::lock_guard lock(mutex_);
+        if (target.node_id != local_node_id_) return;
+        auto process = lookup_process_unsafe(target);
+        target_alive = process && process->alive.load(std::memory_order_acquire);
+        if (target_alive) {
+            auto& subscribers = remote_watchers_by_target_[target];
+            const auto existing = std::find_if(
+                subscribers.begin(),
+                subscribers.end(),
+                [watcher, ref](const RemoteMonitorSubscription& subscription) {
+                    return subscription.watcher == watcher && subscription.ref == ref;
+                });
+            if (existing == subscribers.end()) {
+                subscribers.push_back(RemoteMonitorSubscription{
+                    .ref = ref,
+                    .watcher = watcher,
+                    .target = target});
+            }
+        }
+    }
+
+    if (target_alive || !node_transport_) return;
+
+    NodeTransport::RemoteDownSignal signal;
+    signal.watcher = watcher;
+    signal.target = target;
+    signal.monitor_ref = ref;
+    signal.reason_kind = NodeTransport::RemoteDownReasonKind::Error;
+    (void)node_transport_->send_remote_down(std::move(signal));
+}
+
+void ActorSystem::handle_remote_demonitor_request(
+    const types::Pid& watcher,
+    const types::Pid& target,
+    MonitorRef ref) {
+    std::lock_guard lock(mutex_);
+    auto by_target = remote_watchers_by_target_.find(target);
+    if (by_target == remote_watchers_by_target_.end()) return;
+
+    auto& subscribers = by_target->second;
+    subscribers.erase(
+        std::remove_if(
+            subscribers.begin(),
+            subscribers.end(),
+            [watcher, ref](const RemoteMonitorSubscription& subscription) {
+                return subscription.watcher == watcher && subscription.ref == ref;
+            }),
+        subscribers.end());
+
+    if (subscribers.empty()) {
+        remote_watchers_by_target_.erase(by_target);
+    }
+}
+
+void ActorSystem::handle_remote_down_signal(const NodeTransport::RemoteDownSignal& signal) {
+    std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
+    {
+        std::lock_guard lock(mutex_);
+        auto monitor_it = monitor_refs_.find(signal.monitor_ref);
+        if (monitor_it == monitor_refs_.end()) return;
+
+        const auto subscription = monitor_it->second;
+        if (subscription.kind != MonitorSubscription::Kind::RemoteProcess) return;
+        if (subscription.watcher != signal.watcher) return;
+        if (subscription.target != signal.target) return;
+
+        erase_monitor_unsafe(signal.monitor_ref);
+        const auto reason = decode_remote_down_reason(signal);
+        (void)enqueue_message_unsafe(
+            subscription.watcher,
+            Message::make_down(signal.monitor_ref, signal.target, reason),
+            outbox);
+    }
+    apply_outbox_messages(outbox);
+}
+
+void ActorSystem::handle_node_up(const NodeTransport::ConnectedNode& node) {
+    std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
+    {
+        std::lock_guard lock(mutex_);
+        for (const auto& [ref, subscription] : monitor_refs_) {
+            if (subscription.kind != MonitorSubscription::Kind::Node) continue;
+            if (subscription.node_name != node.node_name) continue;
+            (void)enqueue_message_unsafe(
+                subscription.watcher,
+                Message::make_node_up(ref, node.node_name, node.node_id),
+                outbox);
+        }
+    }
+    apply_outbox_messages(outbox);
+}
+
+void ActorSystem::handle_node_down(
+    const NodeTransport::ConnectedNode& node,
+    NodeTransport::NodeDownReason reason) {
+    std::vector<std::pair<std::shared_ptr<Mailbox>, Message>> outbox;
+    std::vector<MonitorRef> remote_process_refs;
+    {
+        std::lock_guard lock(mutex_);
+
+        for (auto it = remote_watchers_by_target_.begin(); it != remote_watchers_by_target_.end();) {
+            auto& subscribers = it->second;
+            subscribers.erase(
+                std::remove_if(
+                    subscribers.begin(),
+                    subscribers.end(),
+                    [&node](const RemoteMonitorSubscription& subscription) {
+                        return subscription.watcher.node_id == node.node_id;
+                    }),
+                subscribers.end());
+            if (subscribers.empty()) {
+                it = remote_watchers_by_target_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        for (const auto& [ref, subscription] : monitor_refs_) {
+            if (subscription.kind == MonitorSubscription::Kind::Node
+                && subscription.node_name == node.node_name) {
+                (void)enqueue_message_unsafe(
+                    subscription.watcher,
+                    Message::make_node_down(ref, node.node_name, map_node_down_reason(reason)),
+                    outbox);
+            }
+
+            if (subscription.kind == MonitorSubscription::Kind::RemoteProcess
+                && subscription.target.node_id == node.node_id) {
+                remote_process_refs.push_back(ref);
+            }
+        }
+
+        for (const auto ref : remote_process_refs) {
+            auto monitor_it = monitor_refs_.find(ref);
+            if (monitor_it == monitor_refs_.end()) continue;
+            const auto subscription = monitor_it->second;
+            erase_monitor_unsafe(ref);
+            ExitReason down_reason;
+            down_reason.kind = ExitReason::Kind::NoConnection;
+            (void)enqueue_message_unsafe(
+                subscription.watcher,
+                Message::make_down(ref, subscription.target, down_reason),
+                outbox);
+        }
+    }
+    apply_outbox_messages(outbox);
+}
+
+void ActorSystem::apply_remote_down_signals(
+    std::vector<NodeTransport::RemoteDownSignal>& remote_down_signals) {
+    if (!node_transport_) return;
+    for (auto& signal : remote_down_signals) {
+        (void)node_transport_->send_remote_down(std::move(signal));
+    }
+    remote_down_signals.clear();
+}
+
+void ActorSystem::apply_remote_demonitors(
+    std::vector<RemoteMonitorSubscription>& remote_demonitors) {
+    if (!node_transport_) return;
+    for (const auto& subscription : remote_demonitors) {
+        (void)node_transport_->send_remote_demonitor(
+            subscription.watcher,
+            subscription.target,
+            subscription.ref);
+    }
+    remote_demonitors.clear();
+}
+
 void ActorSystem::terminate_actor_chain_unsafe(
     const types::Pid& initial_pid,
     ExitReason reason,
-    std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox) {
+    std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox,
+    std::vector<NodeTransport::RemoteDownSignal>& remote_down_signals,
+    std::vector<RemoteMonitorSubscription>& remote_demonitors) {
     std::deque<std::pair<types::Pid, ExitReason>> pending;
     pending.emplace_back(initial_pid, std::move(reason));
 
@@ -678,17 +1005,27 @@ void ActorSystem::terminate_actor_chain_unsafe(
 
         std::vector<MonitorRef> owned_refs;
         owned_refs.reserve(process->monitors.size());
-        for (const auto& [ref, _] : process->monitors) {
+        for (const auto ref : process->monitors) {
             owned_refs.push_back(ref);
         }
         process->monitors.clear();
         for (const auto ref : owned_refs) {
+            auto monitor_it = monitor_refs_.find(ref);
+            if (monitor_it != monitor_refs_.end()) {
+                if (monitor_it->second.kind == MonitorSubscription::Kind::RemoteProcess) {
+                    remote_demonitors.push_back(RemoteMonitorSubscription{
+                        .ref = ref,
+                        .watcher = monitor_it->second.watcher,
+                        .target = monitor_it->second.target});
+                }
+            }
             monitor_refs_.erase(ref);
         }
 
         std::vector<MonitorSubscription> down_watchers;
         std::vector<MonitorRef> down_refs;
         for (const auto& [ref, subscription] : monitor_refs_) {
+            if (subscription.kind != MonitorSubscription::Kind::LocalProcess) continue;
             if (subscription.target != pid) continue;
             down_watchers.push_back(subscription);
             down_refs.push_back(ref);
@@ -704,6 +1041,22 @@ void ActorSystem::terminate_actor_chain_unsafe(
                 watcher.watcher,
                 Message::make_down(watcher.ref, pid, down_reason),
                 outbox);
+        }
+
+        auto remote_it = remote_watchers_by_target_.find(pid);
+        if (remote_it != remote_watchers_by_target_.end()) {
+            for (const auto& watcher : remote_it->second) {
+                NodeTransport::RemoteDownSignal signal;
+                signal.watcher = watcher.watcher;
+                signal.target = pid;
+                signal.monitor_ref = watcher.ref;
+                signal.reason_kind = encode_remote_down_reason(down_reason);
+                if (down_reason.kind == ExitReason::Kind::Custom) {
+                    signal.reason_payload = down_reason.payload;
+                }
+                remote_down_signals.push_back(std::move(signal));
+            }
+            remote_watchers_by_target_.erase(remote_it);
         }
 
         if (is_normal_exit(current_reason)) continue;
@@ -731,6 +1084,74 @@ bool ActorSystem::is_normal_exit(const ExitReason& reason) {
 
 ActorSystem::ExitReason ActorSystem::normalize_down_reason(const ExitReason& reason) {
     if (reason.kind != ExitReason::Kind::Custom) return reason;
+    return reason;
+}
+
+NodeTransport::RemoteDownReasonKind ActorSystem::encode_remote_down_reason(
+    const ExitReason& reason) {
+    switch (reason.kind) {
+        case ExitReason::Kind::Normal:
+            return NodeTransport::RemoteDownReasonKind::Normal;
+        case ExitReason::Kind::Shutdown:
+            return NodeTransport::RemoteDownReasonKind::Shutdown;
+        case ExitReason::Kind::Killed:
+            return NodeTransport::RemoteDownReasonKind::Killed;
+        case ExitReason::Kind::Error:
+            return NodeTransport::RemoteDownReasonKind::Error;
+        case ExitReason::Kind::NoConnection:
+            return NodeTransport::RemoteDownReasonKind::NoConnection;
+        case ExitReason::Kind::BadCookie:
+            return NodeTransport::RemoteDownReasonKind::BadCookie;
+        case ExitReason::Kind::Custom:
+            return NodeTransport::RemoteDownReasonKind::Custom;
+    }
+    return NodeTransport::RemoteDownReasonKind::Error;
+}
+
+ActorSystem::ExitReason ActorSystem::decode_remote_down_reason(
+    const NodeTransport::RemoteDownSignal& signal) {
+    ExitReason reason;
+    switch (signal.reason_kind) {
+        case NodeTransport::RemoteDownReasonKind::Normal:
+            reason.kind = ExitReason::Kind::Normal;
+            break;
+        case NodeTransport::RemoteDownReasonKind::Shutdown:
+            reason.kind = ExitReason::Kind::Shutdown;
+            break;
+        case NodeTransport::RemoteDownReasonKind::Killed:
+            reason.kind = ExitReason::Kind::Killed;
+            break;
+        case NodeTransport::RemoteDownReasonKind::Error:
+            reason.kind = ExitReason::Kind::Error;
+            break;
+        case NodeTransport::RemoteDownReasonKind::NoConnection:
+            reason.kind = ExitReason::Kind::NoConnection;
+            break;
+        case NodeTransport::RemoteDownReasonKind::BadCookie:
+            reason.kind = ExitReason::Kind::BadCookie;
+            break;
+        case NodeTransport::RemoteDownReasonKind::Custom:
+            reason.kind = ExitReason::Kind::Custom;
+            reason.payload = signal.reason_payload;
+            break;
+    }
+    return reason;
+}
+
+ActorSystem::ExitReason ActorSystem::map_node_down_reason(
+    NodeTransport::NodeDownReason reason_kind) {
+    ExitReason reason;
+    switch (reason_kind) {
+        case NodeTransport::NodeDownReason::Disconnected:
+            reason.kind = ExitReason::Kind::NoConnection;
+            break;
+        case NodeTransport::NodeDownReason::BadCookie:
+            reason.kind = ExitReason::Kind::BadCookie;
+            break;
+        case NodeTransport::NodeDownReason::Incompatible:
+            reason.kind = ExitReason::Kind::Error;
+            break;
+    }
     return reason;
 }
 

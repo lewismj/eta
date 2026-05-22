@@ -31,6 +31,30 @@ Mailbox::Message Mailbox::Message::make_down(
     return message;
 }
 
+Mailbox::Message Mailbox::Message::make_node_up(
+    std::uint64_t reference,
+    std::string node_name,
+    std::uint64_t node_id) {
+    Message message;
+    message.kind = Kind::NodeUp;
+    message.monitor_ref = reference;
+    message.node_name = std::move(node_name);
+    message.node_id = node_id;
+    return message;
+}
+
+Mailbox::Message Mailbox::Message::make_node_down(
+    std::uint64_t reference,
+    std::string node_name,
+    ExitReason exit_reason) {
+    Message message;
+    message.kind = Kind::NodeDown;
+    message.monitor_ref = reference;
+    message.node_name = std::move(node_name);
+    message.reason = std::move(exit_reason);
+    return message;
+}
+
 bool Mailbox::push(Message message) {
     {
         std::lock_guard lock(mutex_);

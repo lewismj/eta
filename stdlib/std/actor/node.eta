@@ -3,6 +3,7 @@
 (module std.actor.node
   (export
     node-name
+    monitor-node
     node-listen
     node-connect
     nodes
@@ -10,6 +11,7 @@
   (begin
 
     (define node-name %actor-node-name)
+    (define monitor-node %actor-monitor-node)
     (define nodes %actor-nodes)
 
     (defun node-listen (endpoint . opts)

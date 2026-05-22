@@ -18,12 +18,54 @@ namespace eta::runtime::actor {
 class NodeTransport {
 public:
     using BinaryMessage = std::vector<std::uint8_t>;
-    using DeliverCallback = std::function<bool(const types::Pid&, BinaryMessage)>;
+    using MonitorRef = std::uint64_t;
 
     struct ConnectedNode {
         std::uint64_t node_id{0};
         std::string node_name{};
         std::string endpoint{};
+    };
+
+    enum class NodeDownReason : std::uint8_t {
+        Disconnected,
+        BadCookie,
+        Incompatible,
+    };
+
+    enum class RemoteDownReasonKind : std::uint8_t {
+        Normal,
+        Shutdown,
+        Killed,
+        Error,
+        NoConnection,
+        BadCookie,
+        Custom,
+    };
+
+    struct RemoteDownSignal {
+        types::Pid watcher{};
+        types::Pid target{};
+        MonitorRef monitor_ref{0};
+        RemoteDownReasonKind reason_kind{RemoteDownReasonKind::Error};
+        BinaryMessage reason_payload{};
+    };
+
+    using DeliverCallback = std::function<bool(const types::Pid&, BinaryMessage)>;
+    using RemoteMonitorCallback =
+        std::function<void(const types::Pid&, const types::Pid&, MonitorRef)>;
+    using RemoteDemonitorCallback =
+        std::function<void(const types::Pid&, const types::Pid&, MonitorRef)>;
+    using RemoteDownCallback = std::function<void(const RemoteDownSignal&)>;
+    using NodeUpCallback = std::function<void(const ConnectedNode&)>;
+    using NodeDownCallback = std::function<void(const ConnectedNode&, NodeDownReason)>;
+
+    struct Callbacks {
+        DeliverCallback deliver_message{};
+        RemoteMonitorCallback remote_monitor{};
+        RemoteDemonitorCallback remote_demonitor{};
+        RemoteDownCallback remote_down{};
+        NodeUpCallback node_up{};
+        NodeDownCallback node_down{};
     };
 
     enum class SendResultCode : std::uint8_t {
@@ -39,7 +81,7 @@ public:
 
     NodeTransport(
         std::uint64_t local_node_id,
-        DeliverCallback deliver_message);
+        Callbacks callbacks);
     ~NodeTransport();
 
     NodeTransport(const NodeTransport&) = delete;
@@ -70,6 +112,15 @@ public:
         const types::Pid& from,
         const types::Pid& to,
         BinaryMessage payload);
+    [[nodiscard]] SendResult send_remote_monitor(
+        const types::Pid& watcher,
+        const types::Pid& target,
+        MonitorRef monitor_ref);
+    [[nodiscard]] SendResult send_remote_demonitor(
+        const types::Pid& watcher,
+        const types::Pid& target,
+        MonitorRef monitor_ref);
+    [[nodiscard]] SendResult send_remote_down(RemoteDownSignal signal);
 
     void shutdown();
 

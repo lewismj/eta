@@ -18,6 +18,12 @@
                 (assert-true (or (null? connected)
                                  (pair? connected))))))
 
+          (make-test "monitor-node returns monitor ref"
+            (lambda ()
+              (let ((ref (monitor-node "eta@test-node")))
+                (assert-true ref)
+                (assert-true (integer? ref)))))
+
           )))
 
     (print-tap (run suite))))

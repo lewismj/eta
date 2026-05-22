@@ -383,6 +383,7 @@ inline void register_builtin_specs_seed(BuiltinEnvironment& env) {
     r("%actor-whereis",        1, false);
     r("%actor-registered",     0, false);
     r("%actor-node-name",      0, false);
+    r("%actor-monitor-node",   1, false);
     r("%actor-node-listen",    1, true);
     r("%actor-node-connect",   1, true);
     r("%actor-nodes",          0, false);

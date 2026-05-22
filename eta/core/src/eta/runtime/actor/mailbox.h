@@ -8,6 +8,7 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "eta/runtime/error.h"
@@ -28,6 +29,8 @@ public:
             Shutdown,
             Killed,
             Error,
+            NoConnection,
+            BadCookie,
             Custom,
         };
 
@@ -40,6 +43,8 @@ public:
             Payload,
             ExitSignal,
             DownSignal,
+            NodeUp,
+            NodeDown,
         };
 
         Kind kind{Kind::Payload};
@@ -47,6 +52,8 @@ public:
         types::Pid from{};
         types::Pid pid{};
         std::uint64_t monitor_ref{0};
+        std::string node_name{};
+        std::uint64_t node_id{0};
         ExitReason reason{};
 
         [[nodiscard]] static Message make_payload(BinaryMessage payload_message);
@@ -54,6 +61,14 @@ public:
         [[nodiscard]] static Message make_down(
             std::uint64_t reference,
             types::Pid down_pid,
+            ExitReason exit_reason);
+        [[nodiscard]] static Message make_node_up(
+            std::uint64_t reference,
+            std::string node_name,
+            std::uint64_t node_id);
+        [[nodiscard]] static Message make_node_down(
+            std::uint64_t reference,
+            std::string node_name,
             ExitReason exit_reason);
     };
 

@@ -6,6 +6,7 @@
 #include <optional>
 #include <sstream>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -166,6 +167,78 @@ std::optional<eta::runtime::types::Pid> decode_pid_payload(
         eta::runtime::types::Pid>(eta::runtime::nanbox::ops::payload(*decoded));
     if (!pid) return std::nullopt;
     return *pid;
+}
+
+void establish_distribution_link(
+    eta::runtime::actor::ActorSystem& server,
+    eta::runtime::actor::ActorSystem& client,
+    const std::string& server_name,
+    const std::string& client_name,
+    const std::string& cookie,
+    const std::string& endpoint) {
+    std::string error;
+    BOOST_REQUIRE(server.configure_node(server_name, cookie, &error));
+    BOOST_REQUIRE(client.configure_node(client_name, cookie, &error));
+    BOOST_REQUIRE(server.node_listen(endpoint, &error));
+    BOOST_REQUIRE(client.node_connect(endpoint, &error));
+
+    const bool handshake_complete = wait_until([&]() {
+        return server.connected_nodes().size() == 1u
+            && client.connected_nodes().size() == 1u;
+    });
+    BOOST_REQUIRE(handshake_complete);
+}
+
+void run_remote_monitor_exit_case(
+    bool crash,
+    eta::runtime::actor::ActorSystem::ExitReason::Kind expected_reason) {
+    using eta::runtime::actor::ActorSystem;
+
+    ActorSystem server;
+    ActorSystem client;
+
+    auto server_pid = server.register_current_thread_actor();
+    auto client_pid = client.register_current_thread_actor();
+    BOOST_REQUIRE(server_pid.has_value());
+    BOOST_REQUIRE(client_pid.has_value());
+
+    establish_distribution_link(
+        server,
+        client,
+        "eta@server",
+        "eta@client",
+        "cookie-remote-monitor",
+        unique_inproc_endpoint());
+
+    auto worker = server.spawn([&server, crash](const eta::runtime::types::Pid& pid) {
+        (void)server.receive(pid, std::nullopt);
+        if (crash) {
+            throw std::runtime_error("remote monitor crash path");
+        }
+    });
+    BOOST_REQUIRE(worker.has_value());
+
+    auto monitor_ref = client.monitor(*client_pid, *worker);
+    BOOST_REQUIRE(monitor_ref.has_value());
+
+    eta::runtime::actor::ActorSystem::BinaryMessage trigger{0x01u};
+    BOOST_TEST(server.send(*worker, std::move(trigger)));
+
+    auto down = client.receive(*client_pid, std::chrono::milliseconds(5000));
+    BOOST_REQUIRE(down.has_value());
+    BOOST_TEST(
+        static_cast<int>(down->kind)
+        == static_cast<int>(ActorSystem::Message::Kind::DownSignal));
+    BOOST_TEST(down->monitor_ref == *monitor_ref);
+    BOOST_TEST(down->pid.node_id == worker->node_id);
+    BOOST_TEST(down->pid.actor_id == worker->actor_id);
+    BOOST_TEST(down->pid.incarnation == worker->incarnation);
+    BOOST_TEST(
+        static_cast<int>(down->reason.kind)
+        == static_cast<int>(expected_reason));
+
+    auto extra = client.receive(*client_pid, std::chrono::milliseconds(0));
+    BOOST_TEST(!extra.has_value());
 }
 
 } // namespace
@@ -832,6 +905,186 @@ BOOST_AUTO_TEST_CASE(actor_distribution_transport_rejects_bad_cookie) {
         return server.connected_nodes().empty() && client.connected_nodes().empty();
     });
     BOOST_TEST(no_nodes);
+}
+
+BOOST_AUTO_TEST_CASE(actor_distribution_node_monitor_reports_nodeup_and_disconnect_nodedown_once) {
+    using eta::runtime::actor::ActorSystem;
+
+    ActorSystem server;
+    ActorSystem client;
+
+    auto server_pid = server.register_current_thread_actor();
+    auto client_pid = client.register_current_thread_actor();
+    BOOST_REQUIRE(server_pid.has_value());
+    BOOST_REQUIRE(client_pid.has_value());
+
+    auto node_ref = server.monitor_node(*server_pid, "eta@client");
+    BOOST_REQUIRE(node_ref.has_value());
+
+    establish_distribution_link(
+        server,
+        client,
+        "eta@server",
+        "eta@client",
+        "cookie-node-monitor",
+        unique_inproc_endpoint());
+
+    auto node_up = server.receive(*server_pid, std::chrono::milliseconds(1000));
+    BOOST_REQUIRE(node_up.has_value());
+    BOOST_TEST(
+        static_cast<int>(node_up->kind)
+        == static_cast<int>(ActorSystem::Message::Kind::NodeUp));
+    BOOST_TEST(node_up->monitor_ref == *node_ref);
+    BOOST_TEST(node_up->node_name == "eta@client");
+    BOOST_TEST(node_up->node_id != 0u);
+
+    auto no_extra_up = server.receive(*server_pid, std::chrono::milliseconds(0));
+    BOOST_TEST(!no_extra_up.has_value());
+
+    BOOST_TEST(server.disconnect_node("eta@client"));
+    auto node_down = server.receive(*server_pid, std::chrono::milliseconds(1500));
+    BOOST_REQUIRE(node_down.has_value());
+    BOOST_TEST(
+        static_cast<int>(node_down->kind)
+        == static_cast<int>(ActorSystem::Message::Kind::NodeDown));
+    BOOST_TEST(node_down->monitor_ref == *node_ref);
+    BOOST_TEST(node_down->node_name == "eta@client");
+    BOOST_TEST(
+        static_cast<int>(node_down->reason.kind)
+        == static_cast<int>(ActorSystem::ExitReason::Kind::NoConnection));
+
+    auto no_extra_down = server.receive(*server_pid, std::chrono::milliseconds(0));
+    BOOST_TEST(!no_extra_down.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(actor_distribution_node_monitor_reports_bad_cookie_reconnect_attempt) {
+    using eta::runtime::actor::ActorSystem;
+
+    ActorSystem server;
+    ActorSystem bad_client;
+
+    auto server_pid = server.register_current_thread_actor();
+    auto bad_client_pid = bad_client.register_current_thread_actor();
+    BOOST_REQUIRE(server_pid.has_value());
+    BOOST_REQUIRE(bad_client_pid.has_value());
+
+    auto node_ref = server.monitor_node(*server_pid, "eta@client");
+    BOOST_REQUIRE(node_ref.has_value());
+
+    std::string error;
+    BOOST_REQUIRE(server.configure_node("eta@server", "cookie-good", &error));
+    BOOST_REQUIRE(bad_client.configure_node("eta@client", "cookie-bad", &error));
+
+    const auto endpoint = unique_inproc_endpoint();
+    BOOST_REQUIRE(server.node_listen(endpoint, &error));
+    const bool connected = bad_client.node_connect(endpoint, &error);
+    BOOST_TEST(!connected);
+
+    auto node_down = server.receive(*server_pid, std::chrono::milliseconds(1500));
+    BOOST_REQUIRE(node_down.has_value());
+    BOOST_TEST(
+        static_cast<int>(node_down->kind)
+        == static_cast<int>(ActorSystem::Message::Kind::NodeDown));
+    BOOST_TEST(node_down->monitor_ref == *node_ref);
+    BOOST_TEST(node_down->node_name == "eta@client");
+    BOOST_TEST(
+        static_cast<int>(node_down->reason.kind)
+        == static_cast<int>(ActorSystem::ExitReason::Kind::BadCookie));
+}
+
+BOOST_AUTO_TEST_CASE(actor_distribution_remote_monitor_down_normal_exit_exactly_once) {
+    run_remote_monitor_exit_case(
+        /*crash=*/false,
+        eta::runtime::actor::ActorSystem::ExitReason::Kind::Normal);
+}
+
+BOOST_AUTO_TEST_CASE(actor_distribution_remote_monitor_down_error_exit_exactly_once) {
+    run_remote_monitor_exit_case(
+        /*crash=*/true,
+        eta::runtime::actor::ActorSystem::ExitReason::Kind::Error);
+}
+
+BOOST_AUTO_TEST_CASE(actor_distribution_remote_monitor_down_on_node_loss) {
+    using eta::runtime::actor::ActorSystem;
+
+    ActorSystem server;
+    ActorSystem client;
+
+    auto server_pid = server.register_current_thread_actor();
+    auto client_pid = client.register_current_thread_actor();
+    BOOST_REQUIRE(server_pid.has_value());
+    BOOST_REQUIRE(client_pid.has_value());
+
+    establish_distribution_link(
+        server,
+        client,
+        "eta@server",
+        "eta@client",
+        "cookie-node-loss",
+        unique_inproc_endpoint());
+
+    auto worker = server.spawn([&server](const eta::runtime::types::Pid& pid) {
+        (void)server.receive(pid, std::nullopt);
+    });
+    BOOST_REQUIRE(worker.has_value());
+
+    auto monitor_ref = client.monitor(*client_pid, *worker);
+    BOOST_REQUIRE(monitor_ref.has_value());
+
+    BOOST_TEST(client.disconnect_node("eta@server"));
+
+    auto down = client.receive(*client_pid, std::chrono::milliseconds(5000));
+    BOOST_REQUIRE(down.has_value());
+    BOOST_TEST(
+        static_cast<int>(down->kind)
+        == static_cast<int>(ActorSystem::Message::Kind::DownSignal));
+    BOOST_TEST(down->monitor_ref == *monitor_ref);
+    BOOST_TEST(down->pid.node_id == worker->node_id);
+    BOOST_TEST(down->pid.actor_id == worker->actor_id);
+    BOOST_TEST(down->pid.incarnation == worker->incarnation);
+    BOOST_TEST(
+        static_cast<int>(down->reason.kind)
+        == static_cast<int>(ActorSystem::ExitReason::Kind::NoConnection));
+
+    auto extra = client.receive(*client_pid, std::chrono::milliseconds(0));
+    BOOST_TEST(!extra.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(actor_distribution_remote_demonitor_flush_suppresses_stale_down) {
+    using eta::runtime::actor::ActorSystem;
+
+    ActorSystem server;
+    ActorSystem client;
+
+    auto server_pid = server.register_current_thread_actor();
+    auto client_pid = client.register_current_thread_actor();
+    BOOST_REQUIRE(server_pid.has_value());
+    BOOST_REQUIRE(client_pid.has_value());
+
+    establish_distribution_link(
+        server,
+        client,
+        "eta@server",
+        "eta@client",
+        "cookie-demonitor",
+        unique_inproc_endpoint());
+
+    auto worker = server.spawn([&server](const eta::runtime::types::Pid& pid) {
+        (void)server.receive(pid, std::nullopt);
+    });
+    BOOST_REQUIRE(worker.has_value());
+
+    auto monitor_ref = client.monitor(*client_pid, *worker);
+    BOOST_REQUIRE(monitor_ref.has_value());
+
+    BOOST_TEST(client.demonitor(*client_pid, *monitor_ref, true));
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    eta::runtime::actor::ActorSystem::BinaryMessage trigger{0x01u};
+    BOOST_TEST(server.send(*worker, std::move(trigger)));
+
+    auto down = client.receive(*client_pid, std::chrono::milliseconds(400));
+    BOOST_TEST(!down.has_value());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

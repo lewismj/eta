@@ -16,11 +16,10 @@
 #include <vector>
 
 #include "eta/runtime/actor/mailbox.h"
+#include "eta/runtime/actor/node_transport.h"
 #include "eta/runtime/types/pid.h"
 
 namespace eta::runtime::actor {
-
-class NodeTransport;
 
 /**
  * @brief Runtime owner for local actors and their mailboxes.
@@ -150,6 +149,12 @@ public:
     [[nodiscard]] std::optional<MonitorRef> monitor(
         const types::Pid& watcher,
         const types::Pid& target);
+    /**
+     * @brief Register one node lifecycle monitor for @p node_name.
+     */
+    [[nodiscard]] std::optional<MonitorRef> monitor_node(
+        const types::Pid& watcher,
+        std::string node_name);
 
     /**
      * @brief Remove a monitor reference owned by @p watcher.
@@ -206,6 +211,20 @@ private:
     };
 
     struct MonitorSubscription {
+        enum class Kind : std::uint8_t {
+            LocalProcess,
+            RemoteProcess,
+            Node,
+        };
+
+        MonitorRef ref{0};
+        types::Pid watcher{};
+        types::Pid target{};
+        Kind kind{Kind::LocalProcess};
+        std::string node_name{};
+    };
+
+    struct RemoteMonitorSubscription {
         MonitorRef ref{0};
         types::Pid watcher{};
         types::Pid target{};
@@ -220,7 +239,7 @@ private:
         bool is_main_thread_actor{false};
         bool trap_exit{false};
         std::unordered_set<types::Pid, PidHasher> links{};
-        std::unordered_map<MonitorRef, types::Pid> monitors{};
+        std::unordered_set<MonitorRef> monitors{};
     };
 
     [[nodiscard]] types::Pid allocate_pid_unsafe();
@@ -232,16 +251,46 @@ private:
     [[nodiscard]] bool deliver_remote_payload(const types::Pid& pid, BinaryMessage payload);
     [[nodiscard]] static std::uint64_t allocate_local_node_id();
     void erase_monitor_unsafe(MonitorRef ref);
+    void flush_monitor_messages_unsafe(
+        const std::shared_ptr<Mailbox>& mailbox,
+        MonitorRef ref,
+        bool flush_down_message);
+    void handle_remote_monitor_request(
+        const types::Pid& watcher,
+        const types::Pid& target,
+        MonitorRef ref);
+    void handle_remote_demonitor_request(
+        const types::Pid& watcher,
+        const types::Pid& target,
+        MonitorRef ref);
+    void handle_remote_down_signal(const NodeTransport::RemoteDownSignal& signal);
+    void handle_node_up(const NodeTransport::ConnectedNode& node);
+    void handle_node_down(
+        const NodeTransport::ConnectedNode& node,
+        NodeTransport::NodeDownReason reason);
+    void apply_remote_down_signals(
+        std::vector<NodeTransport::RemoteDownSignal>& remote_down_signals);
+    void apply_remote_demonitors(
+        std::vector<RemoteMonitorSubscription>& remote_demonitors);
     void terminate_actor_chain_unsafe(
         const types::Pid& initial_pid,
         ExitReason reason,
-        std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox);
+        std::vector<std::pair<std::shared_ptr<Mailbox>, Message>>& outbox,
+        std::vector<NodeTransport::RemoteDownSignal>& remote_down_signals,
+        std::vector<RemoteMonitorSubscription>& remote_demonitors);
     static bool is_normal_exit(const ExitReason& reason);
     static ExitReason normalize_down_reason(const ExitReason& reason);
+    static NodeTransport::RemoteDownReasonKind encode_remote_down_reason(
+        const ExitReason& reason);
+    static ExitReason decode_remote_down_reason(
+        const NodeTransport::RemoteDownSignal& signal);
+    static ExitReason map_node_down_reason(NodeTransport::NodeDownReason reason);
 
     mutable std::mutex mutex_{};
     std::unordered_map<types::Pid, std::shared_ptr<ActorProcess>, PidHasher> processes_{};
     std::unordered_map<MonitorRef, MonitorSubscription> monitor_refs_{};
+    std::unordered_map<types::Pid, std::vector<RemoteMonitorSubscription>, PidHasher>
+        remote_watchers_by_target_{};
     std::unordered_map<std::string, types::Pid> registry_by_name_{};
     std::unordered_map<types::Pid, std::string, PidHasher> registry_by_pid_{};
     std::uint64_t local_node_id_{0};

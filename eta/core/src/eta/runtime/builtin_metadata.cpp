@@ -156,6 +156,7 @@ namespace {
     if (name == "%actor-whereis") return "(%actor-whereis name)";
     if (name == "%actor-registered") return "(%actor-registered)";
     if (name == "%actor-node-name") return "(%actor-node-name)";
+    if (name == "%actor-monitor-node") return "(%actor-monitor-node node-name)";
     if (name == "%actor-node-listen") return "(%actor-node-listen endpoint [key value] ...)";
     if (name == "%actor-node-connect") return "(%actor-node-connect endpoint [key value] ...)";
     if (name == "%actor-nodes") return "(%actor-nodes)";
