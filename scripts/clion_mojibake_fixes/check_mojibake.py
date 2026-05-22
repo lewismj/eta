@@ -38,6 +38,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # Map of mojibake -> intended character.  Order matters: longer keys first.
 FIXES: dict[str, str] = {
+    # Second-order variants produced by repairing already mojibaked text through
+    # a console/editor path that preserved some CP-1252 punctuation characters.
+    "ââ‚¬”": "—",
+    "ââ‚¬“": "–",
+    "ââ‚¬Â¦": "…",
+    "ââ€ Â": "←",
+    "ââ€ ’": "→",
+    "Ã‚·": "·",
+    "Ã‚Â§": "§",
+    "ÃƒÂ§": "ç",
+    "\u00C3\u008F\u00E2\u20AC\u00A1\u00C3\u201A\u00B2": "χ²",
+    "Ï‡Ã‚Â²": "χ²",
     "â€\u009d": "\u201D",   # right double quotation mark
     "â€\u009c": "\u201C",   # left  double quotation mark
     "â€œ":      "\u201C",
@@ -90,6 +102,10 @@ FIXES: dict[str, str] = {
 # flag survivors that aren't yet in the fix map.
 DETECT = re.compile(
     "(?:"
+    r"\u00E2\u00E2"                  # ââ... second-order UTF-8 mojibake
+    r"|\u00C3\u201A"                 # Ã‚...
+    r"|\u00C3\u0192"                 # Ãƒ...
+    r"|\u00C3\u008F\u00E2"          # Ï‡... second-order chi
     r"\u00C3[\u0080-\u00BF]"        # Ã + cont
     r"|\u00C2[\u0080-\u00BF]"       # Â + cont
     r"|\u00E2\u0080[\u0080-\u00BF]" # â€…
