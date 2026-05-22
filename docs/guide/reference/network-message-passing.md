@@ -16,6 +16,12 @@
 > socket-mailbox compatibility workflows that remain useful for endpoint-level
 > transport patterns.
 
+> [!WARNING]
+> This design note covers the current socket mailbox model. The actor
+> roadmap moves local actor identity and receive semantics to VM mailboxes
+> addressed by PID values, while keeping NNG as the distribution transport
+> layer.
+
 ## Quick Links
 
 | Goal | Go to |

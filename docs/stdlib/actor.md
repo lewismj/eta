@@ -1,6 +1,6 @@
 # std.actor
 
-BEAM-like local actor runtime wrappers over the `%actor-*` primitives.
+Local actor runtime wrappers over the `%actor-*` primitives.
 
 ```scheme
 (import std.actor)
@@ -10,6 +10,7 @@ BEAM-like local actor runtime wrappers over the `%actor-*` primitives.
 spawn, send, selective receive, links, monitors, exit signals, local
 registration, and process introspection. Use `std.actor.node` for distributed
 actor-node links and `std.net` for transport-level NNG sockets.
+
 
 | Symbol | Description |
 | --- | --- |
