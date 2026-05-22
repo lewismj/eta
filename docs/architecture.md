@@ -84,17 +84,27 @@ flowchart TD
 
 ---
 
-## Networking Surfaces
+## Concurrency and Networking Surfaces
 
-Eta has two separate networking surfaces:
+Eta now separates actor semantics from transport mechanics:
 
-- `std.net` uses NNG for actor/message-passing patterns (Eta-to-Eta style
-  communication).
+- `std.actor` is the BEAM-like actor API: PID identity, VM-owned mailboxes,
+  selective receive, links, monitors, exit signals, process registration,
+  process info, and scheduler controls.
+- `std.actor.supervisor` and `std.actor.gen_server` provide OTP-style
+  supervision and server behaviours on top of `std.actor`.
+- `std.actor.node` bridges actor nodes over NNG for node handshakes, remote
+  routing, node monitors, and remote process monitor notifications.
+- `std.net` remains the explicit NNG socket layer for transport-level
+  patterns such as REQ/REP, PUB/SUB, SURVEYOR/RESPONDENT, and legacy
+  socket-mailbox compatibility helpers.
 - `net.http` (from the `eta-http` sidecar package) uses libcurl for HTTP/HTTPS
   client requests to external services.
 
-The runtime keeps these concerns separate: message-passing stays in `std.net`,
-while web client traffic lives in `net.http`.
+The runtime keeps these concerns separate: local actor code communicates via
+PIDs and mailboxes, distributed actor nodes use NNG as their transport bridge,
+raw socket workflows stay in `std.net`, and web client traffic lives in
+`net.http`.
 
 ---
 

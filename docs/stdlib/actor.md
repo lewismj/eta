@@ -1,13 +1,15 @@
 # std.actor
 
-Local actor runtime wrappers over the `%actor-*` primitives.
+BEAM-like local actor runtime wrappers over the `%actor-*` primitives.
 
 ```scheme
 (import std.actor)
 ```
 
-`std.actor` is the local PID and mailbox API. Use `std.actor.node` for
-distributed actor-node links and `std.net` for transport-level NNG sockets.
+`std.actor` is the local PID and VM-mailbox API. It provides actor identity,
+spawn, send, selective receive, links, monitors, exit signals, local
+registration, and process introspection. Use `std.actor.node` for distributed
+actor-node links and `std.net` for transport-level NNG sockets.
 
 | Symbol | Description |
 | --- | --- |

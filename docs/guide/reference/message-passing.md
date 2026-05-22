@@ -1,577 +1,259 @@
 # Message Passing & Actors
 
-[← Back to README](../../../README.md) · [Networking Primitives](networking.md) ·
-[Network & Message Passing Design](network-message-passing.md) ·
-[Modules & Stdlib](modules.md) · [Examples](../examples-tour.md)
+[← Back to README](../../../README.md) · [Actor stdlib](../stdlib/actor.md) ·
+[Actor supervision](../stdlib/actor-supervisor.md) · [Gen server](../stdlib/actor-gen-server.md) ·
+[Actor nodes](../stdlib/actor-node.md) · [Networking Primitives](networking.md) ·
+[Examples](../examples-tour.md)
 
 ---
 
-> Erlang-style actor model for Eta: independent actors communicating
-> through message passing over nng sockets.
+Eta's primary concurrency model is now a **BEAM-like actor runtime**:
+actors are addressed by PIDs, each actor owns a VM-level mailbox, and
+failures are represented as ordinary data through exits, links, monitors,
+and supervisor restart policies.
 
----
+NNG is still part of the stack, but it is no longer the local actor mailbox
+abstraction. Use:
 
-> [!WARNING]
-> This page documents the current socket-based concurrency compatibility
-> APIs. The actor roadmap transitions local actors to VM mailboxes with PID
-> addressing; NNG remains as transport/distribution infrastructure.
+| Layer | Use it for |
+| --- | --- |
+| `std.actor` | Local PID/mailbox actors, selective receive, links, monitors, exits, registry, introspection. |
+| `std.actor.supervisor` | OTP-style child specs, `one-for-one`, `one-for-all`, `rest-for-one`, restart intensity. |
+| `std.actor.gen_server` | OTP-style server behaviour with `call`, `cast`, callback state, and termination hooks. |
+| `std.actor.node` | Distributed node handshakes, remote actor routing, node monitors, and remote process monitor notifications over NNG. |
+| `std.net` | Explicit NNG socket workflows: REQ/REP, PUB/SUB, survey, raw endpoints, and legacy socket-mailbox compatibility. |
 
-## Overview
+## Actor model overview
 
-Eta's actor model is built on a simple principle: **share nothing, communicate
-through messages**.  Each actor has its own VM, heap, and GC, and exchanges
-data exclusively through serialized messages over nng sockets.
+A local actor is a lightweight runtime process with:
 
-Actors come in two flavours:
-
-| Primitive | Isolation | Transport | Use case |
-|-----------|-----------|-----------|----------|
-| `spawn` | Separate **OS process** | `ipc://` or `tcp://` | Heavy work, fault isolation, cross-host distribution |
-| `spawn-thread` | In-process **thread** | `inproc://` | Low-latency, no fork/exec overhead, closures as workers |
-
-Both return a PAIR socket and use the same `send!` / `recv!` /
-`current-mailbox` API — code written for one works unchanged with the other.
-
-> [!NOTE]
-> `spawn` launches a child **process** (separate executable) connected over
-> IPC or TCP, while `spawn-thread` runs a thunk in a new **in-process VM
-> thread** over an `inproc://` socket.  The messaging API is identical —
-> choose `spawn` for fault isolation and network distribution, or
-> `spawn-thread` for minimal overhead when actors share a machine.
-
-This gives you:
-
-- **True parallelism** — actors run on separate cores simultaneously.
-- **Fault isolation** — a crash in one actor cannot corrupt another's heap.
-- **Network transparency** — the same `send!` / `recv!` API works whether
-  actors are in the same machine or on different hosts.
-- **No data races** — the design eliminates shared mutable state entirely.
-
-```
-┌───────────────────────┐     PAIR socket      ┌────────────────────────┐
-│     Parent Process    │◄──────────────────►  │     Child Process      │
-│                       │  ipc:// or tcp://    │                        │
-│  VM₁  Heap₁  GC₁      │                      │  VM₂  Heap₂  GC₂       │
-│                       │                      │                        │
-│  (define w            │                      │  (define mailbox       │
-│    (spawn "w.eta"))   │                      │    (current-mailbox))  │
-│  (send! w '(task 42)) │                      │  (define msg           │
-│  (recv! w 'wait)      │                      │    (recv! mailbox))    │
-└───────────────────────┘                      └────────────────────────┘
-```
-
----
-
-## Primitive Reference
-
-### `spawn`
+- an opaque PID returned by `(spawn thunk)`;
+- a mailbox owned by the runtime, not an NNG socket;
+- selective receive that scans for the first matching message and leaves
+  unmatched messages queued in order;
+- BEAM-style failure signals: `link`, `unlink`, `monitor`, `demonitor`,
+  `exit`, `kill`, and `trap-exit!`;
+- local name registration through `register`, `whereis`, and `registered`;
+- process introspection through `process-info` and `mailbox-length`.
 
 ```scheme
-(spawn module-path)          → parent-side PAIR socket
-(spawn module-path endpoint) → parent-side PAIR socket (custom endpoint)
-```
+(import std.actor std.io)
 
-Launches a child `etai` process that loads `module-path`.  The parent and
-child are connected by a `PAIR` nng socket over an automatically-selected
-IPC endpoint (Unix domain socket on Linux/macOS, named pipe on Windows).
-
-Returns the **parent-side socket**, which is used for all subsequent
-`send!` / `recv!` calls to the child.
-
-```scheme
-(define worker (spawn "cookbook/concurrency/message-passing-worker.eta"))
-(send! worker '(compute 42))
-(define result (recv! worker 'wait))
-(nng-close worker)
-```
-
-**Child endpoint selection:**
-
-| Platform | Default transport |
-|----------|-------------------|
-| Linux / macOS | `ipc:///tmp/eta-<pid>-<n>.sock` |
-| Windows | `ipc://\\.\pipe\eta-<pid>-<n>` |
-
-Override with the optional `endpoint` argument:
-```scheme
-(spawn "worker.eta" "tcp://*:6000")  ; parent listens on TCP port 6000
-```
-
----
-
-### `current-mailbox`
-
-```scheme
-(current-mailbox) → PAIR socket
-```
-
-Called **inside a spawned child module**, returns the PAIR socket
-connected to the parent.  This is automatically bound when the child
-is launched via `spawn`.
-
-```scheme
-;; worker.eta — runs inside the spawned child process
-(module worker
-  (import std.io)
-  (begin
-    (define mailbox (current-mailbox))
-    (define task (recv! mailbox 'wait))  ; block until parent sends a task
-    (send! mailbox (* task 2) 'wait)     ; send result back
-    (println "worker: done")))
-```
-
----
-
-### `spawn-wait`
-
-```scheme
-(spawn-wait sock) → exit-code
-```
-
-Blocks until the child process associated with `sock` exits.  Returns
-the process exit code (0 for clean exit, non-zero for error).
-
-```scheme
-(define worker (spawn "worker.eta"))
-(send! worker '(work))
-(define result (recv! worker 'wait))
-(spawn-wait worker)   ; wait for clean exit
-(nng-close worker)
-```
-
----
-
-### `spawn-kill`
-
-```scheme
-(spawn-kill sock) → void
-```
-
-Forcibly terminates the child process associated with `sock`.  The
-child receives `SIGTERM` (Unix) or `TerminateProcess` (Windows).
-Use this only when `(send! worker '(exit))` is not feasible.
-
-```scheme
-(spawn-kill worker)   ; forcibly terminate
-(nng-close worker)    ; close the socket
-```
-
----
-
-## Lifecycle Management
-
-| Event | Behavior |
-|-------|----------|
-| Parent calls `(nng-close worker)` | Socket closes; child's next `recv!` returns `#f` → child should exit cleanly |
-| Parent crashes | OS closes the socket; child's `recv!` returns `#f` |
-| Child crashes | Parent's `recv!` raises `'nng-error`; parent can handle it |
-| Child exits normally | Parent's `recv!` returns `#f` on next call |
-
-**Recommended pattern — clean shutdown:**
-
-```scheme
-;; Parent: signal exit, wait for child to finish
-(send! worker '(exit))
-(spawn-wait worker)
-(nng-close worker)
-```
-
-**Recommended pattern — safe socket management:**
-
-```scheme
-(define worker (spawn "worker.eta"))
-(dynamic-wind
-  (lambda () #f)
-  (lambda ()
-    (send! worker '(task 42))
-    (recv! worker 'wait))
-  (lambda ()
-    (nng-close worker)))  ; always close, even on exception
-```
-
----
-
-## Message Serialization
-
-All values passed over `send!` / `recv!` are serialized to a binary wire
-format.  The serialization is transparent — you send and receive ordinary
-Eta values.
-
-**Serializable types:**
-
-| Type | Example |
-|------|---------|
-| Booleans | `#t`, `#f` |
-| Fixnums | `42`, `-7` |
-| Flonums | `3.14`, `1.0e10` |
-| Characters | `#\a`, `#\space` |
-| Strings | `"hello"` |
-| Symbols | `'compute` |
-| Pairs & lists | `'(a b c)`, `(cons 1 2)` |
-| Vectors | `#(1 2 3)` |
-| Bytevectors | `#u8(0 255 128)` |
-| `'()` (nil) | The empty list |
-
-**Not serializable for `send!`/`recv!` message payloads:** Closures,
-continuations, ports, nng sockets, and tensors.  Attempting to send one
-raises:
-```
-'nng-error "cannot send non-serializable value"
-```
-
-This restriction applies to network/message transport encoding. `spawn-thread`
-uses a separate capture serializer that can transfer closures (including nested
-closures and referenced module globals), but still rejects runtime-only
-handles such as ports/sockets/tensors.
-
-**Wire format auto-detection:**
-
-```scheme
-(send! sock value)         ; binary (default) — fast, compact
-(send! sock value 'text)   ; s-expression text — human-readable, slower
-
-(recv! sock)               ; auto-detects binary vs text
-```
-
----
-
-## Common Patterns
-
-### Pattern 1 — Parent / Child (basic)
-
-The simplest actor pattern: spawn one worker, send it a task, get back
-a result.
-
-```scheme
-;; parent.eta
-(module parent
-  (import std.net)
-  (import std.io)
-  (begin
-    (define worker (spawn "worker.eta"))
-    (send! worker '(square 7))
-    (define result (recv! worker 'wait))   ; => 49
-    (println result)
-    (send! worker '(exit))
-    (spawn-wait worker)
-    (nng-close worker)))
-```
-
-```scheme
-;; worker.eta
-(module worker
-  (begin
-    (define mailbox (current-mailbox))
-    (letrec ((loop (lambda ()
-                     (define msg (recv! mailbox 'wait))
-                     (cond
-                       ((equal? (car msg) 'square)
-                        (send! mailbox (* (cadr msg) (cadr msg)) 'wait)
-                        (loop))
-                       ((equal? (car msg) 'exit) #f)
-                       (#t (loop))))))
-      (loop))))
-```
-
----
-
-### Pattern 2 — Request / Reply (synchronous RPC)
-
-`request-reply` from `std.net` encapsulates a single synchronous
-round-trip over a REQ/REP socket pair:
-
-```scheme
-;; Client (any .eta file or REPL)
-(import std.net)
-(define answer
-  (request-reply "tcp://localhost:5555" '(compute 42)))
-```
-
-```scheme
-;; echo-server.eta — standalone REP server
-(module echo-server
-  (import std.io)
-  (begin
-    (define sock (nng-socket 'rep))
-    (nng-listen sock "tcp://*:5555")
-    (println "echo-server: listening on tcp://*:5555")
-    (letrec ((loop (lambda ()
-                     (define msg (recv! sock 'wait))
-                     (send! sock msg 'wait)          ; echo back unchanged
-                     (loop))))
-      (loop))))
-```
-
-Run the server:
-```bash
-etai cookbook/concurrency/echo-server.eta
-```
-
-From another terminal or the REPL:
-```scheme
-(import std.net)
-(request-reply "tcp://localhost:5555" '(hello world))
-; => (hello world)
-```
-
----
-
-### Pattern 3 — Worker Pool (parallel map)
-
-`worker-pool` spawns one child per task and collects results in parallel:
-
-```scheme
-(import std.net)
-
-;; Square each number in parallel using 5 worker processes
-(define results
-  (worker-pool "worker.eta" '(1 2 3 4 5)))
-; => (1 4 9 16 25)  (if worker squares its input)
-```
-
-See [`cookbook/concurrency/worker-pool.eta`](../../../cookbook/concurrency/worker-pool.eta) and
-[`cookbook/concurrency/parallel-map.eta`](../../../cookbook/concurrency/parallel-map.eta) for
-complete runnable demos.
-
----
-
-### Pattern 4 — Publish / Subscribe
-
-```scheme
-;; publisher.eta — sends price updates every second
-(module publisher
-  (begin
-    (define pub (nng-socket 'pub))
-    (nng-listen pub "tcp://*:5556")
-    (letrec ((broadcast (lambda (n)
-                          (send! pub (list 'prices.eur n))
-                          (send! pub (list 'prices.usd (* n 1.1)))
-                          (broadcast (+ n 1)))))
-      (broadcast 100))))
-```
-
-```scheme
-;; subscriber.eta — receives price updates
-(module subscriber
-  (import std.net)
-  (import std.io)
-  (begin
-    (define sub (nng-socket 'sub))
-    (nng-dial sub "tcp://localhost:5556")
-    (nng-subscribe sub "prices.")          ; filter: only price messages
-    (letrec ((loop (lambda ()
-                     (define msg (recv! sub 'wait))
-                     (when msg (println msg) (loop)))))
-      (loop))))
-```
-
-Or use `pub-sub` from `std.net`:
-
-```scheme
-(pub-sub "tcp://localhost:5556"
-         '("prices.")
-         (lambda (msg) (println msg)))
-```
-
----
-
-### Pattern 5 — Scatter / Gather (Survey)
-
-Ask multiple workers a question and collect all their answers before a
-deadline:
-
-```scheme
-;; respondent-worker.eta — answers status queries
-(module respondent
-  (begin
-    (define mailbox (current-mailbox))
-    ;; A respondent must connect to the surveyor
-    (define surveyor (nng-socket 'respondent))
-    (nng-dial surveyor "tcp://localhost:5557")
-    (letrec ((loop (lambda ()
-                     (define question (recv! surveyor 'wait))
-                     (when question
-                       (send! surveyor (list 'ok (hostname)) 'wait)
-                       (loop)))))
-      (loop))))
-```
-
-```scheme
-;; scatter-gather.eta — collect status from all respondents
-(import std.net)
-(define responses
-  (survey "tcp://*:5557" '(status?) 1000))
-; => ((ok worker-1) (ok worker-2) ...)
-```
-
-See [`cookbook/concurrency/scatter-gather.eta`](../../../cookbook/concurrency/scatter-gather.eta) for a
-complete runnable demo.
-
----
-
-### Pattern 6 — Event Loop with `nng-poll`
-
-When a process manages multiple sockets simultaneously, `nng-poll`
-prevents blocking on any single socket:
-
-```scheme
-(define commands (nng-socket 'pull))
-(define events   (nng-socket 'sub))
-(nng-listen commands "ipc:///tmp/cmds.sock")
-(nng-dial   events   "tcp://localhost:5556")
-(nng-subscribe events "")
-
-(letrec ((loop (lambda ()
-                 ;; Wait up to 100 ms for any socket to become readable
-                 (define ready
-                   (nng-poll (list (cons commands 'recv)
-                                   (cons events 'recv))
-                             100))
-                 ;; Process all ready sockets
-                 (for-each
-                   (lambda (sock)
-                     (define msg (recv! sock 'noblock))
-                     (when msg (dispatch sock msg)))
-                   ready)
-                 (loop))))
-  (loop))
-```
-
----
-
-### Pattern 7 — In-Process Threads (`spawn-thread`)
-
-
-`spawn-thread` is a lightweight alternative to `spawn` for actors that live
-inside the same OS process.  There is no fork/exec overhead; the thunk's
-bytecode and upvalues are serialized and executed in a fresh in-process VM
-thread connected over an `inproc://` PAIR socket.  The API is identical to
-`spawn` / `current-mailbox`.
-
-```scheme
-;; A worker that captures an offset in its closure.
-;; No separate worker file needed.
-(define (make-worker offset)
-  (spawn-thread
+(define worker
+  (spawn
     (lambda ()
-      (let ((mb (current-mailbox)))          ; thread-side PAIR socket
-        (let ((n (recv! mb 'wait)))
-          (send! mb (+ n offset) 'wait))))))
+      (let loop ()
+        (receive
+          (list
+            (match-case (match-list 'ping 1)
+                        (lambda (msg)
+                          (send (car (cdr msg)) 'pong)
+                          (loop)))
+            (match-case (match-list 'double 2)
+                        (lambda (msg)
+                          (let ((reply-to (car (cdr msg)))
+                                (n (car (cdr (cdr msg)))))
+                            (send reply-to (list 'result (* n 2)))
+                            (loop))))
+            (match-case (match-symbol 'stop)
+                        (lambda (msg) 'ok)))
+          'wait)))))
 
-(define t1 (make-worker 10))
-(define t2 (make-worker 20))
-(define t3 (make-worker 30))
+(send worker (list 'ping (self)))
+(println (receive-after 1000))        ; => pong
 
-(send! t1 5 'wait)  (send! t2 5 'wait)  (send! t3 5 'wait)
-(recv! t1 'wait)    ; => 15
-(recv! t2 'wait)    ; => 25
-(recv! t3 'wait)    ; => 35
+(send worker (list 'double (self) 21))
+(println (receive-after 1000))        ; => (result 42)
 
-(thread-join t1) (thread-join t2) (thread-join t3)
-(nng-close t1)   (nng-close t2)   (nng-close t3)
+(send worker 'stop)
 ```
 
-See [`cookbook/concurrency/inproc.eta`](../../../cookbook/concurrency/inproc.eta) for the runnable demo.
+## Selective receive
 
-#### Thread lifecycle
-
-| Event | Effect |
-|-------|--------|
-| Parent calls `(nng-close sock)` | Socket closes; thread's next `recv!` returns `#f` → thread should exit |
-| Thread thunk returns normally | Thread exits; parent's `recv!` returns `#f` on next call |
-| Thread raises an unhandled exception | Thread exits; parent's next `recv!` raises `'nng-error` |
-| `(thread-alive? sock)` | `#t` while running, `#f` after exit |
-| `(thread-join sock)` | Blocks until thread exits; returns `0` |
-
-#### Constraints
-
-- The thunk must take **0 arguments**.
-- `spawn-thread` transfers the thunk's full capture set: upvalues, nested
-  closures, and referenced module-global slots used by the closure bytecode.
-- Transferable values include numbers, strings, symbols, booleans, pairs,
-  lists, vectors, bytevectors, and closures.
-- Runtime-only handles (ports, sockets, tensors, continuations, etc.) remain
-  non-transferable; nested values are checked recursively and failures report
-  the capture root (`upvalue[...]` or `global[...]`) and object kind.
-- Use `spawn-thread-with` when worker logic depends on those runtime handles
-  or when explicit module loading is preferred.
-
----
-
-## Cross-Host Messaging
-
-The same `send!` / `recv!` API works across machines — just use `tcp://`
-endpoints:
+`receive` takes a list of `(match-case matcher handler)` clauses. The runtime
+returns the first queued message matching any clause. Messages that do not
+match stay in the mailbox for later receives.
 
 ```scheme
-;; ── Machine A (server) ────────────────────────────────────────────────
-(define server (nng-socket 'rep))
-(nng-listen server "tcp://*:6000")
-(define msg (recv! server 'wait))
-(send! server (process msg) 'wait)
-
-;; ── Machine B (client) ────────────────────────────────────────────────
-(define client (nng-socket 'req))
-(nng-dial client "tcp://10.0.0.1:6000")   ; replace with actual server IP
-(send! client '(compute 42))
-(define result (recv! client 'wait))
+(receive
+  (list
+    (match-case (match-list 'ready 1)
+                (lambda (msg) (car (cdr msg))))
+    (match-case (match-predicate number?)
+                (lambda (n) (* n 2))))
+  1000
+  (lambda () 'timeout))
 ```
 
-See [`cookbook/concurrency/distributed-compute.eta`](../../../cookbook/concurrency/distributed-compute.eta)
-for a complete two-process demonstration.
+Helpers in `std.actor`:
 
----
+| Helper | Purpose |
+| --- | --- |
+| `match-case` | Pair one matcher with one handler. |
+| `match-list` | Match list messages by head value and optional tail arity. |
+| `match-symbol` | Match one symbol by `eq?`. |
+| `match-predicate` | Lift any predicate into a receive matcher. |
+| `receive-match` | Receive by one predicate or a clause list. |
+| `receive-after` | Receive one message with a timeout; returns `#f` on timeout. |
 
-## Interaction with `dynamic-wind` and Continuations
+## Failure semantics
 
-nng sockets are heap objects — like file ports.  They are **not** captured
-or rewound by continuations.  `call/cc` in the middle of a send/receive
-sequence does not replay or undo I/O.
-
-**Socket cleanup with `dynamic-wind`:**
+Actor failures follow BEAM-style conventions, expressed in Eta data:
 
 ```scheme
-;; The after-thunk always runs — even if an exception escapes the body
-;; or a continuation is invoked.
-(let ((sock #f))
-  (dynamic-wind
-    (lambda () (set! sock (nng-socket 'req)))
+(import std.actor)
+
+(trap-exit! #t)
+
+(define child
+  (spawn
     (lambda ()
-      (nng-dial sock "tcp://localhost:5555")
-      (send! sock msg)
-      (recv! sock))
-    (lambda ()
-      (when sock (nng-close sock)))))
+      (receive-after 'wait))))
+
+(link child)
+(exit child '(error boom))
+
+(receive
+  (list
+    (match-case (match-list 'EXIT 2)
+                (lambda (msg) msg)))
+  1000
+  (lambda () 'timeout))
+;; => (EXIT #<pid ...> (error boom))
 ```
 
-The `with-socket` helper from `std.net` encapsulates this pattern.
+Monitors are one-way and deliver exactly one `DOWN`-shaped notification for
+that monitor reference:
 
----
-
-## Timeouts and Blocking
-
-> **Critical:** Eta's VM is single-threaded.  A blocking `recv!` freezes
-> the REPL, LSP, and all `dynamic-wind` cleanup.
-
-| Strategy | Code | When to Use |
-|----------|------|-------------|
-| Default timeout (1 s) | `(recv! sock)` | Most cases — returns `#f` on timeout |
-| Non-blocking | `(recv! sock 'noblock)` | In event loops, polling |
-| Indefinite block | `(recv! sock 'wait)` | Only when a reply is guaranteed |
-| Multi-socket poll | `(nng-poll items 100)` | Monitoring multiple sockets |
-
-Change the default timeout per socket:
 ```scheme
-(nng-set-option sock 'recv-timeout 5000)  ; 5 s
-(nng-set-option sock 'recv-timeout -1)    ; infinite (same as 'wait)
+(define doomed (spawn (lambda () 'done)))
+(define ref (monitor doomed))
+
+(receive
+  (list
+    (match-case (match-list 'DOWN 4)
+                (lambda (msg) msg)))
+  1000
+  (lambda () 'timeout))
+;; => (DOWN ref process #<pid ...> normal)
 ```
 
----
+Use `demonitor` with `#t` to remove a monitor and flush any queued stale
+notification for that reference.
 
-## See Also
+## Supervision
 
-- [Networking Primitives](networking.md) — Complete nng primitive reference
-- [Network & Message Passing Design](network-message-passing.md) — Architecture and current behavior details
-- [`std.net` module](modules.md#stdnet--networking--message-passing) — High-level helpers
-- [Examples](../examples-tour.md#concurrency) — Runnable demos
+`std.actor.supervisor` packages the usual "let it crash" pattern with child
+specs, restart policies, and restart intensity gates.
 
+```scheme
+(import std.actor.supervisor std.actor)
+
+(define specs
+  (list
+    (child-spec 'worker
+                (lambda ()
+                  (receive-after 'wait))
+                'restart 'permanent
+                'shutdown 5000
+                'type 'worker)))
+
+(define sup (one-for-one specs 'max-restarts 3 'max-seconds 5))
+(supervisor-which-children sup)
+(supervisor-count-children sup)
+```
+
+Supported strategies:
+
+| Strategy | Behaviour |
+| --- | --- |
+| `one-for-one` | Restart only the failed child. |
+| `one-for-all` | Stop and restart every child when one fails. |
+| `rest-for-one` | Stop and restart the failed child and children started after it. |
+
+`std.supervisor` remains as a compatibility shim that re-exports
+`std.actor.supervisor`; new code should import `std.actor.supervisor`.
+
+## Gen server behaviour
+
+`std.actor.gen_server` provides an OTP-style server loop with callback state,
+synchronous calls, asynchronous casts, and controlled stop/terminate handling.
+
+```scheme
+(import std.actor.gen_server)
+
+(define callbacks
+  (list
+    (cons 'init (lambda (initial) (list 'ok initial)))
+    (cons 'handle-call
+          (lambda (request from state)
+            (if (eq? request 'get)
+                (list 'reply state state)
+                (list 'reply 'unknown state))))
+    (cons 'handle-cast
+          (lambda (message state)
+            (if (and (pair? message) (eq? (car message) 'inc))
+                (list 'noreply (+ state (car (cdr message))))
+                (list 'noreply state))))))
+
+(define server (gen-server-start callbacks 0 '(name counter)))
+(gen-server-cast 'counter '(inc 3))
+(gen-server-call 'counter 'get 1000)      ; => 3
+(gen-server-stop 'counter 'shutdown 1000) ; => ok
+```
+
+## Distributed actor nodes
+
+`std.actor.node` uses NNG as the node-to-node transport bridge. It manages
+node identity, cookie handshakes, connected-node listing, node monitors,
+remote actor routing, and netsplit-style monitor notifications.
+
+```scheme
+(import std.actor.node)
+
+(node-listen "tcp://127.0.0.1:7010" 'node-name 'alpha 'cookie 'secret)
+(node-connect "tcp://127.0.0.1:7010" 'node-name 'beta 'cookie 'secret)
+(nodes)
+```
+
+Node monitor messages use these shapes:
+
+```scheme
+'(nodeup ref node-name node-id)
+'(nodedown ref node-name reason)
+```
+
+Remote process monitors use the same `DOWN` shape as local monitors. Node
+loss reports remote process `DOWN` with reason `'noconnection`; rejected
+cookie handshakes report node monitor `nodedown` with reason `'bad-cookie`.
+
+## Runtime scheduler controls
+
+The actor scheduler defaults to the pool scheduler. Runtime controls:
+
+| Variable | Meaning |
+| --- | --- |
+| `ETA_ACTOR_SCHEDULER=thread-per-actor|pool|pool-shadow` | Select scheduler mode. |
+| `ETA_ACTOR_REDUCTION_BUDGET=<int>` | Reduction budget before yielding; default `2000`. |
+| `ETA_ACTOR_DIRTY_SCHEDULERS=<int>` | Dirty scheduler count for blocking native work; default `0`. |
+
+## Where `std.net` fits
+
+Use `std.net` when you explicitly want sockets and endpoint-level protocols:
+
+- `nng-socket`, `nng-listen`, `nng-dial`, `nng-close`;
+- `send!`, `recv!`, `nng-poll`, `nng-subscribe`, `nng-set-option`;
+- transport patterns such as `request-reply`, `pub-sub`, `survey`;
+- compatibility helpers such as socket-based child workers.
+
+Do not use `std.net` as the primary local actor API. For actor code, prefer
+`std.actor` and send to PIDs or registered names.
+
+## See also
+
+- [`std.actor`](../stdlib/actor.md)
+- [`std.actor.supervisor`](../stdlib/actor-supervisor.md)
+- [`std.actor.gen_server`](../stdlib/actor-gen-server.md)
+- [`std.actor.node`](../stdlib/actor-node.md)
+- [`std.net`](../stdlib/net.md)
+- [Concurrency cookbook](../../cookbook/concurrency.md)

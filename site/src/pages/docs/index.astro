@@ -25,6 +25,8 @@ const groups = [
     label: "Standard Library",
     items: [
       { title: "Stdlib Overview",   href: `${base}docs/stdlib/`,      blurb: "All `std.*` modules indexed by category." },
+      { title: "std.actor",         href: `${base}docs/stdlib/actor/`, blurb: "PID/mailbox actors with selective receive, links, monitors, and process info." },
+      { title: "Actor supervision", href: `${base}docs/stdlib/actor-supervisor/`, blurb: "BEAM-style supervisor strategies, child specs, and restart intensity." },
       { title: "std.aad",           href: `${base}docs/stdlib/aad/`,  blurb: "Reverse-mode automatic adjoint differentiation." },
       { title: "std.causal",        href: `${base}docs/stdlib/causal/`, blurb: "DAGs, do-calculus, identification, counterfactuals." },
       { title: "std.logic",         href: `${base}docs/stdlib/logic/`, blurb: "miniKanren-style relational programming." },

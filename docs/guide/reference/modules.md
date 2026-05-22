@@ -715,15 +715,16 @@ substrate. Requires explicit import.
 
 ---
 
-### `std.supervisor` — Erlang-Style Process Supervision (opt-in)
+### `std.supervisor` — Actor Supervisor Compatibility Shim (opt-in)
 
 ```scheme
 (import std.supervisor)
 ```
 
-`one-for-one` and `one-for-all` supervisors built on top of the
-nng actor primitives (`spawn`, `monitor`, `nng-poll`, `recv!`).
-Requires explicit import.
+Compatibility module that re-exports `std.actor.supervisor`. New actor code
+should import `std.actor.supervisor` directly for `one-for-one`, `one-for-all`,
+`rest-for-one`, child specs, and restart-intensity controls. Requires explicit
+import.
 
 > **Full documentation:** [Supervisors](supervisor.md)
 

@@ -27,8 +27,8 @@ const features = [
   },
   {
     title: "Actor system",
-    body: "Network-transparent processes. Supervision. nng.",
-    href: `${base}docs/guide/reference/message-passing/`,
+    body: "BEAM-like PIDs, mailboxes, selective receive, links, monitors, supervisors, and NNG-backed nodes.",
+    href: `${base}docs/stdlib/actor/`,
   },
 ];
 
@@ -69,15 +69,15 @@ const sampleCode = `(import std.core std.aad)
 
 <BaseLayout
   title="Eta"
-  description="A Lisp-inspired language for symbolic logic, constraint programming (CLP), differentiable programming, causal inference, and native-sidecar ML."
+  description="A Lisp-inspired language for symbolic logic, constraint programming (CLP), differentiable programming, causal inference, BEAM-like actors, and native-sidecar ML."
 >
   <Header />
 
   <!-- Hero ─────────────────────────────────────── -->
   <Hero
-    eyebrow="Open Source · v0.0.1"
-    heading="Symbolic · Logic · Neural · Causal<br/><em>Lisp.</em>"
-    subheading="A Lisp-inspired language for symbolic reasoning, learning, and causal inference."
+    eyebrow="Open Source · v0.0.2"
+    heading="Symbolic · Logic · Neural · Causal · Actor<br/><em>Lisp.</em>"
+    subheading="A Lisp-inspired language for symbolic reasoning, learning, causal inference, and BEAM-like concurrent systems."
     primaryLabel="Get Started"
     primaryHref={`${base}docs/quickstart/`}
     secondaryLabel="Read the guide"
@@ -114,13 +114,14 @@ const sampleCode = `(import std.core std.aad)
         <p class="dark-anchor__label">A differentiable Lisp</p>
         <h2 class="dark-anchor__lede">
           One runtime for symbolic reasoning, logic, differentiation
-          and causal inference.
+          causal inference, and actors.
         </h2>
         <p class="dark-anchor__body">
           Eta embeds unification, backtracking, and reverse-mode
           differentiation directly into the VM. Constraints, macros,
-          neural networks, and causal programs operate on the same
-          execution model, value representation, and garbage collector.
+          neural networks, causal programs, and PID-addressed actors operate
+          on the same execution model, value representation, and garbage
+          collector.
         </p>
         <a href={`${base}docs/guide/reference/aad/`} class="dark-anchor__link">
           AAD reference
@@ -142,7 +143,7 @@ const sampleCode = `(import std.core std.aad)
   <section class="cookbook-line">
     <p class="section-label">Cookbook</p>
     <p class="cookbook-line__body">
-      Option Greeks · AAD · Causal portfolios · Wrong-way risk
+      Actors · Option Greeks · AAD · Causal portfolios · Wrong-way risk
     </p>
     <a class="cookbook-line__link" href={`${base}cookbook/`}>
       Browse the cookbook

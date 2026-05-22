@@ -2,14 +2,16 @@
 
 [<- Stdlib Reference](./README.md) | [Language Guide](../../language_guide.md) | [Detailed reference](../../stdlib/actor.md)
 
-Local actor runtime wrappers over `%actor-*` primitives.
+BEAM-like local actor runtime wrappers over `%actor-*` primitives.
 
 ```scheme
 (import std.actor)
 ```
 
-Use `std.actor` for local PID and mailbox messaging. Use `std.actor.node`
-for distributed actor-node links and `std.net` for transport-level NNG sockets.
+Use `std.actor` for local PID and VM-mailbox messaging: spawn, send,
+selective receive, links, monitors, exit signals, local registration, and
+process introspection. Use `std.actor.node` for distributed actor-node links
+and `std.net` for transport-level NNG sockets.
 
 | Symbol | Description |
 | --- | --- |
