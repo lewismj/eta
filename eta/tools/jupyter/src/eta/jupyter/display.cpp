@@ -268,7 +268,7 @@ struct WrapperPayload {
     if (t == Tag::Char) {
         auto cp = decode<char32_t>(value);
         if (!cp) return driver.format_value(value, eta::runtime::FormatMode::Write);
-        if (*cp >= 0 && *cp <= 0x7F) {
+        if (*cp <= 0x7F) {
             return std::string(1u, static_cast<char>(*cp));
         }
         std::ostringstream oss;
