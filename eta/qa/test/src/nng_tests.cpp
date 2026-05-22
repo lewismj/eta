@@ -2866,6 +2866,66 @@ BOOST_AUTO_TEST_CASE(stress_test_multiple_threads) {
     BOOST_TEST(ok_count == N);
 }
 
+BOOST_AUTO_TEST_CASE(recv_preserves_symbol_and_string_identity_with_sidecar_loaded) {
+    std::string stdlib_path;
+#ifdef ETA_STDLIB_DIR
+    stdlib_path = ETA_STDLIB_DIR;
+#endif
+    if (stdlib_path.empty()) {
+        BOOST_TEST_MESSAGE("ETA_STDLIB_DIR not set  -  skipping recv identity regression test");
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    using namespace eta::interpreter;
+
+    ScopedTempDir temp;
+    const SidecarSpec specs[] = {
+        {"eta-nng", "eta.nng.sidecar", "eta_register_nng_extension_v1"},
+    };
+    const auto sidecar_fixture = create_sidecar_workspace_fixture(
+        temp.path, std::span<const SidecarSpec>(specs, std::size(specs)));
+    CurrentPathGuard cwd_guard;
+    fs::current_path(sidecar_fixture.app_root);
+
+    ModulePathResolver resolver({fs::path(stdlib_path)});
+    Driver driver(std::move(resolver));
+
+    const auto endpoint = inproc_addr();
+    std::ostringstream src;
+    src << "(module nng-recv-identity-regression\n"
+        << "  (begin\n"
+        << "    (define endpoint \"" << endpoint << "\")\n"
+        << "    (define server (nng-socket 'pair))\n"
+        << "    (define client (nng-socket 'pair))\n"
+        << "    (nng-listen server endpoint)\n"
+        << "    (nng-dial client endpoint)\n"
+        << "    (send! client '(square \"square\" ok) 'wait)\n"
+        << "    (define msg (recv! server 'wait))\n"
+        << "    (define sym (car msg))\n"
+        << "    (define txt (car (cdr msg)))\n"
+        << "    (define ok-tag (car (cdr (cdr msg))))\n"
+        << "    (define result\n"
+        << "      (and (eq? sym 'square)\n"
+        << "           (eq? sym (string->symbol \"square\"))\n"
+        << "           (eq? txt \"square\")\n"
+        << "           (eq? ok-tag 'ok)))\n"
+        << "    (nng-close client)\n"
+        << "    (nng-close server)))\n";
+
+    LispVal result_val{Nil};
+    const auto source = src.str();
+    bool ok = driver.run_source(source, &result_val, "result");
+    if (!ok) {
+        std::ostringstream diagnostics;
+        driver.diagnostics().print_all(
+            diagnostics, /*use_color=*/false, driver.file_resolver());
+        BOOST_FAIL("Driver::run_source failed for recv identity regression:\n" + diagnostics.str());
+    }
+
+    BOOST_TEST(result_val == nanbox::True);
+}
+
 /**
  * spawn-thread integration: full Driver round-trip
  *

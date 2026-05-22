@@ -64,14 +64,25 @@ namespace eta::runtime::memory::intern {
         using map_t = boost::unordered::concurrent_flat_map<K, V, H, E>;
 
         //! Hash for string->id.
+        //!
+        //! IMPORTANT:
+        //! The hash seed must be carried in the map instance, not as a
+        //! translation-unit static, because intern operations may be invoked
+        //! from host/runtime code and sidecar code loaded in the same process.
+        //! A static random seed per module can diverge across DSOs and break
+        //! heterogeneous lookups, leading to duplicate IDs for equal strings.
         struct Hash {
-#ifdef NDEBUG
-            static inline const std::size_t seed = std::random_device{}();
-#else
-            //! For debug builds we want deterministic hashes.
-            static constexpr std::size_t seed = 0xC0C0C0C0;
-#endif
+            std::size_t seed = 0;
             using is_transparent = void;
+
+            Hash() {
+#ifdef NDEBUG
+                seed = std::random_device{}();
+#else
+                //! For debug builds we want deterministic hashes.
+                seed = 0xC0C0C0C0;
+#endif
+            }
 
             size_t operator()(const SPtr& p) const noexcept {
                 std::size_t h = seed;
@@ -100,12 +111,6 @@ namespace eta::runtime::memory::intern {
                 return a == std::string_view{*b};
             }
         };
-
-        size_t select_shard(std::string_view s) const noexcept {
-            std::size_t h = Hash::seed;
-            boost::hash_combine(h, boost::hash_range(s.begin(), s.end()));
-            return h;
-        }
 
         //! Global string->id map
         map_t<SPtr, InternId, Hash, Eq> str_to_id;
