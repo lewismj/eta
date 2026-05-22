@@ -26,6 +26,7 @@
 #include "eta/runtime/vm/disassembler.h"
 #include "eta/runtime/vm/sandbox.h"
 #include "eta/runtime/value_formatter.h"
+#include "eta/runtime/actor/actor_system.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/memory/cons_pool.h"
 #include "eta/runtime/memory/native_object_inspection.h"
@@ -63,6 +64,36 @@ static std::string normalize_path(const std::string& raw) {
     }
 #endif
     return s;
+}
+
+[[nodiscard]] std::string format_actor_pid(const runtime::types::Pid& pid) {
+    return std::to_string(pid.node_id)
+        + "." + std::to_string(pid.actor_id)
+        + "." + std::to_string(pid.incarnation);
+}
+
+[[nodiscard]] const char* actor_run_state_label(runtime::actor::ActorSystem::RunState state) noexcept {
+    using RunState = runtime::actor::ActorSystem::RunState;
+    switch (state) {
+        case RunState::Runnable: return "runnable";
+        case RunState::Running: return "running";
+        case RunState::Waiting: return "waiting";
+        case RunState::Exited: return "exited";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] const char* actor_yield_reason_label(
+    runtime::actor::ActorSystem::YieldReason reason) noexcept {
+    using YieldReason = runtime::actor::ActorSystem::YieldReason;
+    switch (reason) {
+        case YieldReason::None: return "none";
+        case YieldReason::BudgetExhausted: return "budget-exhausted";
+        case YieldReason::BlockedOnReceive: return "blocked-on-receive";
+        case YieldReason::Finished: return "finished";
+        case YieldReason::Error: return "error";
+    }
+    return "unknown";
 }
 
 /**
@@ -3399,19 +3430,45 @@ std::string DapServer::current_module_from_frame(session::Driver& drv, std::size
 void DapServer::handle_child_processes(const Value& id, const Value& /*args*/) {
     Array children;
 
+    std::vector<native::ActorChildInfo> child_processes;
+    std::vector<runtime::actor::ActorSystem::ProcessInfo> actor_processes;
+
+    {
+        std::lock_guard<std::mutex> lk(vm_mutex_);
+        if (driver_) {
 #ifdef ETA_HAS_NNG
-    std::lock_guard<std::mutex> lk(vm_mutex_);
-    if (driver_ && driver_->process_manager()) {
-        for (const auto& ci : driver_->process_manager()->list_children()) {
-            children.push_back(json::object({
-                {"pid",        Value(static_cast<int64_t>(ci.pid))},
-                {"endpoint",   Value(ci.endpoint)},
-                {"modulePath", Value(ci.module_path)},
-                {"alive",      Value(ci.alive)},
-            }));
+            if (driver_->process_manager()) {
+                child_processes = driver_->process_manager()->list_children();
+            }
+#endif
+            auto actor_system = driver_->vm().actor_system();
+            if (actor_system) {
+                actor_processes = actor_system->list_processes();
+            }
         }
     }
-#endif
+
+    for (const auto& ci : child_processes) {
+        children.push_back(json::object({
+            {"kind",       Value("process")},
+            {"pid",        Value(static_cast<int64_t>(ci.pid))},
+            {"endpoint",   Value(ci.endpoint)},
+            {"modulePath", Value(ci.module_path)},
+            {"alive",      Value(ci.alive)},
+        }));
+    }
+
+    for (const auto& info : actor_processes) {
+        children.push_back(json::object({
+            {"kind",            Value("actor")},
+            {"actorPid",        Value(format_actor_pid(info.pid))},
+            {"alive",           Value(info.alive)},
+            {"registeredName",  Value(info.registered_name)},
+            {"mailboxLength",   Value(static_cast<int64_t>(info.mailbox_length))},
+            {"state",           Value(actor_run_state_label(info.run_state))},
+            {"lastYieldReason", Value(actor_yield_reason_label(info.last_yield_reason))},
+        }));
+    }
 
     send_response(id, json::object({{"children", Value(std::move(children))}}));
 }

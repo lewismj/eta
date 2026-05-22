@@ -301,10 +301,8 @@ Cross-navigation commands:
 
 The `Child Processes` debug view queries `eta/childProcesses` and shows:
 
-1. process id
-2. endpoint
-3. module path
-4. alive/exited status
+1. spawned OS child processes (process id, endpoint, module path, alive/exited)
+2. live actor processes (actor PID, registered name, mailbox length, run state)
 
 Use `Eta: Refresh Child Processes` to refresh manually.
 

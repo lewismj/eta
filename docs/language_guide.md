@@ -16,7 +16,7 @@
 > Looking for the library APIs? See the
 > **[Standard Library Guide](./stdlib.md)** Ã¢â‚¬â€ a per-module reference covering
 > `core`, `collections`, `math`, `aad`, `torch`, `causal`, `clp`, `logic`,
-> `net`, `process`, and the rest of the `std.*` packages.
+> `actor`, `net`, `process`, and the rest of the `std.*` packages.
 
 ---
 
@@ -58,10 +58,10 @@
 
 Eta is a Lisp/Scheme-like language with a hygienic macro system and a
 stack-based bytecode VM that uses NaN-boxing for value representation.
-The same VM hosts a wide range of capabilities Ã¢â‚¬â€ the symbolic core,
+The same VM hosts a wide range of capabilities  the symbolic core,
 logic programming, constraint logic programming (CLP), automatic
 adjoint differentiation, statistics, neural networks, causal inference,
-and actor-style concurrency Ã¢â‚¬â€ delivered as first-class language features
+and BEAM-like actor concurrenc  delivered as first-class language features
 or as packaged `std.*` modules.
 
 ### Toolchain

@@ -1,4 +1,4 @@
-# Network & Message-Passing Parallelism
+# NNG Transport & Network Message Passing
 
 [← Back to README](../../../README.md) · [Networking Primitives](networking.md) ·
 [Message Passing & Actors](message-passing.md) · [Modules & Stdlib](modules.md) ·
@@ -6,7 +6,15 @@
 
 ---
 
-> Erlang-style message passing for Eta, powered by nng (nanomsg-next-generation).
+> Transport-level message passing for Eta, powered by NNG
+> (nanomsg-next-generation).
+
+> [!NOTE]
+> Eta's primary local actor model is now PID/mailbox based and documented in
+> [Message Passing & Actors](message-passing.md) and [`std.actor`](../stdlib/actor.md).
+> This page documents the explicit NNG socket layer and the legacy
+> socket-mailbox compatibility workflows that remain useful for endpoint-level
+> transport patterns.
 
 > [!WARNING]
 > This design note covers the current socket mailbox model. The actor
@@ -19,8 +27,9 @@
 | Goal | Go to |
 |------|-------|
 | Primitive API reference (`nng-socket`, `send!`, `recv!`, …) | [Networking Primitives](networking.md) |
-| Actor patterns and worked examples | [Message Passing & Actors](message-passing.md) |
-| `std.net` module functions | [Modules & Stdlib — std.net](modules.md#stdnet--networking--message-passing) |
+| PID/mailbox actor model | [Message Passing & Actors](message-passing.md) |
+| Actor APIs | [`std.actor`](../stdlib/actor.md), [`std.actor.node`](../stdlib/actor-node.md) |
+| `std.net` module functions | [Modules & Stdlib](modules.md) |
 | Example programs | [Language Guide — Networking](../examples-tour.md#concurrency) |
 
 ---
@@ -33,16 +42,17 @@ are all owned by one thread.  Making every data structure thread-safe
 would add synchronisation overhead to every instruction and introduce
 subtle bugs around continuations and `dynamic-wind`.
 
-The alternative — the **process model** — gives true parallelism without
-shared state:
+The explicit NNG transport layer still supports a **process/socket model** for
+endpoint-level workflows without shared state:
 
-- Each Eta actor is an independent OS process (or OS thread) with its own
-  heap, GC, and stack.
-- Actors communicate exclusively through **message passing** over nng sockets.
+- Each socket-based worker is an independent OS process (or OS thread) with
+  its own heap, GC, and stack.
+- Workers communicate through serialized messages over NNG sockets.
 - Because nothing is shared, there are no data races, no lock contention,
   and no GC pauses in one actor due to another actor's allocation.
 
-This is Erlang's model applied to a Scheme VM.
+For BEAM-like local actor semantics, prefer `std.actor`; NNG remains the
+transport bridge for distributed actor nodes and raw network protocols.
 
 ---
 
@@ -126,9 +136,10 @@ creation time with a symbol:
 | `'surveyor` / `'respondent` | Scatter-gather | Per-respondent | **Best-effort** (deadline) |
 | `'bus` | Many-to-many gossip | Per-sender FIFO | **Best-effort** |
 
-`'pair` is used internally by `spawn` — each spawned child gets a PAIR
-socket as its mailbox, giving the actor model total ordering and guaranteed
-delivery for free.
+`'pair` is used by the legacy socket-based `spawn` helper — each spawned child
+gets a PAIR socket as its transport mailbox. Current `std.actor` mailboxes are
+VM-owned queues addressed by PIDs; distributed actor nodes use NNG beneath
+`std.actor.node`.
 
 For the full primitive reference (`nng-socket`, `nng-listen`, `nng-dial`,
 `nng-subscribe`, `nng-set-option`, endpoint formats, error handling) see
@@ -136,9 +147,13 @@ For the full primitive reference (`nng-socket`, `nng-listen`, `nng-dial`,
 
 ---
 
-## The Actor Model
+## Legacy Socket-Mailbox Compatibility Model
 
 ### `spawn` and `current-mailbox`
+
+The APIs in this section are compatibility helpers for socket-backed child
+workers. They are not the primary local actor API. New local actor code should
+use `(import std.actor)` with `spawn`, `send`, and `receive` over PIDs.
 
 ```
  Parent Process                         Child Process
@@ -317,6 +332,6 @@ Eta code on both sides is identical.
 
 - **[Networking Primitives](networking.md)** — Complete nng API and option reference
 - **[Message Passing & Actors](message-passing.md)** — Actor patterns, worked examples, timeouts
-- **[Modules & Stdlib — std.net](modules.md#stdnet--networking--message-passing)** — High-level helper reference
+- **[Modules & Stdlib](modules.md)** — High-level helper reference
 - **[Examples — Networking](../examples-tour.md#concurrency)** — All runnable demos
 - **[Project Status](../../next-steps.md)** — Current subsystem status overview

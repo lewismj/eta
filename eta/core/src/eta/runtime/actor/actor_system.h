@@ -241,6 +241,7 @@ public:
 
     [[nodiscard]] std::optional<std::size_t> mailbox_size(const types::Pid& pid) const;
     [[nodiscard]] std::optional<ProcessInfo> process_info(const types::Pid& pid) const;
+    [[nodiscard]] std::vector<ProcessInfo> list_processes() const;
     void set_scheduler_mode(SchedulerMode mode);
     [[nodiscard]] SchedulerMode scheduler_mode() const;
     [[nodiscard]] SchedulerStats scheduler_stats() const;

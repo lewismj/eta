@@ -80,6 +80,14 @@ C:\tmp\eta-v0.0.2-win-x64>
 
 The `cookbook/` directory inside the release bundle contains several `.eta` programs.
 
+Try the BEAM-like actor examples first if you want to exercise the new
+PID/mailbox runtime:
+
+```console
+C:\tmp\eta-v0.0.2-win-x64> etai cookbook\concurrency\message-passing.eta
+C:\tmp\eta-v0.0.2-win-x64> etai cookbook\concurrency\gen-server-counter.eta
+```
+
 ### Interpret from Source — `etai`
 
 `etai` compiles a `.eta` file in-memory (lex → parse → expand → link →

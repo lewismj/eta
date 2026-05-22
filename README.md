@@ -3,7 +3,7 @@
   <div style="text-align: left;">
     <h1 style="margin: 0;">η (Eta)</h1>
     <p style="margin: 6px 0 0 0;">
-      <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, and causal inference.</strong>
+      <strong>A Lisp-inspired language for symbolic, logic and constraint logic (CLP) programming, with machine learning, causal inference, and BEAM-like actors.</strong>
     </p>
   </div>
 </div>
@@ -14,6 +14,20 @@
     <strong>Documentation</strong><br>
     <a href="https://lewismj.github.io/eta/">lewismj.github.io/eta</a>
 </p>
+
+
+---
+
+## Why Eta
+
+Eta combines a Scheme-like VM with first-class reasoning and systems features:
+
+- **Symbolic, logic, and CLP programming** — unification, backtracking, and constraint solvers live in the standard runtime.
+- **Differentiable and ML workflows** — reverse-mode AAD plus optional libtorch, LightGBM, and Eigen integrations.
+- **Causal inference** — DAG/ADMG utilities, do-calculus, identification, estimation, counterfactuals, and transportability.
+- **BEAM-like actor runtime** — PID-addressed actors with VM-owned mailboxes, selective receive, links, monitors, exit signals, process registration, supervision, `gen_server`-style behaviours, and distributed node links over NNG.
+
+For the actor APIs, see [`std.actor`](docs/stdlib/actor.md), [`std.actor.supervisor`](docs/stdlib/actor-supervisor.md), [`std.actor.gen_server`](docs/stdlib/actor-gen-server.md), [`std.actor.node`](docs/stdlib/actor-node.md), and the [concurrency cookbook](docs/cookbook/concurrency.md).
 
 
 ---

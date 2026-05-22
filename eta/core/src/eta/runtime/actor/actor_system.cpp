@@ -58,6 +58,12 @@ void apply_outbox_messages(
     return static_cast<std::size_t>(parsed);
 }
 
+[[nodiscard]] bool pid_less(const types::Pid& lhs, const types::Pid& rhs) noexcept {
+    if (lhs.node_id != rhs.node_id) return lhs.node_id < rhs.node_id;
+    if (lhs.actor_id != rhs.actor_id) return lhs.actor_id < rhs.actor_id;
+    return lhs.incarnation < rhs.incarnation;
+}
+
 } // namespace
 
 ActorSystem::ActorSystem()
@@ -722,13 +728,51 @@ std::optional<ActorSystem::ProcessInfo> ActorSystem::process_info(
     std::sort(
         info.links.begin(),
         info.links.end(),
-        [](const types::Pid& lhs, const types::Pid& rhs) {
-            if (lhs.node_id != rhs.node_id) return lhs.node_id < rhs.node_id;
-            if (lhs.actor_id != rhs.actor_id) return lhs.actor_id < rhs.actor_id;
-            return lhs.incarnation < rhs.incarnation;
-        });
+        pid_less);
     std::sort(info.monitors.begin(), info.monitors.end());
     return info;
+}
+
+std::vector<ActorSystem::ProcessInfo> ActorSystem::list_processes() const {
+    std::vector<ProcessInfo> infos;
+    {
+        std::lock_guard lock(mutex_);
+        infos.reserve(processes_.size());
+        for (const auto& [_, process] : processes_) {
+            if (!process) continue;
+
+            ProcessInfo info;
+            info.pid = process->pid;
+            info.alive = process->alive.load(std::memory_order_acquire);
+            info.mailbox_length = process->mailbox->size();
+            info.registered_name = process->registered_name;
+            info.reductions = process->reductions.load(std::memory_order_relaxed);
+            info.run_state = process->run_state.load(std::memory_order_relaxed);
+            info.last_yield_reason = process->last_yield_reason.load(std::memory_order_relaxed);
+
+            info.links.reserve(process->links.size());
+            for (const auto& linked_pid : process->links) {
+                info.links.push_back(linked_pid);
+            }
+            std::sort(info.links.begin(), info.links.end(), pid_less);
+
+            info.monitors.reserve(process->monitors.size());
+            for (const auto ref : process->monitors) {
+                info.monitors.push_back(ref);
+            }
+            std::sort(info.monitors.begin(), info.monitors.end());
+
+            infos.push_back(std::move(info));
+        }
+    }
+
+    std::sort(
+        infos.begin(),
+        infos.end(),
+        [](const ProcessInfo& lhs, const ProcessInfo& rhs) {
+            return pid_less(lhs.pid, rhs.pid);
+        });
+    return infos;
 }
 
 void ActorSystem::set_scheduler_mode(SchedulerMode mode) {
