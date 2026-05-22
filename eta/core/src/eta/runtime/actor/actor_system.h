@@ -244,6 +244,14 @@ public:
     void set_scheduler_mode(SchedulerMode mode);
     [[nodiscard]] SchedulerMode scheduler_mode() const;
     [[nodiscard]] SchedulerStats scheduler_stats() const;
+    /**
+     * @brief Enqueue one blocking task on the dirty scheduler queue.
+     */
+    [[nodiscard]] bool enqueue_dirty_task(std::function<void()> task);
+    /**
+     * @brief Mark one actor runnable due to an external completion event.
+     */
+    void notify_external_runnable(const types::Pid& pid);
     [[nodiscard]] bool pid_exists(const types::Pid& pid) const;
     [[nodiscard]] bool register_name(std::string name, const types::Pid& pid);
     [[nodiscard]] bool unregister_name(std::string_view name);
@@ -294,7 +302,11 @@ private:
         types::Pid pid{};
         std::shared_ptr<Mailbox> mailbox{std::make_shared<Mailbox>()};
         std::thread worker{};
+        ActorEntry entry{};
+        bool managed_by_scheduler{false};
         std::atomic<bool> alive{true};
+        std::atomic<bool> run_queue_enqueued{false};
+        std::atomic<bool> in_dispatch{false};
         std::string registered_name{};
         bool is_main_thread_actor{false};
         bool trap_exit{false};
@@ -348,13 +360,17 @@ private:
     static ExitReason decode_remote_down_reason(
         const NodeTransport::RemoteDownSignal& signal);
     static ExitReason map_node_down_reason(NodeTransport::NodeDownReason reason);
+    void dispatch_pool_runnable(const types::Pid& pid, std::size_t worker_index);
+    void dispatch_shadow_runnable(const types::Pid& pid);
     void mark_process_waiting_if_blocking_receive_unsafe(
         const std::shared_ptr<ActorProcess>& process,
         std::optional<std::chrono::milliseconds> timeout);
     void mark_process_running_unsafe(const std::shared_ptr<ActorProcess>& process);
     void mark_process_exited_unsafe(const std::shared_ptr<ActorProcess>& process);
     void mark_process_runnable_from_message_unsafe(const std::shared_ptr<ActorProcess>& process);
-    void enqueue_shadow_runnable_unsafe(const types::Pid& pid);
+    void enqueue_runnable_unsafe(
+        const std::shared_ptr<ActorProcess>& process,
+        std::optional<std::size_t> preferred_worker_index = std::nullopt);
     [[nodiscard]] static std::size_t default_scheduler_worker_count() noexcept;
 
     mutable std::mutex mutex_{};

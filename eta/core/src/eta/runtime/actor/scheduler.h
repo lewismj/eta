@@ -22,6 +22,7 @@ class Scheduler {
 public:
     using Runnable = types::Pid;
     using DispatchFn = std::function<void(const Runnable&, std::size_t worker_index)>;
+    using DirtyTask = std::function<void()>;
 
     struct StatsSnapshot {
         std::uint64_t runnable_queue_depth{0};
@@ -33,7 +34,11 @@ public:
         std::uint64_t global_queue_depth{0};
     };
 
-    explicit Scheduler(std::size_t worker_count, DispatchFn dispatch = {});
+    explicit Scheduler(
+        std::size_t worker_count,
+        DispatchFn dispatch = {},
+        std::size_t dirty_worker_count = 0,
+        std::size_t dirty_queue_limit = 0);
     ~Scheduler();
 
     Scheduler(const Scheduler&) = delete;
@@ -62,6 +67,11 @@ public:
     [[nodiscard]] bool enqueue_for_worker(std::size_t worker_index, Runnable pid);
 
     /**
+     * @brief Enqueue one potentially blocking task on the dirty queue.
+     */
+    [[nodiscard]] bool enqueue_dirty(DirtyTask task);
+
+    /**
      * @brief Deterministic dequeue helper for tests.
      */
     [[nodiscard]] std::optional<Runnable> try_dequeue_for_worker(std::size_t worker_index);
@@ -72,6 +82,7 @@ public:
     [[nodiscard]] std::optional<Runnable> try_dequeue_global();
 
     [[nodiscard]] std::size_t worker_count() const noexcept;
+    [[nodiscard]] std::size_t dirty_worker_count() const noexcept;
     [[nodiscard]] StatsSnapshot stats_snapshot() const;
 
 private:
@@ -84,18 +95,26 @@ private:
         std::size_t worker_index,
         bool allow_steal);
     void worker_loop(std::size_t worker_index);
+    void dirty_worker_loop();
 
     std::vector<RunQueue> run_queues_{};
     RunQueue global_queue_{};
     DispatchFn dispatch_{};
     std::vector<std::thread> workers_{};
+    std::vector<std::thread> dirty_workers_{};
     std::mutex wait_mutex_{};
     std::condition_variable wait_cv_{};
+    std::mutex dirty_mutex_{};
+    std::condition_variable dirty_cv_{};
+    std::deque<DirtyTask> dirty_queue_{};
+    std::size_t dirty_worker_count_{0};
+    std::size_t dirty_queue_limit_{0};
     std::atomic<bool> running_{false};
     std::atomic<bool> stopping_{false};
 
     std::atomic<std::uint64_t> runnable_queue_depth_{0};
     std::atomic<std::uint64_t> scheduler_wakeups_{0};
+    std::atomic<std::uint64_t> dirty_queue_depth_{0};
     std::atomic<std::uint64_t> enqueued_{0};
     std::atomic<std::uint64_t> dequeued_{0};
     std::atomic<std::uint64_t> steals_{0};

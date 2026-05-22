@@ -5,9 +5,15 @@
 
 namespace eta::runtime::actor {
 
-Scheduler::Scheduler(std::size_t worker_count, DispatchFn dispatch)
+Scheduler::Scheduler(
+    std::size_t worker_count,
+    DispatchFn dispatch,
+    std::size_t dirty_worker_count,
+    std::size_t dirty_queue_limit)
     : run_queues_(worker_count == 0 ? 1u : worker_count),
-      dispatch_(std::move(dispatch)) {}
+      dispatch_(std::move(dispatch)),
+      dirty_worker_count_(dirty_worker_count),
+      dirty_queue_limit_(dirty_queue_limit) {}
 
 Scheduler::~Scheduler() {
     shutdown();
@@ -23,11 +29,19 @@ void Scheduler::start() {
             worker_loop(worker_index);
         });
     }
+
+    dirty_workers_.reserve(dirty_worker_count_);
+    for (std::size_t index = 0; index < dirty_worker_count_; ++index) {
+        dirty_workers_.emplace_back([this] {
+            dirty_worker_loop();
+        });
+    }
 }
 
 void Scheduler::shutdown() {
     stopping_.store(true, std::memory_order_release);
     wait_cv_.notify_all();
+    dirty_cv_.notify_all();
 
     for (auto& worker : workers_) {
         if (!worker.joinable()) continue;
@@ -35,10 +49,19 @@ void Scheduler::shutdown() {
         worker.join();
     }
     workers_.clear();
+
+    for (auto& worker : dirty_workers_) {
+        if (!worker.joinable()) continue;
+        if (worker.get_id() == std::this_thread::get_id()) continue;
+        worker.join();
+    }
+    dirty_workers_.clear();
+
     running_.store(false, std::memory_order_release);
 }
 
 bool Scheduler::enqueue(Runnable pid) {
+    if (stopping_.load(std::memory_order_acquire)) return false;
     {
         std::lock_guard lock(global_queue_.mutex);
         global_queue_.entries.push_back(std::move(pid));
@@ -50,6 +73,7 @@ bool Scheduler::enqueue(Runnable pid) {
 }
 
 bool Scheduler::enqueue_for_worker(std::size_t worker_index, Runnable pid) {
+    if (stopping_.load(std::memory_order_acquire)) return false;
     if (worker_index >= run_queues_.size()) {
         return enqueue(std::move(pid));
     }
@@ -61,6 +85,23 @@ bool Scheduler::enqueue_for_worker(std::size_t worker_index, Runnable pid) {
     runnable_queue_depth_.fetch_add(1, std::memory_order_relaxed);
     enqueued_.fetch_add(1, std::memory_order_relaxed);
     wait_cv_.notify_one();
+    return true;
+}
+
+bool Scheduler::enqueue_dirty(DirtyTask task) {
+    if (stopping_.load(std::memory_order_acquire)) return false;
+    if (!task) return false;
+    if (dirty_worker_count_ == 0) return false;
+
+    {
+        std::lock_guard lock(dirty_mutex_);
+        if (dirty_queue_limit_ > 0 && dirty_queue_.size() >= dirty_queue_limit_) {
+            return false;
+        }
+        dirty_queue_.push_back(std::move(task));
+    }
+    dirty_queue_depth_.fetch_add(1, std::memory_order_relaxed);
+    dirty_cv_.notify_one();
     return true;
 }
 
@@ -86,11 +127,15 @@ std::size_t Scheduler::worker_count() const noexcept {
     return run_queues_.size();
 }
 
+std::size_t Scheduler::dirty_worker_count() const noexcept {
+    return dirty_worker_count_;
+}
+
 Scheduler::StatsSnapshot Scheduler::stats_snapshot() const {
     StatsSnapshot snapshot;
     snapshot.runnable_queue_depth = runnable_queue_depth_.load(std::memory_order_relaxed);
     snapshot.scheduler_wakeups = scheduler_wakeups_.load(std::memory_order_relaxed);
-    snapshot.dirty_queue_depth = 0;
+    snapshot.dirty_queue_depth = dirty_queue_depth_.load(std::memory_order_relaxed);
     snapshot.enqueued = enqueued_.load(std::memory_order_relaxed);
     snapshot.dequeued = dequeued_.load(std::memory_order_relaxed);
     snapshot.steals = steals_.load(std::memory_order_relaxed);
@@ -165,6 +210,36 @@ void Scheduler::worker_loop(std::size_t worker_index) {
                 || runnable_queue_depth_.load(std::memory_order_relaxed) > 0;
         });
         scheduler_wakeups_.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void Scheduler::dirty_worker_loop() {
+    for (;;) {
+        DirtyTask task;
+        {
+            std::unique_lock lock(dirty_mutex_);
+            dirty_cv_.wait(lock, [this] {
+                return stopping_.load(std::memory_order_acquire) || !dirty_queue_.empty();
+            });
+
+            if (dirty_queue_.empty()) {
+                if (stopping_.load(std::memory_order_acquire)) break;
+                continue;
+            }
+
+            task = std::move(dirty_queue_.front());
+            dirty_queue_.pop_front();
+            dirty_queue_depth_.fetch_sub(1, std::memory_order_relaxed);
+        }
+
+        if (!task) continue;
+        try {
+            task();
+        } catch (...) {
+            /**
+             * Keep scheduler workers alive even if a dirty task throws.
+             */
+        }
     }
 }
 

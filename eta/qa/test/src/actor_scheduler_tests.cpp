@@ -1,6 +1,8 @@
 #include <boost/test/unit_test.hpp>
 
+#include <atomic>
 #include <chrono>
+#include <future>
 #include <optional>
 #include <thread>
 
@@ -133,6 +135,153 @@ BOOST_AUTO_TEST_CASE(actor_run_state_transitions_and_shadow_scheduler_metrics_ar
     BOOST_TEST(stats_after.enqueued >= stats_before.enqueued + 1u);
     BOOST_TEST(stats_after.dequeued >= stats_before.dequeued + 1u);
     BOOST_TEST(stats_after.dirty_queue_depth == 0u);
+}
+
+BOOST_AUTO_TEST_CASE(scheduler_worker_stays_responsive_while_dirty_task_is_blocked) {
+    using eta::runtime::actor::Scheduler;
+    using eta::runtime::types::Pid;
+
+    std::atomic<bool> dirty_enqueue_succeeded{true};
+    std::atomic<bool> dirty_started_notified{false};
+    std::atomic<bool> first_dispatched_notified{false};
+    std::atomic<bool> second_dispatched_notified{false};
+    std::atomic<bool> dirty_finished{false};
+    std::atomic<bool> second_dispatched_before_dirty_finished{false};
+
+    std::promise<void> first_dispatched_promise;
+    auto first_dispatched = first_dispatched_promise.get_future();
+    std::promise<void> second_dispatched_promise;
+    auto second_dispatched = second_dispatched_promise.get_future();
+    std::promise<void> dirty_started_promise;
+    auto dirty_started = dirty_started_promise.get_future();
+    std::promise<void> release_dirty_promise;
+    auto release_dirty = release_dirty_promise.get_future().share();
+
+    Scheduler* scheduler_ptr = nullptr;
+    Scheduler::DispatchFn dispatch =
+        [&dirty_enqueue_succeeded,
+         &dirty_started_notified,
+         &first_dispatched_notified,
+         &second_dispatched_notified,
+         &dirty_finished,
+         &second_dispatched_before_dirty_finished,
+         &first_dispatched_promise,
+         &second_dispatched_promise,
+         &dirty_started_promise,
+         &release_dirty,
+         &scheduler_ptr](const Pid& pid, std::size_t) mutable {
+            if (pid.actor_id == 1) {
+                const bool queued = scheduler_ptr != nullptr
+                    && scheduler_ptr->enqueue_dirty(
+                        [&dirty_started_notified,
+                         &dirty_started_promise,
+                         &release_dirty,
+                         &dirty_finished]() mutable {
+                            if (!dirty_started_notified.exchange(
+                                    true,
+                                    std::memory_order_acq_rel)) {
+                                dirty_started_promise.set_value();
+                            }
+                            release_dirty.wait();
+                            dirty_finished.store(true, std::memory_order_release);
+                        });
+                if (!queued) {
+                    dirty_enqueue_succeeded.store(false, std::memory_order_release);
+                }
+                if (!first_dispatched_notified.exchange(true, std::memory_order_acq_rel)) {
+                    first_dispatched_promise.set_value();
+                }
+                return;
+            }
+
+            if (pid.actor_id == 2) {
+                second_dispatched_before_dirty_finished.store(
+                    !dirty_finished.load(std::memory_order_acquire),
+                    std::memory_order_release);
+                if (!second_dispatched_notified.exchange(true, std::memory_order_acq_rel)) {
+                    second_dispatched_promise.set_value();
+                }
+            }
+        };
+
+    Scheduler scheduler(
+        /*worker_count=*/1,
+        std::move(dispatch),
+        /*dirty_worker_count=*/1,
+        /*dirty_queue_limit=*/0);
+    scheduler_ptr = &scheduler;
+    scheduler.start();
+
+    const Pid first{.node_id = 1, .actor_id = 1, .incarnation = 1};
+    const Pid second{.node_id = 1, .actor_id = 2, .incarnation = 1};
+
+    BOOST_REQUIRE(scheduler.enqueue(first));
+    BOOST_REQUIRE(
+        first_dispatched.wait_for(std::chrono::milliseconds(1000))
+        == std::future_status::ready);
+    BOOST_REQUIRE(
+        dirty_started.wait_for(std::chrono::milliseconds(1000))
+        == std::future_status::ready);
+
+    BOOST_REQUIRE(scheduler.enqueue(second));
+    BOOST_REQUIRE(
+        second_dispatched.wait_for(std::chrono::milliseconds(1000))
+        == std::future_status::ready);
+
+    BOOST_TEST(dirty_enqueue_succeeded.load(std::memory_order_acquire));
+    BOOST_TEST(second_dispatched_before_dirty_finished.load(std::memory_order_acquire));
+
+    release_dirty_promise.set_value();
+    BOOST_REQUIRE(wait_until([&dirty_finished]() {
+        return dirty_finished.load(std::memory_order_acquire);
+    }));
+
+    scheduler.shutdown();
+}
+
+BOOST_AUTO_TEST_CASE(scheduler_dirty_queue_backpressure_and_shutdown_behavior) {
+    using eta::runtime::actor::Scheduler;
+
+    Scheduler scheduler(
+        /*worker_count=*/1,
+        Scheduler::DispatchFn{},
+        /*dirty_worker_count=*/1,
+        /*dirty_queue_limit=*/1);
+    scheduler.start();
+
+    std::atomic<int> executed{0};
+    std::promise<void> first_started_promise;
+    auto first_started = first_started_promise.get_future();
+    std::promise<void> release_first_promise;
+    auto release_first = release_first_promise.get_future().share();
+
+    BOOST_REQUIRE(scheduler.enqueue_dirty([&executed, &first_started_promise, release_first]() mutable {
+        first_started_promise.set_value();
+        release_first.wait();
+        executed.fetch_add(1, std::memory_order_relaxed);
+    }));
+
+    BOOST_REQUIRE(
+        first_started.wait_for(std::chrono::milliseconds(1000))
+        == std::future_status::ready);
+
+    BOOST_REQUIRE(scheduler.enqueue_dirty([&executed]() {
+        executed.fetch_add(1, std::memory_order_relaxed);
+    }));
+    BOOST_TEST(!scheduler.enqueue_dirty([&executed]() {
+        executed.fetch_add(1, std::memory_order_relaxed);
+    }));
+
+    release_first_promise.set_value();
+    BOOST_REQUIRE(wait_until([&executed]() {
+        return executed.load(std::memory_order_relaxed) == 2;
+    }));
+
+    scheduler.shutdown();
+
+    auto stats = scheduler.stats_snapshot();
+    BOOST_TEST(stats.dirty_queue_depth == 0u);
+    BOOST_TEST(!scheduler.enqueue_dirty([] {}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

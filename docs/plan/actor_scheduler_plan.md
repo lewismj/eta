@@ -235,6 +235,20 @@ Gate:
 
 1. Blocking workloads do not starve regular actor scheduling.
 
+Implementation notes (current):
+
+1. `ActorSystem` now reads `ETA_ACTOR_DIRTY_SCHEDULERS` when pool mode starts
+   and wires dirty workers into `Scheduler` startup.
+2. VM primitive dispatch routes builtins classified as blocking
+   (`builtin_catalog`) to dirty workers in `pool` mode, then resumes actor
+   execution when the dirty task completes.
+3. Added actor wake-up plumbing (`notify_external_runnable`) so dirty-task
+   completion cannot lose runnable signals during pool dispatch handoff.
+4. Added regression coverage for:
+   - runnable scheduler dispatch progress while a dirty task is blocked
+     (single scheduler worker and single dirty worker)
+   - dirty queue backpressure and shutdown behavior
+
 ---
 
 ### M7.6 - Scale validation and default cutover

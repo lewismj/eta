@@ -4,6 +4,7 @@
 #include <deque>
 #include <expected>
 #include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -188,6 +189,12 @@ public:
         LispVal value{nanbox::Nil};
     };
 
+    struct PendingBlockingPrimitive {
+        std::size_t args_start{0};
+        reader::lexer::Span call_span{};
+        std::shared_future<std::expected<LispVal, RuntimeError>> result{};
+    };
+
     struct ExecutionSnapshot {
         std::vector<LispVal> stack;
         std::vector<Frame> frames;
@@ -206,6 +213,7 @@ public:
         bool slice_active{false};
         std::uint64_t slice_reduction_budget_remaining{0};
         std::optional<ExecuteSliceStatus> pending_run_loop_status{};
+        std::optional<PendingBlockingPrimitive> pending_blocking_primitive{};
     };
 
     class ExecutionScope {
@@ -648,6 +656,7 @@ private:
     bool slice_active_{false};
     std::uint64_t slice_reduction_budget_remaining_{0};
     std::optional<ExecuteSliceStatus> pending_run_loop_status_{};
+    std::optional<PendingBlockingPrimitive> pending_blocking_primitive_{};
 
     void charge_reductions(std::uint64_t units = 1) noexcept;
 
@@ -658,6 +667,7 @@ private:
     void process_pending_finalizers(std::size_t budget = kDefaultFinalizerBudget);
 
     std::expected<ExecuteSliceStatus, RuntimeError> run_loop();
+    std::expected<void, RuntimeError> complete_pending_blocking_primitive();
     std::expected<void, RuntimeError> handle_return(LispVal result);
     void push(LispVal val) { stack_.push_back(val); }
     LispVal pop() {

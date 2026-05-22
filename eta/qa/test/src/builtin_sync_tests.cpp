@@ -935,6 +935,38 @@ BOOST_AUTO_TEST_CASE(builtin_metadata_order_matches_catalog_order) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(blocking_builtin_classification_matches_catalog_and_metadata) {
+    constexpr std::array<std::string_view, 6> expected_blocking = {{
+        "%process-run",
+        "%process-wait",
+        "%time-sleep-ms",
+        "recv!",
+        "spawn-wait",
+        "thread-join",
+    }};
+
+    for (const auto name : expected_blocking) {
+        BOOST_TEST_CONTEXT("builtin: " << name) {
+            BOOST_TEST(builtin_is_blocking(name));
+        }
+    }
+
+    BOOST_TEST(!builtin_is_blocking("+"));
+    BOOST_TEST(!builtin_is_blocking("map"));
+
+    for (const auto& entry : builtin_catalog()) {
+        BOOST_TEST_CONTEXT("catalog builtin: " << entry.name) {
+            BOOST_TEST(entry.is_blocking == builtin_is_blocking(entry.name));
+        }
+    }
+
+    for (const auto& builtin : builtin_metadata()) {
+        BOOST_TEST_CONTEXT("metadata builtin: " << builtin.name) {
+            BOOST_TEST(builtin.is_blocking == builtin_is_blocking(builtin.name));
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(catalog_owner_matches_native_sidecar_lookup) {
     constexpr std::string_view sidecar_prefix = "sidecar:";
 

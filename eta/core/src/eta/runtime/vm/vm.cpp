@@ -1,7 +1,11 @@
 #include "vm.h"
 #include <algorithm>
+#include <chrono>
+#include <exception>
+#include <future>
 #include <limits>
 #include "eta/runtime/actor/actor_system.h"
+#include "eta/runtime/builtin_catalog.h"
 #include "eta/runtime/factory.h"
 #include "eta/runtime/ad_error.h"
 #include "eta/runtime/types/types.h"
@@ -104,6 +108,7 @@ void VM::save_execution_state() {
     snapshot.slice_active = slice_active_;
     snapshot.slice_reduction_budget_remaining = slice_reduction_budget_remaining_;
     snapshot.pending_run_loop_status = pending_run_loop_status_;
+    snapshot.pending_blocking_primitive = pending_blocking_primitive_;
     saved_executions_.push_back(std::move(snapshot));
 
     clear_exception_transfer();
@@ -123,6 +128,7 @@ void VM::save_execution_state() {
     slice_active_ = false;
     slice_reduction_budget_remaining_ = 0;
     pending_run_loop_status_.reset();
+    pending_blocking_primitive_.reset();
 }
 
 void VM::restore_execution_state() {
@@ -148,6 +154,7 @@ void VM::restore_execution_state() {
     slice_active_ = snapshot.slice_active;
     slice_reduction_budget_remaining_ = snapshot.slice_reduction_budget_remaining;
     pending_run_loop_status_ = snapshot.pending_run_loop_status;
+    pending_blocking_primitive_ = snapshot.pending_blocking_primitive;
 }
 
 bool VM::values_eqv(LispVal a, LispVal b) const {
@@ -505,6 +512,7 @@ std::expected<VM::ExecuteSliceResult, RuntimeError> VM::execute_with_status(
     if (!slice_active_) {
         clear_exception_transfer();
         pending_run_loop_status_.reset();
+        pending_blocking_primitive_.reset();
         /**
          * Push a sentinel frame to mark the bottom of this execution call.
          * This prevents CallCC from capturing frames above the point where execute() was called.
@@ -538,6 +546,7 @@ std::expected<VM::ExecuteSliceResult, RuntimeError> VM::execute_with_status(
         slice_active_ = false;
         active_slice_entry_ = nullptr;
         pending_run_loop_status_.reset();
+        pending_blocking_primitive_.reset();
         slice_reduction_budget_remaining_ = 0;
         return std::unexpected(run_result.error());
     }
@@ -563,6 +572,7 @@ std::expected<VM::ExecuteSliceResult, RuntimeError> VM::execute_with_status(
     slice_active_ = false;
     active_slice_entry_ = nullptr;
     pending_run_loop_status_.reset();
+    pending_blocking_primitive_.reset();
     slice_reduction_budget_remaining_ = 0;
     return out;
 }
@@ -924,6 +934,67 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
                                                  static_cast<std::size_t>(argc)};
 
         const char* prim_name = prim->debug_name.empty() ? nullptr : prim->debug_name.c_str();
+        const bool blocking_builtin = prim_name != nullptr
+            && builtin_is_blocking(prim->debug_name);
+        const bool allow_dirty_dispatch = !is_tail
+            && execute_depth_ == 1
+            && !pending_blocking_primitive_.has_value()
+            && actor_system_
+            && actor_system_->scheduler_mode() == actor::ActorSystem::SchedulerMode::Pool
+            && blocking_builtin;
+
+        if (allow_dirty_dispatch) {
+            auto actor_pid = actor_system_->current_pid();
+            if (actor_pid.has_value()) {
+                auto task_promise =
+                    std::make_shared<std::promise<std::expected<LispVal, RuntimeError>>>();
+                auto task_future = task_promise->get_future().share();
+                auto captured_args = std::vector<LispVal>(args_span.begin(), args_span.end());
+                auto prim_label = prim->debug_name;
+
+                const bool queued = actor_system_->enqueue_dirty_task(
+                    [task_promise,
+                     actor_system = actor_system_,
+                     actor_pid = *actor_pid,
+                     prim_func = prim->func,
+                     prim_label = std::move(prim_label),
+                     captured_args = std::move(captured_args)]() mutable {
+                        std::expected<LispVal, RuntimeError> result;
+                        try {
+                            result = prim_func(std::span<const LispVal>(
+                                captured_args.data(),
+                                captured_args.size()));
+                        } catch (const std::exception& ex) {
+                            result = std::unexpected(RuntimeError{VMError{
+                                RuntimeErrorCode::InternalError,
+                                "dirty primitive '" + prim_label + "' threw: " + ex.what()}});
+                        } catch (...) {
+                            result = std::unexpected(RuntimeError{VMError{
+                                RuntimeErrorCode::InternalError,
+                                "dirty primitive '" + prim_label + "' threw"}});
+                        }
+
+                        try {
+                            task_promise->set_value(std::move(result));
+                        } catch (...) {
+                        }
+
+                        if (actor_system) {
+                            actor_system->notify_external_runnable(actor_pid);
+                        }
+                    });
+
+                if (queued) {
+                    pending_blocking_primitive_ = PendingBlockingPrimitive{
+                        .args_start = args_start,
+                        .call_span = call_span,
+                        .result = std::move(task_future)};
+                    pending_run_loop_status_ = ExecuteSliceStatus::BlockedOnReceive;
+                    return DispatchResult{DispatchAction::Continue, nullptr, 0};
+                }
+            }
+        }
+
         prof::ScopedPrimitiveCall primitive_scope(prim_name);
         auto res = prim->func(args_span);
         stack_.resize(args_start);
@@ -952,7 +1023,56 @@ void VM::unpack_to_stack(LispVal value) {
     }
 }
 
+std::expected<void, RuntimeError> VM::complete_pending_blocking_primitive() {
+    if (!pending_blocking_primitive_.has_value()) return {};
+
+    auto& pending = *pending_blocking_primitive_;
+    if (pending.result.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+        pending_run_loop_status_ = ExecuteSliceStatus::BlockedOnReceive;
+        return {};
+    }
+
+    std::expected<LispVal, RuntimeError> result;
+    try {
+        result = pending.result.get();
+    } catch (const std::exception& ex) {
+        result = std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            std::string("dirty primitive completion failed: ") + ex.what()}});
+    } catch (...) {
+        result = std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "dirty primitive completion failed"}});
+    }
+
+    const auto args_start = pending.args_start;
+    const auto call_span = pending.call_span;
+    pending_blocking_primitive_.reset();
+
+    if (args_start > stack_.size()) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InternalError,
+            "dirty primitive restored invalid stack state"}});
+    }
+    stack_.resize(args_start);
+
+    if (!result) {
+        if (is_non_local_transfer_error(result.error())) {
+            return {};
+        }
+        auto handled = do_runtime_error(result.error(), call_span);
+        if (!handled) return std::unexpected(handled.error());
+        return {};
+    }
+
+    push(*result);
+    return {};
+}
+
 std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
+    auto pending_primitive = complete_pending_blocking_primitive();
+    if (!pending_primitive) return std::unexpected(pending_primitive.error());
+
     if (pending_run_loop_status_.has_value()) {
         const auto pending = *pending_run_loop_status_;
         pending_run_loop_status_.reset();
@@ -960,6 +1080,9 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
     }
 
     while (current_func_ && pc_ < current_func_->code.size()) {
+        pending_primitive = complete_pending_blocking_primitive();
+        if (!pending_primitive) return std::unexpected(pending_primitive.error());
+
         if (pending_run_loop_status_.has_value()) {
             const auto pending = *pending_run_loop_status_;
             pending_run_loop_status_.reset();

@@ -1,7 +1,10 @@
 #include "eta/runtime/actor/actor_system.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdlib>
 #include <deque>
+#include <limits>
 #include <utility>
 
 #include "eta/runtime/actor/node_transport.h"
@@ -34,6 +37,25 @@ void apply_outbox_messages(
         (void)mailbox->push(std::move(message));
     }
     outbox.clear();
+}
+
+[[nodiscard]] std::size_t parse_size_t_env(
+    const char* name,
+    std::size_t default_value) noexcept {
+    const char* value = std::getenv(name);
+    if (!value || value[0] == '\0') return default_value;
+
+    char* end = nullptr;
+    errno = 0;
+    const auto parsed = std::strtoull(value, &end, 10);
+    if (end == value || errno == ERANGE) return default_value;
+    if (end && *end != '\0') return default_value;
+    if (parsed == 0ULL) return default_value;
+
+    constexpr auto kMaxSizeT = static_cast<unsigned long long>(
+        (std::numeric_limits<std::size_t>::max)());
+    if (parsed > kMaxSizeT) return default_value;
+    return static_cast<std::size_t>(parsed);
 }
 
 } // namespace
@@ -110,19 +132,34 @@ std::expected<types::Pid, std::string> ActorSystem::spawn(ActorEntry entry) {
     }
 
     auto process = std::make_shared<ActorProcess>();
+    bool pool_managed = false;
     {
         std::lock_guard lock(mutex_);
         if (shutting_down_.load(std::memory_order_acquire)) {
             return std::unexpected("actor system is shutting down");
         }
         process->pid = allocate_pid_unsafe();
+        process->entry = std::move(entry);
+        pool_managed = scheduler_mode_ == SchedulerMode::Pool;
+        process->managed_by_scheduler = pool_managed;
         processes_.emplace(process->pid, process);
-        enqueue_shadow_runnable_unsafe(process->pid);
+        if (pool_managed) {
+            if (!scheduler_) {
+                processes_.erase(process->pid);
+                return std::unexpected("scheduler pool is not available");
+            }
+            enqueue_runnable_unsafe(process);
+        } else {
+            enqueue_runnable_unsafe(process);
+        }
+    }
+
+    if (pool_managed) {
+        return process->pid;
     }
 
     try {
-        process->worker = std::thread(
-            [this, process, entry = std::move(entry)]() mutable {
+        process->worker = std::thread([this, process]() mutable {
                 const auto pid = process->pid;
                 ExitReason reason;
                 reason.kind = ExitReason::Kind::Normal;
@@ -134,7 +171,7 @@ std::expected<types::Pid, std::string> ActorSystem::spawn(ActorEntry entry) {
                 }
 
                 try {
-                    entry(pid);
+                    process->entry(pid);
                 } catch (...) {
                     reason.kind = ExitReason::Kind::Error;
                 }
@@ -696,21 +733,35 @@ std::optional<ActorSystem::ProcessInfo> ActorSystem::process_info(
 
 void ActorSystem::set_scheduler_mode(SchedulerMode mode) {
     std::lock_guard lock(mutex_);
+
+    if (scheduler_) {
+        scheduler_->shutdown();
+        scheduler_.reset();
+    }
+
     scheduler_mode_ = mode;
 
-    if (mode == SchedulerMode::ThreadPerActor) {
-        if (scheduler_) {
-            scheduler_->shutdown();
-            scheduler_.reset();
-        }
-        return;
+    if (mode == SchedulerMode::ThreadPerActor) return;
+
+    const auto dirty_worker_count = parse_size_t_env("ETA_ACTOR_DIRTY_SCHEDULERS", 0u);
+    const auto dirty_queue_limit = parse_size_t_env("ETA_ACTOR_DIRTY_QUEUE_LIMIT", 0u);
+
+    Scheduler::DispatchFn dispatch{};
+    if (mode == SchedulerMode::Pool) {
+        dispatch = [this](const types::Pid& pid, std::size_t worker_index) {
+            dispatch_pool_runnable(pid, worker_index);
+        };
+    } else {
+        dispatch = [this](const types::Pid& pid, std::size_t) {
+            dispatch_shadow_runnable(pid);
+        };
     }
 
-    if (!scheduler_) {
-        scheduler_ = std::make_unique<Scheduler>(
-            default_scheduler_worker_count(),
-            [](const types::Pid&, std::size_t) {});
-    }
+    scheduler_ = std::make_unique<Scheduler>(
+        default_scheduler_worker_count(),
+        std::move(dispatch),
+        dirty_worker_count,
+        dirty_queue_limit);
     scheduler_->start();
 }
 
@@ -734,6 +785,31 @@ ActorSystem::SchedulerStats ActorSystem::scheduler_stats() const {
     stats.steals = snapshot.steals;
     stats.global_queue_depth = snapshot.global_queue_depth;
     return stats;
+}
+
+bool ActorSystem::enqueue_dirty_task(std::function<void()> task) {
+    std::lock_guard lock(mutex_);
+    if (scheduler_mode_ != SchedulerMode::Pool) return false;
+    if (!scheduler_) return false;
+    return scheduler_->enqueue_dirty(std::move(task));
+}
+
+void ActorSystem::notify_external_runnable(const types::Pid& pid) {
+    std::lock_guard lock(mutex_);
+    auto process = lookup_process_unsafe(pid);
+    if (!process) return;
+    if (!process->alive.load(std::memory_order_acquire)) return;
+    if (scheduler_mode_ == SchedulerMode::Pool && !process->managed_by_scheduler) return;
+
+    process->run_state.store(RunState::Runnable, std::memory_order_relaxed);
+    if (scheduler_mode_ == SchedulerMode::Pool) {
+        if (process->in_dispatch.load(std::memory_order_acquire)) return;
+        enqueue_runnable_unsafe(process);
+        return;
+    }
+    if (scheduler_mode_ == SchedulerMode::PoolShadow) {
+        enqueue_runnable_unsafe(process);
+    }
 }
 
 bool ActorSystem::pid_exists(const types::Pid& pid) const {
@@ -822,6 +898,101 @@ std::vector<std::string> ActorSystem::registered_names() const {
     return names;
 }
 
+void ActorSystem::dispatch_pool_runnable(const types::Pid& pid, std::size_t worker_index) {
+    std::shared_ptr<ActorProcess> process;
+    {
+        std::lock_guard lock(mutex_);
+        process = lookup_process_unsafe(pid);
+        if (!process) return;
+        process->run_queue_enqueued.store(false, std::memory_order_relaxed);
+        if (!process->managed_by_scheduler) return;
+        if (!process->alive.load(std::memory_order_acquire)) {
+            process->in_dispatch.store(false, std::memory_order_relaxed);
+            return;
+        }
+        if (process->run_state.load(std::memory_order_relaxed) != RunState::Runnable) {
+            return;
+        }
+        process->in_dispatch.store(true, std::memory_order_release);
+    }
+
+    ExitReason reason;
+    reason.kind = ExitReason::Kind::Normal;
+
+    if (!bind_current_thread_pid(pid)) {
+        reason.kind = ExitReason::Kind::Error;
+    } else {
+        try {
+            process->entry(pid);
+        } catch (...) {
+            reason.kind = ExitReason::Kind::Error;
+        }
+    }
+
+    YieldReason yield_reason = YieldReason::None;
+    bool alive = false;
+    {
+        std::lock_guard lock(mutex_);
+        auto refreshed = lookup_process_unsafe(pid);
+        if (refreshed) {
+            refreshed->in_dispatch.store(false, std::memory_order_release);
+            alive = refreshed->alive.load(std::memory_order_acquire);
+            yield_reason = refreshed->last_yield_reason.load(std::memory_order_relaxed);
+        }
+    }
+
+    unbind_current_thread_pid();
+
+    if (reason.kind == ExitReason::Kind::Error) {
+        complete_actor(pid, reason);
+        return;
+    }
+    if (!alive) return;
+
+    if (yield_reason == YieldReason::BudgetExhausted) {
+        std::lock_guard lock(mutex_);
+        auto refreshed = lookup_process_unsafe(pid);
+        if (!refreshed) return;
+        if (!refreshed->alive.load(std::memory_order_acquire)) return;
+        refreshed->run_state.store(RunState::Runnable, std::memory_order_relaxed);
+        enqueue_runnable_unsafe(refreshed, worker_index);
+        return;
+    }
+
+    if (yield_reason == YieldReason::BlockedOnReceive) {
+        std::lock_guard lock(mutex_);
+        auto refreshed = lookup_process_unsafe(pid);
+        if (!refreshed) return;
+        if (!refreshed->alive.load(std::memory_order_acquire)) return;
+        if (refreshed->run_state.load(std::memory_order_relaxed) == RunState::Runnable) {
+            enqueue_runnable_unsafe(refreshed, worker_index);
+            return;
+        }
+        if (refreshed->mailbox->size() > 0) {
+            refreshed->run_state.store(RunState::Runnable, std::memory_order_relaxed);
+            enqueue_runnable_unsafe(refreshed, worker_index);
+        } else {
+            refreshed->run_state.store(RunState::Waiting, std::memory_order_relaxed);
+        }
+        return;
+    }
+
+    if (yield_reason == YieldReason::Error) {
+        reason.kind = ExitReason::Kind::Error;
+        complete_actor(pid, reason);
+        return;
+    }
+
+    complete_actor(pid, reason);
+}
+
+void ActorSystem::dispatch_shadow_runnable(const types::Pid& pid) {
+    std::lock_guard lock(mutex_);
+    auto process = lookup_process_unsafe(pid);
+    if (!process) return;
+    process->run_queue_enqueued.store(false, std::memory_order_relaxed);
+}
+
 void ActorSystem::mark_process_waiting_if_blocking_receive_unsafe(
     const std::shared_ptr<ActorProcess>& process,
     std::optional<std::chrono::milliseconds> timeout) {
@@ -855,18 +1026,41 @@ void ActorSystem::mark_process_runnable_from_message_unsafe(
     if (previous != RunState::Waiting) return;
 
     process->run_state.store(RunState::Runnable, std::memory_order_relaxed);
-    enqueue_shadow_runnable_unsafe(process->pid);
+    if (scheduler_mode_ == SchedulerMode::Pool) {
+        if (!process->managed_by_scheduler) return;
+        if (process->in_dispatch.load(std::memory_order_acquire)) return;
+    }
+    enqueue_runnable_unsafe(process);
 }
 
-void ActorSystem::enqueue_shadow_runnable_unsafe(const types::Pid& pid) {
-    if (!scheduler_) return;
+void ActorSystem::enqueue_runnable_unsafe(
+    const std::shared_ptr<ActorProcess>& process,
+    std::optional<std::size_t> preferred_worker_index) {
+    if (!process) return;
     if (scheduler_mode_ != SchedulerMode::Pool && scheduler_mode_ != SchedulerMode::PoolShadow) {
         return;
     }
-    (void)scheduler_->enqueue(pid);
+    if (scheduler_mode_ == SchedulerMode::Pool && !process->managed_by_scheduler) return;
+    if (!scheduler_) return;
+
+    if (process->run_queue_enqueued.exchange(true, std::memory_order_acq_rel)) return;
+
+    bool queued = false;
+    if (scheduler_mode_ == SchedulerMode::Pool && preferred_worker_index.has_value()) {
+        queued = scheduler_->enqueue_for_worker(*preferred_worker_index, process->pid);
+    } else {
+        queued = scheduler_->enqueue(process->pid);
+    }
+    if (!queued) {
+        process->run_queue_enqueued.store(false, std::memory_order_release);
+    }
 }
 
 std::size_t ActorSystem::default_scheduler_worker_count() noexcept {
+    if (const auto configured = parse_size_t_env("ETA_ACTOR_SCHEDULERS", 0u);
+        configured > 0) {
+        return configured;
+    }
     const auto concurrency = std::thread::hardware_concurrency();
     return concurrency == 0 ? 1u : static_cast<std::size_t>(concurrency);
 }
@@ -907,6 +1101,8 @@ void ActorSystem::shutdown() {
         for (const auto& [_, process] : processes_) {
             process->alive.store(false, std::memory_order_release);
             process->run_state.store(RunState::Exited, std::memory_order_relaxed);
+            process->run_queue_enqueued.store(false, std::memory_order_relaxed);
+            process->in_dispatch.store(false, std::memory_order_relaxed);
             process->links.clear();
             process->monitors.clear();
             process->registered_name.clear();
@@ -964,6 +1160,13 @@ bool ActorSystem::enqueue_message_unsafe(
     auto process = lookup_process_unsafe(pid);
     if (!process) return false;
     if (!process->alive.load(std::memory_order_acquire)) return false;
+    if (scheduler_mode_ == SchedulerMode::Pool) {
+        const bool pushed = process->mailbox->push(std::move(message));
+        if (!pushed) return false;
+        mark_process_runnable_from_message_unsafe(process);
+        return true;
+    }
+
     mark_process_runnable_from_message_unsafe(process);
     outbox.emplace_back(process->mailbox, std::move(message));
     return true;

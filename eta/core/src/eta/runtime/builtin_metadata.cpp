@@ -183,6 +183,7 @@ namespace {
     metadata.name = entry.name;
     metadata.arity = entry.arity;
     metadata.has_rest = entry.has_rest;
+    metadata.is_blocking = entry.is_blocking;
     metadata.category = entry.category.value_or(category_for_builtin(entry.name));
     metadata.signature = entry.signature.value_or(signature_override(entry.name));
     metadata.summary = entry.summary.value_or(summary_for_builtin(entry.name));

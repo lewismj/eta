@@ -16,6 +16,7 @@ struct BuiltinMetadata {
     std::string name;
     uint32_t arity{0};
     bool has_rest{false};
+    bool is_blocking{false};
     std::string category;
     std::string signature;
     std::string summary;
