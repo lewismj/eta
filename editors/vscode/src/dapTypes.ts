@@ -89,9 +89,17 @@ export interface EnvironmentSnapshot {
     environments: EnvironmentLevel[];
 }
 
+export type ChildProcessKind = 'process' | 'actor';
+
 export interface ChildProcessInfo {
-    pid: number;
-    endpoint: string;
-    modulePath: string;
+    kind?: ChildProcessKind;
+    pid?: number;
+    endpoint?: string;
+    modulePath?: string;
+    actorPid?: string;
+    registeredName?: string;
+    mailboxLength?: number;
+    state?: string;
+    lastYieldReason?: string;
     alive: boolean;
 }
