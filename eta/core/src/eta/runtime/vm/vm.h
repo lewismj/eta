@@ -366,7 +366,12 @@ public:
      */
     std::expected<ExecuteSliceResult, RuntimeError> execute_with_status(
         const BytecodeFunction& main,
-        ExecuteSliceOptions options = {});
+        ExecuteSliceOptions options);
+
+    std::expected<ExecuteSliceResult, RuntimeError> execute_with_status(
+        const BytecodeFunction& main) {
+        return execute_with_status(main, ExecuteSliceOptions{});
+    }
 
     std::expected<LispVal, RuntimeError> call_value(LispVal proc, std::vector<LispVal> args);
 

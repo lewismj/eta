@@ -230,6 +230,11 @@ struct BinaryWriter {
         }
 
         switch (ops::tag(v)) {
+            case Tag::Nil:
+            case Tag::TapeRef:
+                if (!fail_non_serializable(v)) return false;
+                write_u8(BT_Nil);
+                return true;
             case Tag::Fixnum: {
                 write_u8(BT_Fixnum);
                 write_i64(ops::decode<int64_t>(v).value_or(0));
