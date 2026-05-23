@@ -46,11 +46,23 @@ if [ -n "$TARGET" ]; then
     chmod +x "$TARGET/bin/"* 2>/dev/null || true
     BIN_DIR="$(cd "$TARGET/bin" && pwd)"
     STDLIB_DIR="$(cd "$TARGET/stdlib" && pwd)"
+    PACKAGES_DIR="$(cd "$TARGET/packages" && pwd)"
     EDITORS_DIR="$TARGET/editors"
 else
     BIN_DIR="${BUNDLE_DIR}/bin"
     STDLIB_DIR="${BUNDLE_DIR}/stdlib"
+    if [ -d "${BUNDLE_DIR}/packages" ]; then
+        PACKAGES_DIR="${BUNDLE_DIR}/packages"
+    else
+        PACKAGES_DIR=""
+    fi
     EDITORS_DIR="${BUNDLE_DIR}/editors"
+fi
+
+if [ -n "$PACKAGES_DIR" ] && [ -d "$PACKAGES_DIR" ]; then
+    MODULE_PATH="${STDLIB_DIR}:${PACKAGES_DIR}"
+else
+    MODULE_PATH="${STDLIB_DIR}"
 fi
 
 # Resolve the VS Code extension. The build-release script produces a
@@ -72,6 +84,9 @@ echo "╚═══════════════════════�
 echo
 echo "  bin     : ${BIN_DIR}"
 echo "  stdlib  : ${STDLIB_DIR}"
+if [ -n "$PACKAGES_DIR" ] && [ -d "$PACKAGES_DIR" ]; then
+    echo "  packages: ${PACKAGES_DIR}"
+fi
 echo
 
 # ── 1. Detect shell config ───────────────────────────────────────────
@@ -97,7 +112,7 @@ fi
     echo ""
     echo "$MARKER_BEGIN"
     echo "export PATH=\"${BIN_DIR}:\$PATH\""
-    echo "export ETA_MODULE_PATH=\"${STDLIB_DIR}\""
+    echo "export ETA_MODULE_PATH=\"${MODULE_PATH}\""
     echo "$MARKER_END"
 } >> "$RC_FILE"
 echo "  ✓ Done."

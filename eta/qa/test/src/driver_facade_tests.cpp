@@ -11,13 +11,20 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <sstream>
 #include <string>
+#include <thread>
 
+#include "eta/interpreter/module_path.h"
 #include "eta/runtime/builtin_catalog.h"
 #include "eta/session/driver.h"
 #include "eta/session/runtime_config.h"
 
 namespace fs = std::filesystem;
+
+#ifndef ETA_STDLIB_DIR
+#define ETA_STDLIB_DIR ""
+#endif
 
 namespace {
 
@@ -87,6 +94,27 @@ void set_env_var(const std::string& name, const std::string& value) {
 #endif
 }
 
+fs::path find_stdlib_dir() {
+    fs::path configured(ETA_STDLIB_DIR);
+    if (!configured.empty() && fs::is_directory(configured)) {
+        return fs::canonical(configured);
+    }
+
+    const auto cwd = fs::current_path();
+    for (const auto& candidate : {
+        cwd / "stdlib",
+        cwd / ".." / "stdlib",
+        cwd / ".." / ".." / "stdlib",
+        cwd / ".." / ".." / ".." / "stdlib",
+    }) {
+        if (fs::is_directory(candidate)) {
+            return fs::canonical(candidate);
+        }
+    }
+
+    return {};
+}
+
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(driver_facade_tests)
@@ -146,6 +174,37 @@ BOOST_AUTO_TEST_CASE(driver_bootstrap_builtin_slots_match_catalog_order) {
             BOOST_REQUIRE(it != global_names.end());
             BOOST_TEST(it->second == catalog[i].name);
         }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(run_file_actor_primitives_work_when_executed_on_non_constructor_thread) {
+    TempDir temp;
+    const auto script = temp.write_file(
+        "src/actor_thread_identity.eta",
+        R"eta((module actor.thread.identity
+  (import std.actor)
+  (define _self (self)))
+)eta");
+
+    const auto stdlib = find_stdlib_dir();
+    BOOST_REQUIRE_MESSAGE(
+        !stdlib.empty(),
+        "stdlib directory not found; set ETA_STDLIB_DIR for this test configuration");
+
+    eta::session::Driver driver(
+        eta::interpreter::ModulePathResolver({stdlib, temp.path}),
+        8u * 1024u * 1024u);
+
+    bool run_ok = false;
+    std::thread worker([&]() {
+        run_ok = driver.run_file(script);
+    });
+    worker.join();
+
+    if (!run_ok) {
+        std::ostringstream diagnostics;
+        driver.diagnostics().print_all(diagnostics, /*use_color=*/false, driver.file_resolver());
+        BOOST_FAIL("run_file failed on worker thread:\n" + diagnostics.str());
     }
 }
 

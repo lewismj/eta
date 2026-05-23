@@ -413,6 +413,7 @@ private:
     /// File ID registry used by diagnostics and debugger file lookups.
     uint32_t allocate_file_id(const std::string& raw_path);
     bool hydrate_executed_module_source(const std::string& module_name);
+    bool ensure_current_thread_actor_identity(std::string_view context);
 
     /// Convert a LinkError into a Diagnostic and emit it.
     void emit_link_error(const reader::LinkError& e) override;

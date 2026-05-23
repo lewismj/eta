@@ -2138,6 +2138,79 @@ BOOST_AUTO_TEST_CASE(async_harness_stop_on_entry_continue_round_trip) {
 }
 
 /**
+ * 45. VM thread is bound to actor identity for actor builtins.
+ *
+ * Regresses the failure mode where `%actor-self` raised:
+ *   "current thread has no actor identity"
+ * when the debuggee ran on a worker thread.
+ */
+BOOST_AUTO_TEST_CASE(async_launch_vm_thread_has_actor_identity_for_actor_builtins) {
+    ScopedTempDir tmp_dir;
+    const auto tmp = tmp_dir.path / "eta_dap_async_actor_identity_test.eta";
+
+    {
+        std::ofstream f(tmp, std::ios::binary);
+        BOOST_REQUIRE(f.is_open());
+        f << "(module dap-async-actor-identity\n"
+             "  (defun main ()\n"
+             "    (pid? (%actor-self))))\n";
+    }
+
+    AsyncDapHarness harness;
+
+    harness.send(request(1, "initialize", "{}"));
+    auto init_resp = harness.wait_response("initialize");
+    BOOST_REQUIRE(!init_resp.is_null());
+    BOOST_TEST(init_resp["success"].as_bool() == true);
+
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(tmp) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    auto launch_resp = harness.wait_response("launch");
+    BOOST_REQUIRE(!launch_resp.is_null());
+    BOOST_TEST(launch_resp["success"].as_bool() == true);
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+
+    harness.send(request(3, "configurationDone", "{}"));
+    auto config_done_resp = harness.wait_response("configurationDone");
+    BOOST_REQUIRE(!config_done_resp.is_null());
+    BOOST_TEST(config_done_resp["success"].as_bool() == true);
+
+    bool terminated = false;
+    bool actor_identity_error = false;
+    for (int i = 0; i < 64 && !terminated; ++i) {
+        auto msg = harness.wait_message([](const json::Value& m) {
+            auto t = m.get_string("type");
+            if (!t || *t != "event") return false;
+            auto e = m.get_string("event");
+            return e && (*e == "output" || *e == "terminated");
+        }, std::chrono::milliseconds(10000));
+        BOOST_REQUIRE(!msg.is_null());
+
+        const auto event = msg.get_string("event");
+        BOOST_REQUIRE(event.has_value());
+        if (*event == "terminated") {
+            terminated = true;
+            break;
+        }
+
+        auto text = msg["body"].get_string("output");
+        if (text
+            && text->find("current thread has no actor identity") != std::string::npos) {
+            actor_identity_error = true;
+        }
+    }
+
+    BOOST_TEST(terminated);
+    BOOST_TEST(!actor_identity_error);
+
+    harness.send(request(4, "disconnect", "{}"));
+    auto disconnect_resp = harness.wait_response("disconnect");
+    BOOST_REQUIRE(!disconnect_resp.is_null());
+    BOOST_TEST(disconnect_resp["success"].as_bool() == true);
+}
+
+/**
  * 45. Async conditional breakpoint flow pauses exactly on the truthy hit
  */
 BOOST_AUTO_TEST_CASE(async_conditional_breakpoint_pauses_on_truthy_hit) {

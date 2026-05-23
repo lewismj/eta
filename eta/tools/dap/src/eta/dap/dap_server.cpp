@@ -735,9 +735,33 @@ void DapServer::start_vm_from_current_launch() {
         driver_->vm().request_pause();
     }
 
+    std::optional<runtime::types::Pid> main_actor_pid;
+    if (auto actor_system = driver_->vm().actor_system()) {
+        main_actor_pid = actor_system->current_pid();
+    }
+
     /// Launch the VM on a background thread
-    vm_thread_ = std::thread([this, script_is_etac]() {
+    vm_thread_ = std::thread([this, script_is_etac, main_actor_pid]() {
         auto* drv = driver_.get();
+        auto actor_system = drv ? drv->vm().actor_system() : nullptr;
+
+        if (actor_system) {
+            bool bound_main_actor = false;
+            if (main_actor_pid.has_value()) {
+                bound_main_actor = actor_system->bind_current_thread_pid(*main_actor_pid);
+            }
+            if (!bound_main_actor) {
+                auto registered = actor_system->register_current_thread_actor();
+                if (!registered.has_value()) {
+                    send_event("output", json::object({
+                        {"category", "stderr"},
+                        {"output",
+                            "[eta_dap] warning: failed to bind actor identity on VM thread: "
+                                + registered.error() + "\n"},
+                    }));
+                }
+            }
+        }
 
         /**
          * Refresh breakpoints immediately before script execution.
@@ -784,6 +808,10 @@ void DapServer::start_vm_from_current_launch() {
                 }
             }
             send_event("terminated", json::object({}));
+        }
+
+        if (actor_system) {
+            actor_system->unbind_current_thread_pid();
         }
     });
 }

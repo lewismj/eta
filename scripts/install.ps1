@@ -59,13 +59,19 @@ if ($Prefix) {
         Copy-Item -Recurse -Force "$BundleDir\editors\*" "$Prefix\editors\"
     }
 
-    $BinDir    = (Resolve-Path "$Prefix\bin").Path
-    $StdlibDir = (Resolve-Path "$Prefix\stdlib").Path
-    $EditorsDir = "$Prefix\editors"
+    $BinDir      = (Resolve-Path "$Prefix\bin").Path
+    $StdlibDir   = (Resolve-Path "$Prefix\stdlib").Path
+    $PackagesDir = (Resolve-Path "$Prefix\packages").Path
+    $EditorsDir  = "$Prefix\editors"
 } else {
-    $BinDir     = Join-Path $BundleDir "bin"
-    $StdlibDir  = Join-Path $BundleDir "stdlib"
-    $EditorsDir = Join-Path $BundleDir "editors"
+    $BinDir      = Join-Path $BundleDir "bin"
+    $StdlibDir   = Join-Path $BundleDir "stdlib"
+    $PackagesDir = Join-Path $BundleDir "packages"
+    $EditorsDir  = Join-Path $BundleDir "editors"
+}
+
+if (-not (Test-Path $PackagesDir)) {
+    $PackagesDir = $null
 }
 
 # Resolve the VS Code extension. The build-release script produces a
@@ -91,6 +97,9 @@ Write-Host "+==============================================================+"
 Write-Host ""
 Write-Host "  bin     : $BinDir"
 Write-Host "  stdlib  : $StdlibDir"
+if ($PackagesDir) {
+    Write-Host "  packages: $PackagesDir"
+}
 Write-Host ""
 
 # -- 1. Add bin/ to user PATH, removing any stale Eta entries -----------------
@@ -122,11 +131,17 @@ if ($NewPath -ne $UserPath) {
 }
 
 # -- 2. Set ETA_MODULE_PATH ---------------------------------------------------
+$ModuleRoots = @($StdlibDir)
+if ($PackagesDir) {
+    $ModuleRoots += $PackagesDir
+}
+$DesiredModulePath = $ModuleRoots -join ';'
+
 $CurrentModPath = [Environment]::GetEnvironmentVariable("ETA_MODULE_PATH", "User")
-if ($CurrentModPath -ne $StdlibDir) {
-    Write-Host "> Setting ETA_MODULE_PATH = $StdlibDir..."
-    [Environment]::SetEnvironmentVariable("ETA_MODULE_PATH", $StdlibDir, "User")
-    $env:ETA_MODULE_PATH = $StdlibDir
+if ($CurrentModPath -ne $DesiredModulePath) {
+    Write-Host "> Setting ETA_MODULE_PATH = $DesiredModulePath..."
+    [Environment]::SetEnvironmentVariable("ETA_MODULE_PATH", $DesiredModulePath, "User")
+    $env:ETA_MODULE_PATH = $DesiredModulePath
     Write-Host "  [OK] Set."
 } else {
     Write-Host "> ETA_MODULE_PATH already set -- skipping."

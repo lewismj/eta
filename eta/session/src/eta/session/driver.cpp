@@ -242,6 +242,9 @@ bool Driver::clear_module_cache(const std::string& module_name) {
 }
 
 bool Driver::run_file(const fs::path& path) {
+    if (!ensure_current_thread_actor_identity("run_file")) {
+        return false;
+    }
     if (!ensure_package_sidecars_loaded(path.parent_path())) {
         return false;
     }
@@ -260,6 +263,9 @@ bool Driver::run_file(const fs::path& path) {
 }
 
 std::optional<Driver::CompileResult> Driver::compile_file(const fs::path& path) {
+    if (!ensure_current_thread_actor_identity("compile_file")) {
+        return std::nullopt;
+    }
     if (!ensure_package_sidecars_loaded(path.parent_path())) {
         return std::nullopt;
     }
@@ -291,6 +297,9 @@ std::optional<Driver::CompileResult> Driver::compile_file(const fs::path& path) 
 bool Driver::run_source(std::string_view source,
                         runtime::nanbox::LispVal* result,
                         const std::string& result_binding) {
+    if (!ensure_current_thread_actor_identity("run_source")) {
+        return false;
+    }
     if (!ensure_package_sidecars_loaded(std::nullopt)) {
         return false;
     }
@@ -511,6 +520,9 @@ bool Driver::load_package_sidecars(const fs::path& start_dir) {
 }
 
 bool Driver::run_etac_file(const fs::path& path) {
+    if (!ensure_current_thread_actor_identity("run_etac_file")) {
+        return false;
+    }
     return etac_loader_.run_etac_file(path);
 }
 
@@ -1018,6 +1030,28 @@ std::string Driver::detect_etai_path() {
 
 uint32_t Driver::allocate_file_id(const std::string& raw_path) {
     return source_files_.allocate_file_id(raw_path);
+}
+
+bool Driver::ensure_current_thread_actor_identity(std::string_view context) {
+    if (!actor_system_) {
+        return true;
+    }
+    if (actor_system_->current_pid().has_value()) {
+        return true;
+    }
+
+    auto registered = actor_system_->register_current_thread_actor();
+    if (registered.has_value()) {
+        return true;
+    }
+
+    diag_engine_.emit_error(
+        diagnostic::DiagnosticCode::InternalError,
+        {},
+        std::string(context)
+            + ": failed to register actor identity for current thread: "
+            + registered.error());
+    return false;
 }
 
 bool Driver::hydrate_executed_module_source(const std::string& module_name) {

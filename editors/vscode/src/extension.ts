@@ -90,8 +90,35 @@ function resolveEtaTarget(uri?: Uri): string | undefined {
 /** Resolve ETA_MODULE_PATH from the shared setting or env. */
 function resolveModulePath(): string {
     return workspace.getConfiguration('eta').get<string>('modulePath', '')
+        || workspace.getConfiguration('eta.lsp').get<string>('modulePath', '')
         || process.env['ETA_MODULE_PATH']
         || '';
+}
+
+function hasExplicitSetting(section: string, key: string): boolean {
+    const inspect = workspace.getConfiguration(section).inspect<string>(key);
+    return inspect?.globalValue !== undefined
+        || inspect?.workspaceValue !== undefined
+        || inspect?.workspaceFolderValue !== undefined;
+}
+
+function seedModulePathFromEnvIfUnset(): void {
+    const envModulePath = process.env['ETA_MODULE_PATH'];
+    if (!envModulePath || envModulePath.trim().length === 0) {
+        return;
+    }
+    if (hasExplicitSetting('eta', 'modulePath')) {
+        return;
+    }
+    if (hasExplicitSetting('eta.lsp', 'modulePath')) {
+        return;
+    }
+    void workspace.getConfiguration('eta')
+        .update('modulePath', envModulePath, ConfigurationTarget.Global)
+        .then(
+            () => log(`Seeded eta.modulePath from ETA_MODULE_PATH: ${envModulePath}`),
+            err => log(`Failed to seed eta.modulePath from ETA_MODULE_PATH: ${String(err)}`),
+        );
 }
 
 export function activate(context: ExtensionContext) {
@@ -101,6 +128,7 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(outputChannel, programOutputChannel);
     log('Eta extension activating...');
     log(`Eta extension version: ${context.extension.packageJSON.version}`);
+    seedModulePathFromEnvIfUnset();
 
     // -- Environment tree view -------------------------------------------
     environmentProvider = new EnvironmentTreeProvider();
