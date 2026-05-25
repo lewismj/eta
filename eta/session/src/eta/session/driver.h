@@ -393,10 +393,10 @@ private:
         runtime::nanbox::LispVal thunk,
         const semantics::BytecodeFunctionRegistry& source_registry,
         std::size_t primitive_global_ref_slot_limit);
+    struct SpawnedActorState;
     void run_spawned_actor(
         runtime::types::Pid pid,
-        std::vector<std::uint8_t> funcs_bytes,
-        std::vector<std::uint8_t> captures_bytes);
+        const std::shared_ptr<SpawnedActorState>& state);
 
     /**
      * Auto-detect the path to the etai binary at startup.

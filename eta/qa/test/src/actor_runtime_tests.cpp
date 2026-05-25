@@ -502,6 +502,56 @@ BOOST_AUTO_TEST_CASE(actor_semantics_parity_under_tiny_reduction_budgets) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(actor_spawned_closure_resumes_across_budget_slices) {
+    ScopedEnvVar scheduler_mode("ETA_ACTOR_SCHEDULER", "pool");
+    ScopedEnvVar reduction_budget("ETA_ACTOR_REDUCTION_BUDGET", "1000000");
+
+    ActorHarness harness;
+    auto result = harness.run_module(R"eta(
+(module actor.runtime.spawn.resume.budget
+  (import std.actor)
+
+  (defun make-list (n)
+    (let loop ((i 0) (acc '()))
+      (if (= i n)
+          acc
+          (loop (+ i 1) (cons i acc)))))
+
+  (defun heavy-step ()
+    (let* ((xs (make-list 5000))
+           (ys (reverse xs)))
+      (length ys)))
+
+  (defun run-steps (count)
+    (let loop ((i 0) (acc 0))
+      (if (= i count)
+          acc
+          (loop (+ i 1) (+ acc (heavy-step))))))
+
+  (define me (self))
+  (spawn (lambda () (send me (run-steps 16))))
+  (define result (receive-after 5000)))
+)eta");
+
+    BOOST_REQUIRE_MESSAGE(
+        result != eta::runtime::nanbox::False,
+        "timed out waiting for spawned actor result under budget slicing");
+    BOOST_TEST(harness.as_int(result) == 80000);
+}
+
+BOOST_AUTO_TEST_CASE(actor_scheduler_env_thread_per_actor_is_honored) {
+    using eta::runtime::actor::ActorSystem;
+
+    ScopedEnvVar scheduler_mode("ETA_ACTOR_SCHEDULER", "thread-per-actor");
+    ActorHarness harness;
+    auto actor_system = harness.driver.vm().actor_system();
+    BOOST_REQUIRE(actor_system);
+
+    BOOST_TEST(
+        static_cast<int>(actor_system->scheduler_mode())
+        == static_cast<int>(ActorSystem::SchedulerMode::ThreadPerActor));
+}
+
 BOOST_AUTO_TEST_CASE(actor_selective_receive_preserves_unmatched_order) {
     ActorHarness harness;
     auto result = harness.run_module(R"eta(

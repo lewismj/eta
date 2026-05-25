@@ -1,0 +1,6 @@
+(module tmp_repro
+  (import blackjack std.io)
+  (begin
+    (define cfg (make-mc-shoe 53))
+    (define p (simulate-profiled policy-hit-below-17 cfg 240 24))
+    (println (display->string (assoc 'rounds p)))))

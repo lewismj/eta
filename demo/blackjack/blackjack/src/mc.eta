@@ -1,0 +1,1274 @@
+(module mc
+  (import std.actor std.collections std.core)
+  (import std.time std.io)
+  (import shoe)
+  (export
+    frozen-decks
+    frozen-penetration
+    frozen-cut-card-remaining
+    frozen-blackjack-payout
+    default-mc-workers
+    trace-schema-version
+    make-mc-shoe
+    mc-shoe?
+    mc-shoe-decks
+    mc-shoe-penetration
+    mc-shoe-cut-card-remaining
+    mc-shoe-blackjack-payout
+    mc-shoe-seed
+    policy-hit-below-17
+    trace-row?
+    trace-row-round-index
+    trace-row-player-total
+    trace-row-dealer-up
+    trace-row-player-soft
+    trace-row-player-cards
+    trace-row-action
+    trace-row-count
+    trace-row-reward
+    trace-row->alist
+    simulate-profiled
+    simulate
+    simulate-summary
+    replay-deterministic
+    replay-worker-parity)
+  (begin
+
+    ;; Frozen rollout parameters for deterministic downstream phases.
+    (define frozen-decks 6)
+    (define frozen-penetration 0.75)
+    (define frozen-blackjack-payout 1.5)
+    (define default-mc-workers 8)
+    (define trace-schema-version 'blackjack-trace-v1)
+
+    (define-record-type <mc-shoe-config>
+      (%make-mc-shoe-config decks penetration cut-card-remaining blackjack-payout seed)
+      mc-shoe?
+      (decks mc-shoe-decks)
+      (penetration mc-shoe-penetration)
+      (cut-card-remaining mc-shoe-cut-card-remaining)
+      (blackjack-payout mc-shoe-blackjack-payout)
+      (seed mc-shoe-seed))
+
+    (define-record-type <trace-row>
+      (%make-trace-row round-index
+                       player-total
+                       dealer-up
+                       player-soft
+                       player-cards
+                       action
+                       count
+                       reward)
+      trace-row?
+      (round-index trace-row-round-index)
+      (player-total trace-row-player-total)
+      (dealer-up trace-row-dealer-up)
+      (player-soft trace-row-player-soft)
+      (player-cards trace-row-player-cards)
+      (action trace-row-action)
+      (count trace-row-count)
+      (reward trace-row-reward))
+
+    ;; Internal mutable compact-shoe representation.
+    ;; Layout: [counts remaining running-count seed]
+    (define %compact-shoe-counts-index 0)
+    (define %compact-shoe-remaining-index 1)
+    (define %compact-shoe-running-count-index 2)
+    (define %compact-shoe-seed-index 3)
+
+    (defun %make-compact-shoe (counts remaining running-count seed)
+      (vector counts remaining running-count seed))
+
+    (defun compact-shoe-counts (shoe)
+      (vector-ref shoe %compact-shoe-counts-index))
+
+    (defun compact-shoe-remaining (shoe)
+      (vector-ref shoe %compact-shoe-remaining-index))
+
+    (defun compact-shoe-running-count (shoe)
+      (vector-ref shoe %compact-shoe-running-count-index))
+
+    (defun compact-shoe-seed (shoe)
+      (vector-ref shoe %compact-shoe-seed-index))
+
+    (defun %set-compact-shoe-remaining! (shoe remaining)
+      (vector-set! shoe %compact-shoe-remaining-index remaining))
+
+    (defun %set-compact-shoe-running-count! (shoe running-count)
+      (vector-set! shoe %compact-shoe-running-count-index running-count))
+
+    (defun %set-compact-shoe-seed! (shoe seed)
+      (vector-set! shoe %compact-shoe-seed-index seed))
+
+    (defun %quotient (a b)
+      (/ (- a (modulo a b)) b))
+
+    (defun %alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if (non-pair? pair) #f (cdr pair))))
+
+    (define frozen-cut-card-remaining
+      (%quotient (* 52 frozen-decks) 4))
+
+    (defun %normalize-seed (seed)
+      (let ((s (modulo (+ (abs seed) 1) 2147483647)))
+        (if (= s 0) 1 s)))
+
+    (defun %lcg-next (seed)
+      (let ((s (if (<= seed 0) 1 seed)))
+        (modulo (* 48271 s) 2147483647)))
+
+    (defun %mix-seed (seed round-index)
+      (let ((mixed (+ (* 1103515245 (+ seed 1))
+                      (* 12345 (+ round-index 1)))))
+        (%normalize-seed mixed)))
+
+    (defun %total-cards (decks)
+      (* 52 decks))
+
+    (defun %fresh-counts (decks)
+      (let ((per-rank (* 4 decks)))
+        (vector per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank
+                per-rank)))
+
+    (defun %fresh-compact-shoe (cfg seed)
+      (%make-compact-shoe (%fresh-counts (mc-shoe-decks cfg))
+                          (%total-cards (mc-shoe-decks cfg))
+                          0
+                          (%normalize-seed seed)))
+
+    ;; Performance: reset an existing compact shoe in-place so its
+    ;; pre-allocated counts vector can be reused across rounds within a shard,
+    ;; avoiding per-round vector allocation pressure.
+    (defun %reset-compact-shoe! (shoe cfg seed)
+      (let* ((counts (compact-shoe-counts shoe))
+             (per-rank (* 4 (mc-shoe-decks cfg)))
+             (total   (%total-cards (mc-shoe-decks cfg))))
+        (let loop ((i 0))
+          (if (= i 13)
+              #f
+              (begin
+                (vector-set! counts i per-rank)
+                (loop (+ i 1)))))
+        (%set-compact-shoe-remaining!     shoe total)
+        (%set-compact-shoe-running-count! shoe 0)
+        (%set-compact-shoe-seed!          shoe (%normalize-seed (%lcg-next seed)))))
+
+    (define %hi-lo-weights-vec (list->vector hi-lo-weights))
+
+    (defun %draw-index (counts pick)
+      (let ((c0 (vector-ref counts 0)))
+        (if (<= pick c0)
+            0
+            (let* ((p1 (- pick c0))
+                   (c1 (vector-ref counts 1)))
+              (if (<= p1 c1)
+                  1
+                  (let* ((p2 (- p1 c1))
+                         (c2 (vector-ref counts 2)))
+                    (if (<= p2 c2)
+                        2
+                        (let* ((p3 (- p2 c2))
+                               (c3 (vector-ref counts 3)))
+                          (if (<= p3 c3)
+                              3
+                              (let* ((p4 (- p3 c3))
+                                     (c4 (vector-ref counts 4)))
+                                (if (<= p4 c4)
+                                    4
+                                    (let* ((p5 (- p4 c4))
+                                           (c5 (vector-ref counts 5)))
+                                      (if (<= p5 c5)
+                                          5
+                                          (let* ((p6 (- p5 c5))
+                                                 (c6 (vector-ref counts 6)))
+                                            (if (<= p6 c6)
+                                                6
+                                                (let* ((p7 (- p6 c6))
+                                                       (c7 (vector-ref counts 7)))
+                                                  (if (<= p7 c7)
+                                                      7
+                                                      (let* ((p8 (- p7 c7))
+                                                             (c8 (vector-ref counts 8)))
+                                                        (if (<= p8 c8)
+                                                            8
+                                                            (let* ((p9 (- p8 c8))
+                                                                   (c9 (vector-ref counts 9)))
+                                                              (if (<= p9 c9)
+                                                                  9
+                                                                  (let* ((p10 (- p9 c9))
+                                                                         (c10 (vector-ref counts 10)))
+                                                                    (if (<= p10 c10)
+                                                                        10
+                                                                        (let* ((p11 (- p10 c10))
+                                                                               (c11 (vector-ref counts 11)))
+                                                                          (if (<= p11 c11)
+                                                                              11
+                                                                              (let* ((p12 (- p11 c11))
+                                                                                     (c12 (vector-ref counts 12)))
+                                                                                (if (<= p12 c12)
+                                                                                    12
+                                                                                    (error
+                                                                                      "simulate: unable to draw card from compact shoe"))))))))))))))))))))))))))))
+
+    (defun %draw-card (shoe)
+      (let ((remaining (compact-shoe-remaining shoe)))
+        (if (= remaining 0)
+            (error "simulate: compact shoe is empty")
+            (let* ((seed2 (%lcg-next (compact-shoe-seed shoe)))
+                   (pick (+ 1 (modulo seed2 remaining)))
+                   (counts (compact-shoe-counts shoe))
+                   (idx (%draw-index counts pick))
+                   (bucket (vector-ref counts idx))
+                   (rank (+ idx 1)))
+              (if (<= bucket 0)
+                  (error "simulate: compact shoe drew empty bucket")
+                  #f)
+              (vector-set! counts idx (- bucket 1))
+              (%set-compact-shoe-remaining! shoe (- remaining 1))
+               (%set-compact-shoe-running-count!
+                 shoe
+                 (+ (compact-shoe-running-count shoe)
+                    (vector-ref %hi-lo-weights-vec idx)))
+               (%set-compact-shoe-seed! shoe seed2)
+               rank))))
+
+    (defun %burn-cards (shoe n)
+      (let loop ((k n))
+        (if (= k 0)
+            shoe
+            (begin
+              (%draw-card shoe)
+              (loop (- k 1))))))
+
+    (defun %round-entry-shoe (cfg seed)
+      ;; Performance path: avoid per-round cut-card burn simulation.
+      ;; We still reseed each round to keep round-level determinism.
+      (%fresh-compact-shoe cfg (%lcg-next seed)))
+
+    ;; Hand tuple representation:
+    ;; [hard-total, usable-aces, n-cards, pair-rank-or-0]
+    ;; - hard-total: all aces counted as 1
+    ;; - usable-aces: ace count (promotion to +10 is possible when > 0)
+    (defun %make-single-card-hand (rank)
+      (if (= rank 1)
+          (vector 1 1 1 rank)
+          (let ((v (card-value rank)))
+            (vector v 0 1 rank))))
+
+    (defun %hand-hard-total (hand) (vector-ref hand 0))
+    (defun %hand-usable-aces (hand) (vector-ref hand 1))
+    (defun %hand-cards (hand) (vector-ref hand 2))
+    (defun %hand-pair-rank (hand) (vector-ref hand 3))
+
+    (defun %hand-best-total (hand)
+      (let* ((hard (%hand-hard-total hand))
+             (soft (+ hard 10)))
+        (if (and (> (%hand-usable-aces hand) 0)
+                 (<= soft 21))
+            soft
+            hard)))
+
+    (defun %hand-soft? (hand)
+      (and (> (%hand-usable-aces hand) 0)
+           (<= (+ (%hand-hard-total hand) 10) 21)))
+
+    (defun %hand-bust? (hand)
+      (> (%hand-hard-total hand) 21))
+
+    (defun %hand-blackjack? (hand)
+      (and (= (%hand-cards hand) 2)
+           (= (%hand-best-total hand) 21)))
+
+    (defun %hand-with-card (hand rank)
+      (let* ((hard (%hand-hard-total hand))
+             (usable-aces (%hand-usable-aces hand))
+             (n (%hand-cards hand))
+             (pair (%hand-pair-rank hand))
+             (hard2 (+ hard (if (= rank 1) 1 (card-value rank))))
+             (usable-aces2 (+ usable-aces (if (= rank 1) 1 0)))
+             (n2 (+ n 1))
+             (pair2 (if (= n2 2)
+                        (if (= pair rank) rank 0)
+                        0)))
+        (vector hard2 usable-aces2 n2 pair2)))
+
+    (defun %policy-action (policy hand dealer-up count)
+      (let ((action (policy (%hand-best-total hand)
+                            dealer-up
+                            (%hand-soft? hand)
+                            count)))
+        (if (or (eq? action 'hit) (eq? action 'stand))
+            action
+            (error "simulate: policy must return 'hit or 'stand"))))
+
+    (defun %play-player (policy hand dealer-up shoe)
+      (if (%hand-bust? hand)
+          hand
+          (let ((action (%policy-action policy
+                                        hand
+                                        dealer-up
+                                        (compact-shoe-running-count shoe))))
+            (if (eq? action 'stand)
+                hand
+                (let* ((rank (%draw-card shoe))
+                       (hand2 (%hand-with-card hand rank)))
+                  (%play-player policy hand2 dealer-up shoe))))))
+
+    (defun %play-dealer (hand shoe)
+      (if (>= (%hand-best-total hand) 17)
+          hand
+          (let* ((rank (%draw-card shoe))
+                 (hand2 (%hand-with-card hand rank)))
+            (%play-dealer hand2 shoe))))
+
+    (defun %resolve-naturals (player dealer cfg)
+      (cond
+        ((and (%hand-blackjack? player) (%hand-blackjack? dealer)) 0.0)
+        ((%hand-blackjack? player) (mc-shoe-blackjack-payout cfg))
+        ((%hand-blackjack? dealer) -1.0)
+        (else #f)))
+
+    (defun %resolve-regular (player dealer)
+      (cond
+        ((%hand-bust? player) -1.0)
+        ((%hand-bust? dealer) 1.0)
+        ((> (%hand-best-total player) (%hand-best-total dealer)) 1.0)
+        ((< (%hand-best-total player) (%hand-best-total dealer)) -1.0)
+        (else 0.0)))
+
+    (defun %simulate-round (policy cfg round-index round-seed)
+      (let* ((shoe0 (%round-entry-shoe cfg round-seed))
+             (dealer-up (%draw-card shoe0))
+             (player-r1 (%draw-card shoe0))
+             (dealer-hole (%draw-card shoe0))
+             (player-r2 (%draw-card shoe0))
+             (player-hand (%hand-with-card (%make-single-card-hand player-r1)
+                                            player-r2))
+             (dealer-hand (%hand-with-card (%make-single-card-hand dealer-up)
+                                            dealer-hole))
+             (count0 (compact-shoe-running-count shoe0))
+             (reward-natural (%resolve-naturals player-hand dealer-hand cfg)))
+        (if (not (eq? reward-natural #f))
+            (%make-trace-row round-index
+                             (%hand-best-total player-hand)
+                             dealer-up
+                             (%hand-soft? player-hand)
+                             (%hand-cards player-hand)
+                             'stand
+                             count0
+                              reward-natural)
+            (let* ((first-action (%policy-action policy player-hand dealer-up count0))
+                   (player-final (if (eq? first-action 'stand)
+                                      player-hand
+                                      (%play-player policy
+                                                    (%hand-with-card player-hand
+                                                                     (%draw-card shoe0))
+                                                    dealer-up
+                                                    shoe0)))
+                   (dealer-final (if (%hand-bust? player-final)
+                                      dealer-hand
+                                      (%play-dealer dealer-hand shoe0)))
+                   (reward (%resolve-regular player-final dealer-final)))
+              (%make-trace-row round-index
+                               (%hand-best-total player-hand)
+                               dealer-up
+                               (%hand-soft? player-hand)
+                               (%hand-cards player-hand)
+                               first-action
+                               count0
+                               reward)))))
+
+    ;; Performance: variant that accepts a pre-allocated mutable shoe and
+    ;; resets it in-place rather than allocating fresh counts/shoe vectors
+    ;; every round.  Used by the shard workers.
+    (defun %simulate-round! (policy cfg round-index round-seed shoe0)
+      (%reset-compact-shoe! shoe0 cfg round-seed)
+      (let* ((dealer-up (%draw-card shoe0))
+             (player-r1 (%draw-card shoe0))
+             (dealer-hole (%draw-card shoe0))
+             (player-r2 (%draw-card shoe0))
+             (player-hand (%hand-with-card (%make-single-card-hand player-r1)
+                                            player-r2))
+             (dealer-hand (%hand-with-card (%make-single-card-hand dealer-up)
+                                            dealer-hole))
+             (count0 (compact-shoe-running-count shoe0))
+             (reward-natural (%resolve-naturals player-hand dealer-hand cfg)))
+        (if (not (eq? reward-natural #f))
+            (%make-trace-row round-index
+                             (%hand-best-total player-hand)
+                             dealer-up
+                             (%hand-soft? player-hand)
+                             (%hand-cards player-hand)
+                             'stand
+                             count0
+                             reward-natural)
+            (let* ((first-action (%policy-action policy player-hand dealer-up count0))
+                   (player-final (if (eq? first-action 'stand)
+                                     player-hand
+                                     (%play-player policy
+                                                   (%hand-with-card player-hand
+                                                                    (%draw-card shoe0))
+                                                   dealer-up
+                                                   shoe0)))
+                   (dealer-final (if (%hand-bust? player-final)
+                                     dealer-hand
+                                     (%play-dealer dealer-hand shoe0)))
+                   (reward (%resolve-regular player-final dealer-final)))
+              (%make-trace-row round-index
+                               (%hand-best-total player-hand)
+                               dealer-up
+                               (%hand-soft? player-hand)
+                               (%hand-cards player-hand)
+                               first-action
+                               count0
+                               reward)))))
+
+    (defun %make-shards (n workers)
+      (if (= n 0)
+          '()
+          (let* ((w0 (if (< workers 1) 1 workers))
+                 (w (if (> w0 n) n w0))
+                 (base (%quotient n w))
+                 (extra (modulo n w))
+                 (max-shard-size 500))
+            (let loop ((i 0) (start 0) (acc '()))
+              (if (= i w)
+                  (reverse acc)
+                  (let ((size (+ base (if (< i extra) 1 0))))
+                    (let split ((s start) (remaining size) (acc2 acc))
+                      (if (> remaining max-shard-size)
+                          (split (+ s max-shard-size)
+                                 (- remaining max-shard-size)
+                                 (cons (list s max-shard-size) acc2))
+                          (loop (+ i 1)
+                                (+ start size)
+                                (cons (list s remaining) acc2))))))))))
+
+    (defun %simulate-shard (policy cfg start count)
+      ;; Pre-allocate one shoe per shard and reset it in-place each round to
+      ;; avoid per-round vector allocation for counts (13 ints) + shoe (4 slots).
+      (let ((chunk-size 64)
+            (shoe (%fresh-compact-shoe cfg 1)))
+        (let loop ((offset 0) (acc '()))
+          (if (>= offset count)
+              (reverse acc)
+              (let ((limit (min chunk-size (- count offset))))
+                (let ((next-acc
+                        (do ((j 0 (+ j 1))
+                             (acc2 acc
+                                   (let* ((round-index (+ start offset j))
+                                          (round-seed (%mix-seed (mc-shoe-seed cfg)
+                                                                 round-index))
+                                          (row (%simulate-round!
+                                                 policy
+                                                 cfg
+                                                 round-index
+                                                 round-seed
+                                                 shoe)))
+                                     (cons row acc2))))
+                            ((= j limit) acc2))))
+                  (loop (+ offset limit) next-acc)))))))
+
+    (defun %simulate-shard-with-progress (policy cfg start count worker-id progress-hook)
+      ;; Pre-allocate one shoe per shard; reset in-place each round.
+      (let* ((raw-step (%quotient (+ count 9) 10))
+             (step (max 1 (min 5000 raw-step)))
+             (t0 (time:monotonic-ms))
+             (shoe (%fresh-compact-shoe cfg 1)))
+        (let ((chunk-size 64))
+          (let loop ((offset 0) (acc '()))
+            (if (>= offset count)
+                (reverse acc)
+                (let ((limit (min chunk-size (- count offset))))
+                  (let ((next-acc
+                          (do ((j 0 (+ j 1))
+                               (acc2 acc
+                                     (let* ((round-index (+ start offset j))
+                                            (round-seed
+                                              (%mix-seed (mc-shoe-seed cfg) round-index))
+                                            (row (%simulate-round!
+                                                   policy
+                                                   cfg
+                                                   round-index
+                                                   round-seed
+                                                   shoe))
+                                            (done (+ offset j 1)))
+                                       (if (and progress-hook
+                                                (or (= done count)
+                                                    (= (modulo done step) 0)))
+                                           (progress-hook
+                                             (string-append
+                                               "collect-worker-progress="
+                                               (number->string worker-id)
+                                               ", rows="
+                                               (number->string done)
+                                               "/"
+                                               (number->string count)
+                                               ", elapsed-ms="
+                                               (number->string
+                                                 (time:elapsed-ms t0
+                                                                  (time:monotonic-ms)))))
+                                           #f)
+                                       (cons row acc2))))
+                              ((= j limit) acc2))))
+                    (loop (+ offset limit) next-acc))))))))
+
+    (defun %concat-row-lists (row-lists)
+      (if (null? row-lists)
+          '()
+          (append (car row-lists)
+                  (%concat-row-lists (cdr row-lists)))))
+
+    (defun %make-worker-log-port (path worker-id)
+      (open-output-file path))
+
+    (defun %write-worker-log (port message)
+      (display message port)
+      (newline port))
+
+    (defun %runtime-error-tag (payload)
+      (if (and (pair? payload)
+               (eq? (car payload) 'runtime-error)
+               (pair? (cdr payload))
+               (symbol? (car (cdr payload))))
+          (car (cdr payload))
+          #f))
+
+    (defun %runtime-error-message (payload)
+      (if (and (pair? payload)
+               (eq? (car payload) 'runtime-error)
+               (pair? (cdr payload))
+               (pair? (cdr (cdr payload)))
+               (string? (car (cdr (cdr payload)))))
+          (car (cdr (cdr payload)))
+          "unknown runtime error"))
+
+    (defun %spawn-shard-worker (policy cfg worker-id start count reply-to log-prefix)
+      (spawn
+        (lambda ()
+          (if (and (pid? reply-to) (number? start) (number? count))
+              (let* ((started-at-ms (time:now-ms))
+                     (log-path (if (> (string-length log-prefix) 0)
+                                   (string-append
+                                     log-prefix
+                                     "-worker_"
+                                     (number->string worker-id)
+                                     ".log")
+                                   ""))
+                     (log-port (if (> (string-length log-path) 0)
+                                   (%make-worker-log-port log-path worker-id)
+                                   #f)))
+                (if log-port
+                    (%write-worker-log
+                      log-port
+                      (string-append
+                        "worker-start=worker_"
+                        (number->string worker-id)
+                        ", shard-start="
+                        (number->string start)
+                                ", shard-count="
+                                (number->string count)
+                                ", timestamp="
+                        (time:format-iso8601-local started-at-ms)))
+                    #f)
+                (let ((outcome
+                         (catch 'runtime.error
+                          (let* ((t0 (time:monotonic-ms))
+                                 (rows (if log-port
+                                           (%simulate-shard-with-progress
+                                             policy
+                                             cfg
+                                             start
+                                             count
+                                             worker-id
+                                             (lambda (message)
+                                               (%write-worker-log log-port message)))
+                                           (%simulate-shard policy cfg start count)))
+                                 (t1 (time:monotonic-ms))
+                                 (elapsed-ms (time:elapsed-ms t0 t1))
+                                 (finished-at-ms (time:now-ms))
+                                 (stats (list
+                                          (cons 'worker-id worker-id)
+                                          (cons 'shard-start start)
+                                          (cons 'shard-count count)
+                                          (cons 'rows count)
+                                          (cons 'elapsed-ms elapsed-ms)
+                                          (cons 'started-at-ms started-at-ms)
+                                          (cons 'finished-at-ms finished-at-ms)))
+                                 (status
+                                   (send/checked
+                                     reply-to
+                                     (list
+                                       'worker-result
+                                       worker-id
+                                       (list
+                                         (cons 'rows rows)
+                                         (cons 'stats stats))))))
+                            (if log-port
+                                (%write-worker-log
+                                  log-port
+                                  (string-append
+                                     "worker-end=worker_"
+                                     (number->string worker-id)
+                                     ", produced="
+                                     (number->string count)
+                                     ", elapsed-ms="
+                                     (number->string elapsed-ms)
+                                     ", timestamp="
+                                    (time:format-iso8601-local finished-at-ms)))
+                                #f)
+                            (if (eq? status 'ok)
+                                #t
+                                (error
+                                  (string-append
+                                    "mc worker: failed to send result, status="
+                                    (symbol->string status))))))))
+                  (if (eq? (%runtime-error-tag outcome) #f)
+                      #t
+                      (let ((failure-status
+                              (send/checked
+                                reply-to
+                                (list 'worker-error worker-id outcome))))
+                        (if log-port
+                            (%write-worker-log
+                              log-port
+                              (string-append
+                                "worker-error=worker_"
+                                (number->string worker-id)
+                                ", tag="
+                                (if (%runtime-error-tag outcome)
+                                    (symbol->string (%runtime-error-tag outcome))
+                                    "<unknown>")
+                                ", message="
+                                (%runtime-error-message outcome)))
+                            #f)
+                        (if (eq? failure-status 'ok)
+                            #f
+                            (error
+                              (string-append
+                                "mc worker: failed to send error, status="
+                                (symbol->string failure-status)))))))
+                (if log-port
+                    (close-output-port log-port)
+                    #f))
+              (error "mc worker: malformed shard metadata")))))
+
+    (defun %spawn-workers (policy cfg shards log-prefix)
+      (let ((reply-to (self)))
+        (if (not (pid? reply-to))
+            (error "%spawn-workers: self is not a pid")
+            #f)
+        (let loop ((ss shards) (worker-id 1) (acc '()))
+          (if (null? ss)
+              (reverse acc)
+              (let* ((shard (car ss))
+                     (start (car shard))
+                     (count (cadr shard))
+                     (worker (%spawn-shard-worker
+                               policy
+                               cfg
+                               worker-id
+                               start
+                               count
+                               reply-to
+                               log-prefix)))
+                (if (not (pid? worker))
+                    (error "%spawn-workers: spawn did not return a pid")
+                    #f)
+                (loop (cdr ss)
+                      (+ worker-id 1)
+                      (cons worker acc)))))))
+
+    (defun %dispatch-workers (workers shards . rest)
+      (let ((progress-hook (if (null? rest) #f (car rest))))
+        (let loop ((ws workers) (ss shards) (worker-index 1))
+          (cond
+            ((and (null? ws) (null? ss)) #t)
+            ((or (null? ws) (null? ss))
+             (error "%dispatch-workers: workers and shards length mismatch"))
+            (else
+              (let ((shard (car ss)))
+                (if progress-hook
+                    (progress-hook
+                      (string-append
+                        "dispatch-worker="
+                        (number->string worker-index)
+                        ", shard-start="
+                        (number->string (car shard))
+                        ", shard-count="
+                        (number->string (cadr shard))))
+                    #f)
+                (loop (cdr ws) (cdr ss) (+ worker-index 1))))))))
+
+    (defun %worker-message-for-index? (worker-index)
+      (lambda (message)
+        (and (pair? message)
+             (or (eq? (car message) 'worker-result)
+                 (eq? (car message) 'worker-error))
+             (pair? (cdr message))
+             (number? (car (cdr message)))
+              (= (car (cdr message)) worker-index)
+              (pair? (cdr (cdr message))))))
+
+    (defun %worker-message? (message)
+      (and (pair? message)
+           (or (eq? (car message) 'worker-result)
+               (eq? (car message) 'worker-error))
+           (pair? (cdr message))
+           (number? (car (cdr message)))
+           (pair? (cdr (cdr message)))))
+
+    (defun %worker-down-for-pid? (worker)
+      (lambda (message)
+        (and (pair? message)
+             (eq? (car message) 'DOWN)
+             (pair? (cdr message))
+             (pair? (cdr (cdr message)))
+             (pair? (cdr (cdr (cdr message))))
+             (pair? (cdr (cdr (cdr (cdr message)))))
+             (equal? (car (cdr (cdr (cdr message))))
+                     worker))))
+
+    (defun %down-message? (message)
+      (and (pair? message)
+           (eq? (car message) 'DOWN)
+           (pair? (cdr message))
+           (pair? (cdr (cdr message)))
+           (pair? (cdr (cdr (cdr message))))
+           (pair? (cdr (cdr (cdr (cdr message)))))))
+
+    (defun %worker-down-reason (worker)
+      (let ((down-msg
+              (receive-match
+                (%worker-down-for-pid? worker)
+                50
+                (lambda () #f))))
+        (if down-msg
+            (car (cdr (cdr (cdr (cdr down-msg)))))
+            (let ((fallback
+                    (receive-match
+                      %down-message?
+                      50
+                      (lambda () #f))))
+              (if fallback
+                  (car (cdr (cdr (cdr (cdr fallback)))))
+                  #f)))))
+
+    (defun %monitor-workers (workers)
+      (map* (lambda (worker)
+              (let ((ref (monitor worker)))
+                (if ref
+                    ref
+                    (error "simulate-profiled: failed to monitor worker"))))
+            workers))
+
+    (defun %max-worker-total-polls (shard-count)
+      (let* ((count (if (and (number? shard-count) (> shard-count 0))
+                        shard-count
+                        0))
+             (polls (+ 240 (* 6 count))))
+        ;; 250ms poll interval => max total wait ~30 minutes.
+        (min 7200 (max 240 polls))))
+
+    (defun %max-worker-stall-polls (shard-count)
+      (let* ((count (if (and (number? shard-count) (> shard-count 0))
+                        shard-count
+                        0))
+             (polls (+ 120 (%quotient count 20))))
+        ;; Trigger only after sustained no-progress windows.
+        (min 960 (max 120 polls))))
+
+    (defun %await-worker-result (worker worker-index shard-count)
+      (let ((max-total-polls (%max-worker-total-polls shard-count))
+            (max-stall-polls (%max-worker-stall-polls shard-count)))
+        (let loop ((polls 0)
+                   (stall-polls 0)
+                   (last-state #f)
+                   (last-queue-len #f)
+                   (last-reductions #f)
+                   (last-yield-reason #f))
+          (let ((result-msg
+                  (receive-match
+                    (%worker-message-for-index? worker-index)
+                    250
+                    (lambda () #f))))
+            (if result-msg
+                result-msg
+                (let* ((next-polls (+ polls 1))
+                       (state (process-info worker 'state))
+                       (queue-len (process-info worker 'message-queue-len))
+                       (reductions (process-info worker 'reductions))
+                       (yield-reason (process-info worker 'last-yield-reason))
+                       (progressed
+                         (or
+                           (and (number? reductions)
+                                (number? last-reductions)
+                                (> reductions last-reductions))
+                           (and (number? reductions)
+                                (not (number? last-reductions)))
+                           (and (symbol? state)
+                                (not (and (symbol? last-state)
+                                          (eq? state last-state))))
+                           (and (number? queue-len)
+                                (not (and (number? last-queue-len)
+                                          (= queue-len last-queue-len))))
+                           (and (symbol? yield-reason)
+                                (not (and (symbol? last-yield-reason)
+                                          (eq? yield-reason last-yield-reason))))))
+                        (next-stall-polls
+                          (if progressed 0 (+ stall-polls 1))))
+                   (if (and (symbol? state) (eq? state 'exited))
+                      (let ((down-reason (%worker-down-reason worker)))
+                        (error
+                          (string-append
+                            "collect-workers: worker "
+                            (number->string worker-index)
+                            " exited before sending a result"
+                            ", state=exited"
+                            ", reductions="
+                            (if (number? reductions)
+                                (number->string reductions)
+                                "<unknown>")
+                            ", last-yield="
+                            (if (symbol? yield-reason)
+                                (symbol->string yield-reason)
+                                "<unknown>")
+                            (if down-reason
+                                (string-append
+                                  ", reason="
+                                  (display->string down-reason))
+                                ""))))
+                      (if (>= next-polls max-total-polls)
+                          (error
+                            (string-append
+                              "collect-workers: timed out waiting for worker "
+                              (number->string worker-index)
+                              ", shard-count="
+                              (number->string shard-count)
+                              ", state="
+                              (if (symbol? state)
+                                  (symbol->string state)
+                                  "<unknown>")
+                              ", mailbox="
+                              (if (number? queue-len)
+                                  (number->string queue-len)
+                                  "<unknown>")
+                              ", reductions="
+                              (if (number? reductions)
+                                  (number->string reductions)
+                                  "<unknown>")
+                              ", last-yield="
+                              (if (symbol? yield-reason)
+                                  (symbol->string yield-reason)
+                                  "<unknown>")
+                              ", polls="
+                              (number->string next-polls)
+                              "/"
+                              (number->string max-total-polls)
+                              ", hint=shard is taking too long; lower induce_rounds or use fewer workers"))
+                          (if (>= next-stall-polls max-stall-polls)
+                              (error
+                                (string-append
+                                  "collect-workers: worker "
+                                  (number->string worker-index)
+                                  " made no observable progress"
+                                  ", shard-count="
+                                  (number->string shard-count)
+                                  ", state="
+                                  (if (symbol? state)
+                                      (symbol->string state)
+                                      "<unknown>")
+                                  ", mailbox="
+                                  (if (number? queue-len)
+                                      (number->string queue-len)
+                                      "<unknown>")
+                                  ", reductions="
+                                  (if (number? reductions)
+                                      (number->string reductions)
+                                      "<unknown>")
+                                  ", last-yield="
+                                  (if (symbol? yield-reason)
+                                      (symbol->string yield-reason)
+                                      "<unknown>")
+                                  ", stalled-polls="
+                                  (number->string next-stall-polls)
+                                  "/"
+                                  (number->string max-stall-polls)
+                                  ", hint=set ETA_ACTOR_SCHEDULER=thread-per-actor for diagnostic fallback"))
+                              (loop next-polls
+                                    next-stall-polls
+                                    state
+                                    queue-len
+                                    reductions
+                                    yield-reason))))))))))
+
+    (defun %collect-workers (workers shards . rest)
+      (let ((progress-hook (if (null? rest) #f (car rest))))
+        (let* ((worker-count (length workers))
+               (results (make-vector worker-count #f))
+               (max-total-polls (%max-worker-total-polls worker-count)))
+          (let loop ((remaining worker-count) (polls 0))
+            (if (= remaining 0)
+                (let assemble ((i 0) (acc '()))
+                  (if (= i worker-count)
+                      (reverse acc)
+                      (let ((entry (vector-ref results i)))
+                        (if (eq? entry #f)
+                            (error
+                              (string-append
+                                "collect-workers: missing result for worker "
+                                (number->string (+ i 1))))
+                            (assemble (+ i 1) (cons entry acc))))))
+                (let ((msg
+                        (receive-match
+                          %worker-message?
+                          250
+                          (lambda () #f))))
+                  (if (eq? msg #f)
+                      (if (>= polls max-total-polls)
+                          (error
+                            (string-append
+                              "collect-workers: timed out waiting for workers"
+                              ", pending="
+                              (number->string remaining)
+                              ", polls="
+                              (number->string polls)
+                              "/"
+                              (number->string max-total-polls)))
+                          (loop remaining (+ polls 1)))
+                      (let* ((message-kind (car msg))
+                             (worker-index (car (cdr msg)))
+                             (message-payload (car (cdr (cdr msg))))
+                             (slot (- worker-index 1)))
+                        (if (or (< slot 0) (>= slot worker-count))
+                            (error
+                              (string-append
+                                "collect-workers: invalid worker index="
+                                (number->string worker-index)))
+                            #f)
+                        (if (not (eq? (vector-ref results slot) #f))
+                            (error
+                              (string-append
+                                "collect-workers: duplicate worker result index="
+                                (number->string worker-index)))
+                            #f)
+                        (if (eq? message-kind 'worker-result)
+                            (let ((stats (%worker-result-field message-payload
+                                                               'stats
+                                                               "collect-workers")))
+                              (vector-set! results slot message-payload)
+                              (if progress-hook
+                                  (progress-hook
+                                    (string-append
+                                      "collect-worker-done="
+                                      (number->string worker-index)
+                                      ", rows="
+                                      (number->string (%alist-get-name 'rows stats))
+                                      ", elapsed-ms="
+                                      (number->string (%alist-get-name 'elapsed-ms stats))))
+                                  #f)
+                              (loop (- remaining 1) 0))
+                            (error
+                              (string-append
+                                "collect-workers: worker "
+                                (number->string worker-index)
+                                " runtime error ("
+                                (if (%runtime-error-tag message-payload)
+                                    (symbol->string (%runtime-error-tag message-payload))
+                                    "<unknown>")
+                                "): "
+                                (%runtime-error-message message-payload))))))))))))
+
+    (defun %cleanup-workers (workers . rest)
+      (let ((progress-hook (if (null? rest) #f (car rest))))
+        (let loop ((ws workers) (worker-index 1))
+          (if (null? ws)
+              #t
+              (let ((_worker (car ws)))
+                (if progress-hook
+                    (progress-hook
+                      (string-append
+                        "cleanup-worker="
+                        (number->string worker-index)))
+                    #f)
+                (loop (cdr ws) (+ worker-index 1)))))))
+
+    (defun %alist-get-name (key rows)
+      (if (pair? rows)
+          (let loop ((rest rows))
+            (cond
+              ((null? rest) #f)
+              ((not (pair? rest)) #f)
+              (else
+                (let ((entry (car rest)))
+                  (if (and (pair? entry)
+                           (eq? key (car entry)))
+                      (cdr entry)
+                      (loop (cdr rest)))))))
+          #f))
+
+    (defun %alist-get-required-name (key rows who)
+      (let ((value (%alist-get-name key rows)))
+        (if (eq? value #f)
+            (error (string-append who
+                                  ": missing key "
+                                  (symbol->string key)))
+            value)))
+
+    (defun %worker-result-field (result key who)
+      (if (pair? result)
+          (%alist-get-required-name key result who)
+          (error (string-append who
+                                ": malformed worker result"))))
+
+    (defun %reverse-list-chunked (rows)
+      (let ((chunk-size 64))
+        (let outer ((rest rows) (acc '()))
+          (if (null? rest)
+              acc
+              (let inner ((r rest) (k chunk-size) (acc2 acc))
+                (if (or (= k 0) (null? r))
+                    (outer r acc2)
+                    (inner (cdr r) (- k 1) (cons (car r) acc2))))))))
+
+    (defun %prepend-list-reversed-chunked (rows acc)
+      (let ((chunk-size 64))
+        (let outer ((rest rows) (acc2 acc))
+          (if (null? rest)
+              acc2
+              (let inner ((r rest) (k chunk-size) (acc3 acc2))
+                (if (or (= k 0) (null? r))
+                    (outer r acc3)
+                    (inner (cdr r) (- k 1) (cons (car r) acc3))))))))
+
+    (defun %rows-from-worker-results (results)
+      (let fold-results ((rest results) (rev-out '()))
+        (if (null? rest)
+            (%reverse-list-chunked rev-out)
+            (let ((rows (%worker-result-field (car rest)
+                                              'rows
+                                              "rows-from-worker-results")))
+              (fold-results (cdr rest)
+                            (%prepend-list-reversed-chunked rows rev-out))))))
+
+    (defun %stats-from-worker-results (results)
+      (map* (lambda (result)
+              (let* ((stats-raw (%worker-result-field result
+                                                      'stats
+                                                      "stats-from-worker-results"))
+                     (worker-id (%alist-get-required-name 'worker-id
+                                                          stats-raw
+                                                          "stats-from-worker-results"))
+                     (shard-start (%alist-get-required-name 'shard-start
+                                                            stats-raw
+                                                            "stats-from-worker-results"))
+                     (shard-count (%alist-get-required-name 'shard-count
+                                                            stats-raw
+                                                            "stats-from-worker-results"))
+                     (rows (%alist-get-required-name 'rows
+                                                     stats-raw
+                                                     "stats-from-worker-results"))
+                     (elapsed-ms (%alist-get-required-name 'elapsed-ms
+                                                           stats-raw
+                                                           "stats-from-worker-results"))
+                     (started-at-ms (%alist-get-required-name 'started-at-ms
+                                                              stats-raw
+                                                              "stats-from-worker-results"))
+                     (finished-at-ms (%alist-get-required-name 'finished-at-ms
+                                                               stats-raw
+                                                               "stats-from-worker-results")))
+                (list
+                  (cons 'worker-id worker-id)
+                  (cons 'shard-start shard-start)
+                  (cons 'shard-count shard-count)
+                  (cons 'rows rows)
+                  (cons 'elapsed-ms elapsed-ms)
+                  (cons 'started-at-ms started-at-ms)
+                  (cons 'finished-at-ms finished-at-ms))))
+            results))
+
+    (defun %sum-worker-elapsed-ms (stats)
+      (foldl (lambda (acc stat) (+ acc (%alist-get-name 'elapsed-ms stat)))
+             0
+             stats))
+
+    (defun %max-worker-elapsed-ms (stats)
+      (foldl (lambda (best stat) (max best (%alist-get-name 'elapsed-ms stat)))
+             0
+             stats))
+
+    (defun make-mc-shoe (seed . rest)
+      (let ((decks (if (null? rest) frozen-decks (car rest))))
+        (if (<= decks 0)
+            (error "make-mc-shoe: decks must be positive")
+            (%make-mc-shoe-config decks
+                                  frozen-penetration
+                                  (%quotient (* 52 decks) 4)
+                                  frozen-blackjack-payout
+                                  (%normalize-seed seed)))))
+
+    (defun policy-hit-below-17 (player-total dealer-up player-soft count)
+      (if (< player-total 17) 'hit 'stand))
+
+    (defun trace-row->alist (row)
+      (list
+        (cons 'round-index (trace-row-round-index row))
+        (cons 'player-total (trace-row-player-total row))
+        (cons 'dealer-up (trace-row-dealer-up row))
+        (cons 'player-soft (trace-row-player-soft row))
+        (cons 'player-cards (trace-row-player-cards row))
+        (cons 'action (trace-row-action row))
+        (cons 'count (trace-row-count row))
+        (cons 'reward (trace-row-reward row))))
+
+    (defun simulate-profiled (policy cfg n . rest)
+      (if (< n 0)
+          (error "simulate-profiled: n must be non-negative")
+          (let* ((workers-requested (if (null? rest)
+                                        default-mc-workers
+                                        (car rest)))
+                 (log-prefix (if (or (null? rest) (null? (cdr rest)))
+                                 ""
+                                 (car (cdr rest))))
+                 (progress-hook (if (or (null? rest)
+                                        (null? (cdr rest))
+                                        (null? (cdr (cdr rest))))
+                                    #f
+                                    (car (cdr (cdr rest)))))
+                 (shards (%make-shards n workers-requested))
+                 (worker-count (length shards))
+                 (t0 (time:monotonic-ms)))
+             (if progress-hook
+                 (progress-hook
+                   (string-append
+                     "simulate-profiled-start, rounds="
+                    (number->string n)
+                    ", workers="
+                    (number->string worker-count)))
+                #f)
+            (let* ((workers (%spawn-workers policy cfg shards log-prefix))
+                   (t-dispatch-0 (time:monotonic-ms))
+                   (_dispatched (%dispatch-workers workers shards progress-hook))
+                   (t-dispatch-1 (time:monotonic-ms))
+                   (t-collect-0 (time:monotonic-ms))
+                   (results (%collect-workers workers shards progress-hook))
+                   (t-collect-1 (time:monotonic-ms))
+                   (t-cleanup-0 (time:monotonic-ms))
+                   (_cleaned (%cleanup-workers workers progress-hook))
+                   (t-cleanup-1 (time:monotonic-ms))
+                   (t-flatten-0 (time:monotonic-ms))
+                   (rows (%rows-from-worker-results results))
+                   (stats (%stats-from-worker-results results))
+                   (t-flatten-1 (time:monotonic-ms))
+                   (t1 (time:monotonic-ms))
+                   (dispatch-ms (time:elapsed-ms t-dispatch-0 t-dispatch-1))
+                   (collect-ms (time:elapsed-ms t-collect-0 t-collect-1))
+                   (cleanup-ms (time:elapsed-ms t-cleanup-0 t-cleanup-1))
+                   (flatten-ms (time:elapsed-ms t-flatten-0 t-flatten-1))
+                   (total-ms (time:elapsed-ms t0 t1)))
+              (if progress-hook
+                  (progress-hook
+                    (string-append
+                      "simulate-profiled-done, total-ms="
+                      (number->string total-ms)))
+                  #f)
+              (list
+                (cons 'rows rows)
+                (cons 'worker-stats stats)
+                (cons 'rounds n)
+                (cons 'workers worker-count)
+                (cons 'dispatch-ms dispatch-ms)
+                (cons 'collect-ms collect-ms)
+                (cons 'cleanup-ms cleanup-ms)
+                (cons 'flatten-ms flatten-ms)
+                (cons 'worker-elapsed-ms-total (%sum-worker-elapsed-ms stats))
+                (cons 'worker-elapsed-ms-max (%max-worker-elapsed-ms stats))
+                (cons 'total-ms total-ms))))))
+
+    (defun simulate (policy cfg n . rest)
+      (%alist-get 'rows
+                  (apply simulate-profiled
+                         (cons policy (cons cfg (cons n rest))))))
+
+    (defun simulate-summary (rows)
+      (let ((chunk-size 64))
+        (let outer ((rest rows)
+                    (n 0)
+                    (wins 0)
+                    (losses 0)
+                    (pushes 0)
+                    (naturals 0)
+                    (reward-sum 0.0))
+          (if (null? rest)
+              (list
+                (cons 'rounds n)
+                (cons 'wins wins)
+                (cons 'losses losses)
+                (cons 'pushes pushes)
+                (cons 'naturals naturals)
+                (cons 'reward-sum reward-sum)
+                (cons 'mean-reward
+                      (if (= n 0) 0.0 (/ reward-sum (* 1.0 n)))))
+              (let inner ((r rest)
+                          (k chunk-size)
+                          (n2 n)
+                          (wins2 wins)
+                          (losses2 losses)
+                          (pushes2 pushes)
+                          (naturals2 naturals)
+                          (reward-sum2 reward-sum))
+                (if (or (= k 0) (null? r))
+                    (outer r n2 wins2 losses2 pushes2 naturals2 reward-sum2)
+                    (let ((reward (trace-row-reward (car r))))
+                      ;; Rewards are emitted from a discrete set
+                      ;; (-1.0, 0.0, 1.0, 1.5), so exact float equality
+                      ;; is intentional here.
+                      (inner (cdr r)
+                             (- k 1)
+                             (+ n2 1)
+                             (if (> reward 0.0) (+ wins2 1) wins2)
+                             (if (< reward 0.0) (+ losses2 1) losses2)
+                             (if (= reward 0.0) (+ pushes2 1) pushes2)
+                             (if (= reward frozen-blackjack-payout)
+                                 (+ naturals2 1)
+                                 naturals2)
+                             (+ reward-sum2 reward)))))))))
+
+    (defun replay-deterministic (policy cfg n . rest)
+      (let* ((workers (if (null? rest) default-mc-workers (car rest)))
+             (rows-a (simulate policy cfg n workers))
+             (rows-b (simulate policy cfg n workers))
+             (summary-a (simulate-summary rows-a))
+             (summary-b (simulate-summary rows-b))
+             (trace-match (equal? rows-a rows-b))
+             (summary-match (equal? summary-a summary-b)))
+        (list
+          (cons 'trace-match trace-match)
+          (cons 'summary-match summary-match)
+          (cons 'match (and trace-match summary-match))
+          (cons 'rounds n)
+          (cons 'workers workers))))
+
+    (defun replay-worker-parity (policy cfg n workers-a workers-b)
+      (let* ((summary-a (simulate-summary (simulate policy cfg n workers-a)))
+             (summary-b (simulate-summary (simulate policy cfg n workers-b))))
+        (list
+          (cons 'workers-a workers-a)
+          (cons 'workers-b workers-b)
+          (cons 'summary-a summary-a)
+          (cons 'summary-b summary-b)
+          (cons 'match (equal? summary-a summary-b)))))
+
+  ))

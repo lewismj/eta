@@ -1,0 +1,26 @@
+(module perf_probe
+  (import std.io blackjack)
+  (begin
+    (defun alist-get (key rows)
+      (let loop ((rest rows))
+        (if (null? rest)
+            #f
+            (let ((entry (car rest)))
+              (if (and (pair? entry) (eq? (car entry) key))
+                  (cdr entry)
+                  (loop (cdr rest)))))))
+
+    (let* ((cfg (make-mc-shoe 42))
+           (profile (simulate-profiled policy-hit-below-17 cfg 20000 20))
+           (total-ms (alist-get 'total-ms profile))
+           (collect-ms (alist-get 'collect-ms profile))
+           (dispatch-ms (alist-get 'dispatch-ms profile))
+           (flatten-ms (alist-get 'flatten-ms profile))
+           (worker-max-ms (alist-get 'worker-elapsed-ms-max profile))
+           (worker-sum-ms (alist-get 'worker-elapsed-ms-total profile)))
+      (println (string-append "total-ms=" (number->string total-ms)))
+      (println (string-append "dispatch-ms=" (number->string dispatch-ms)))
+      (println (string-append "collect-ms=" (number->string collect-ms)))
+      (println (string-append "flatten-ms=" (number->string flatten-ms)))
+      (println (string-append "worker-max-ms=" (number->string worker-max-ms)))
+      (println (string-append "worker-sum-ms=" (number->string worker-sum-ms))))))

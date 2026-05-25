@@ -1,0 +1,119 @@
+(module blackjack_demo
+  (export startup-message chart-output cli-help run-command run-command-line)
+  (import
+    std.args
+    std.io
+    blackjack_demo_config
+    blackjack_demo_logging
+    blackjack_demo_render)
+  (begin
+
+    (defun run-command (argv)
+      (let* ((parsed (args:parse cli-spec argv))
+             (help? (args:get parsed 'help))
+             (positionals (args:get parsed 'positional))
+             (command (first-or positionals "help")))
+        (if help?
+            (cli-help)
+            (if (> (length positionals) 1)
+                (error "blackjack-demo: expected at most one subcommand")
+                (let ((run-cfg (resolve-run-config parsed)))
+                  (let* ((session (if (timed-command? command)
+                                      (make-log-session run-cfg command)
+                                      #f))
+                         (on-start (if session
+                                       (lambda (name)
+                                         (log-session-write session
+                                                            (phase-start-message name)))
+                                       #f))
+                         (on-finish (if session
+                                        (lambda (name elapsed)
+                                          (log-session-write
+                                            session
+                                            (phase-end-message name elapsed)))
+                                        #f)))
+                    (dynamic-wind
+                      (lambda ()
+                        (let ((run-name (run-cfg-ref run-cfg 'run-name)))
+                          (if session
+                              (log-session-write
+                                session
+                                (string-append
+                                  "command-start="
+                                  command
+                                  ", seed="
+                                  (number->string (run-cfg-ref run-cfg 'seed))
+                                  ", run-name="
+                                  (if (> (string-length run-name) 0)
+                                      run-name
+                                      "none")))
+                              #f)))
+                      (lambda ()
+                        (let ((output
+                                (cond
+                                  ((or (string=? command "help")
+                                       (string=? command "-h")
+                                       (string=? command "--help"))
+                                   (cli-help))
+                                  ((string=? command "induce")
+                                   (timed-section "induce"
+                                                  (lambda () (render-induce run-cfg session))
+                                                  on-start
+                                                  on-finish))
+                                  ((string=? command "causal")
+                                   (timed-section "causal"
+                                                  (lambda () (render-causal run-cfg))
+                                                  on-start
+                                                  on-finish))
+                                  ((string=? command "learn")
+                                   (timed-section "learn"
+                                                  (lambda () (render-learn run-cfg session))
+                                                  on-start
+                                                  on-finish))
+                                  ((string=? command "chart")
+                                   (timed-section "chart"
+                                                  (lambda () (render-chart run-cfg))
+                                                  on-start
+                                                  on-finish))
+                                  ((string=? command "maxims")
+                                   (timed-section "maxims"
+                                                  (lambda () (render-maxims run-cfg))
+                                                  on-start
+                                                  on-finish))
+                                  ((string=? command "report")
+                                   (render-all run-cfg session))
+                                  ((string=? command "all")
+                                   (render-all run-cfg session))
+                                  (else
+                                    (error
+                                      (string-append
+                                        "blackjack-demo: unknown subcommand '"
+                                        command
+                                        "'"))))))
+                          (if session
+                              (let ((run-name (run-cfg-ref run-cfg 'run-name)))
+                                (log-session-write session
+                                                   (string-append "command-complete="
+                                                                  command))
+                                (if (> (string-length run-name) 0)
+                                    (string-append
+                                      output
+                                      "\n\nrun-name="
+                                      run-name
+                                      "\napp-log="
+                                      (log-session-path session))
+                                    (string-append
+                                      output
+                                      "\n\napp-log="
+                                      (log-session-path session))))
+                              output)))
+                      (lambda ()
+                        (log-session-close session)))))))))
+
+    (defun run-command-line ()
+      (run-command (command-line-arguments)))
+
+    (defun main ()
+      (println (run-command-line)))
+
+  ))
