@@ -457,7 +457,7 @@ cmake -B build -DTorch_DIR=/path/to/libtorch/share/cmake/Torch
 
 ## Test Suite
 
-The `cookbook/tests/torch/` directory contains a comprehensive integration
+The `cookbook/tests/torch/` directory contains an integration
 test suite that exercises every `std.torch` primitive through the full Eta
 pipeline (lex → parse → expand → link → emit → execute).  Each file is a
 standalone module that uses the `std.test` framework and prints a

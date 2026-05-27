@@ -84,7 +84,7 @@ edges `(u -> v)`; the ADMG modules add bidirected `(u <-> v)` edges.
 | --- | --- |
 | [std.causal.adjustment](./causal/adjustment.md) | GAC, front-door, IV. |
 | [std.causal.identify](./causal/identify.md) | ID/IDC algorithms. |
-| [std.causal.estimate](./causal/estimate.md) | Modern ATE estimators. |
+| [std.causal.estimate](./causal/estimate.md) | ATE estimators. |
 | [std.causal.learn](./causal/learn.md) | Structure learning. |
 | [std.causal.counterfactual](./causal/counterfactual.md) | Counterfactual queries. |
 | [std.causal.mediation](./causal/mediation.md) | Natural direct/indirect effects. |

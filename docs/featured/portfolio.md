@@ -7,29 +7,21 @@
 
 ---
 
-## TL;DR — Executive Walkthrough
+## Summary
 
-> **Core claim.** Estimation, optimisation, and stress testing are
-> all defined on the **same structural model**. The DAG that
-> identifies expected returns is the same DAG whose `do(m)`
-> interventions generate scenarios; the covariance used to price risk
-> in the QP is the same Σ(m) used in stress regimes; the constraint
-> set that bounds the optimiser is the same one against which
-> robustness is measured. Nothing is glued together post-hoc.
+This example runs causal return estimation, CLP(R) feasibility checks,
+convex QP optimisation, AAD sensitivity analysis, and scenario stress
+tests in one Eta pipeline. The stages share the same DAG, covariance
+inputs, and constraint set.
 
-In one sentence: *causally-identified expected returns, constrained
-exactly via CLP(R), optimised as a convex QP, decomposed by AAD, and
-stress-tested under consistent `do(m)` interventions on the same
-structural model.*
-
-**What goes in**
+**Inputs**
 
 - A 4-asset universe (sector ETFs) with observed factor data
 - A structural causal DAG describing how macro variables drive returns
 - A symbolic constraint spec (sector caps, regulatory floors, budget)
 - A risk-aversion parameter λ and a list of macro scenarios
 
-**What happens (seven steps)**
+**Pipeline steps**
 
 1. **Generate data** from a known DGP (so every result is verifiable)
 2. **Identify the causal effect** of macro on returns from the DAG (back-door)
@@ -39,12 +31,10 @@ structural model.*
 6. **Decompose risk** with reverse-mode AAD (one backward pass)
 7. **Stress test** under do-operator macro interventions and DAG perturbations
 
-**What comes out**
+**Output artifact**
 
-A single association list with the optimal allocation, expected
-return, risk, per-scenario tables, robustness diagnostics, and
-sensitivity reports — every value traceable back to the stage that
-produced it.
+A single association list with allocation, expected return, risk,
+scenario tables, robustness diagnostics, and sensitivity reports.
 
 ```scheme
 (run-pipeline universe market-dag constraint-spec 2.0
@@ -57,11 +47,11 @@ produced it.
 
 ---
 
-## Why This Matters
+## Design Rationale
 
 Standard quantitative pipelines silo four problems and solve each one
-with tools that don't talk to each other. Eta unifies them in one
-semantic layer.
+with separate tools. This example keeps them in one runtime model so
+data and assumptions stay consistent across stages.
 
 | Problem in standard pipelines | What goes wrong | How Eta addresses it |
 |---|---|---|
@@ -71,11 +61,9 @@ semantic layer.
 | Scenario analysis is ad-hoc shocks | Stress tests inconsistent with the estimation model | Macro scenarios are `do(m)` interventions on the same DAG (§7) |
 
 > [!IMPORTANT]
-> The deeper claim is not that any one of these components is novel.
-> It is that they share a **single semantic substrate** — logic
-> programming, ML, optimisation, causality, and differentiation
-> compose without translation layers. Most production stacks fail at
-> exactly this seam.
+> The goal here is integration: logic programming, ML, optimisation,
+> causality, and differentiation run on shared runtime values and
+> module boundaries.
 
 ### What Breaks If You Remove a Component
 

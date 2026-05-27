@@ -6,22 +6,17 @@
 
 ---
 
-## TL;DR — Executive Walkthrough
+## Summary
 
->If wrong-way risk is modelled using correlation-based approaches, it may fail to capture i
->directionality or concentration under stress, and does not distinguish between 
->correlation and causation.
+This demo evaluates wrong-way risk with explicit `do(...)`
+interventions on macro factors in an assumed structural causal model
+(SCM). It computes CVA, AAD sensitivities, counterfactual stress
+results, and hedge candidates within one reproducible run.
 
->This system instead evaluates CVA under macroeconomic shocks routed through an
->**assumed** structural causal model (SCM). Wrong-way risk is analysed via explicit
->interventions (`do(...)` operations) on macro factors (e.g. oil, rates, FX), so the
->reported CVA reflects how the portfolio responds when those drivers are actively
->moved under the SCM mechanism, rather than merely observed to co-move.
-
-The system computes CVA for a portfolio under these shocks, calculates full
-risk sensitivities in a single reverse-mode AAD pass, ranks counterparties by their
-elasticity to each `do(...)` shock, and produces hedge recommendations via
-convex optimisation.
+The system computes CVA for a portfolio under these shocks, calculates
+risk sensitivities in a single reverse-mode AAD pass, ranks
+counterparties by elasticity to each `do(...)` shock, and produces
+hedge recommendations via convex optimisation.
 
 Structural relationships (e.g. macro → hazard/exposure) are *recovered from a
 synthetic shock × hazard panel* in this demo, so the wrong-way analysis is
@@ -54,7 +49,7 @@ of pricing functions is supported, and all components run within a single framew
 
 
 
-**What goes in**
+**Inputs**
 
 - A deterministic 200-trade book over 30 counterparties with CSA terms
 - An OIS / hazard / recovery / FX market state, plus per-CP shock βs
@@ -62,7 +57,7 @@ of pricing functions is supported, and all components run within a single framew
 - A symbolic swap-leg expression `f(r) = N · (1 − e^{−rτ}) / r`
 - A 3×3 covariance prefix from a SIMM-style 10×10 IR-delta block
 
-**What happens (nine sections + diagnostics, one binary, fixed-seed reproducible run)**
+**Pipeline steps (fixed-seed reproducible run)**
 
 1. Build a deterministic book and market state (§1, §2)
 2. **Calibrate the SCM βs by ML on a synthetic shock × hazard panel (§3a)**
@@ -82,7 +77,7 @@ correlation-only WWR baseline. A determinism / shard-replay check
 runs in CI; it lives in the
 [Technical Appendix](#technical-appendix--deterministic-shard-replay).
 
-**What comes out**
+**Output artifact**
 
 A single association list with the baseline CVA, the AAD gradient
 vector, per-shock book CVA, ranked elasticity buckets, the symbolic
@@ -135,13 +130,11 @@ stage-by-stage report** below is produced by `(main)`, which calls
 
 ---
 
-## Why This Matters
+## Design Rationale
 
-Standard XVA stacks split the problem into a Monte Carlo engine, a
-risk decomposition layer, a scenario tool, and a hedge-suggestion
-spreadsheet. Each of those four layers has its own model of "what the
-world looks like under stress", and they almost never agree. Eta
-unifies them in one semantic substrate.
+Standard XVA stacks often split the problem into separate Monte Carlo,
+risk, scenario, and hedge tools. This demo keeps them in one runtime
+model so stress assumptions and outputs stay aligned.
 
 | Problem in standard XVA pipelines | What goes wrong | How Eta addresses it |
 |---|---|---|
@@ -154,7 +147,8 @@ unifies them in one semantic substrate.
 | Reproducibility relies on operator discipline | Identical inputs → different prints | Seeded torch RNG + actor shard replay with hash assert ([appendix](#technical-appendix--deterministic-shard-replay)) |
 
 > [!IMPORTANT]
-> All components — symbolic,  AAD, optimisation, and causal interventions — run in one unified system.
+> All components - symbolic, AAD, optimisation, and causal
+> interventions - run in one system and share the same staged outputs.
 
 ### What Breaks If You Remove a Component
 
@@ -1727,4 +1721,3 @@ unchanged whether the graph is hand-drawn or machine-emitted.
 | libtorch | [`stdlib/std/torch.eta`](../../stdlib/std/torch.eta) |
 | VM execution engine | [`eta/core/src/eta/runtime/vm/vm.cpp`](../../eta/core/src/eta/runtime/vm/vm.cpp) |
 | Compiler (`etac`) | [`docs/compiler.md`](../guide/reference/compiler.md) |
-

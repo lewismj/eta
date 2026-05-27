@@ -71,7 +71,7 @@ the distribution and is importable with `(import <name>)`.
 | [std.causal](./causal.md) | `(import std.causal)` | DAG queries, do-calculus, back-door identification, and effect estimation. |
 | [std.causal.adjustment](./causal/adjustment.md) | `(import std.causal.adjustment)` | GAC, front-door criterion, IV adjustment. |
 | [std.causal.identify](./causal/identify.md) | `(import std.causal.identify)` | ID and IDC algorithms over ADMGs. |
-| [std.causal.estimate](./causal/estimate.md) | `(import std.causal.estimate)` | Modern ATE estimators (IPW, AIPW, DML). |
+| [std.causal.estimate](./causal/estimate.md) | `(import std.causal.estimate)` | ATE estimators (IPW, AIPW, DML). |
 | [std.causal.learn](./causal/learn.md) | `(import std.causal.learn)` | Structure learning from data. |
 | [std.causal.counterfactual](./causal/counterfactual.md) | `(import std.causal.counterfactual)` | Counterfactual queries under SCMs. |
 | [std.causal.mediation](./causal/mediation.md) | `(import std.causal.mediation)` | Natural direct and indirect effects. |

@@ -249,7 +249,7 @@ A typical CLI entry point:
 ## Error handling
 
 Every parse error raises a runtime error with a tagged message. To
-turn errors into a friendly exit:
+turn errors into a clear non-zero exit:
 
 ```scheme
 (let ((r (catch 'runtime.error

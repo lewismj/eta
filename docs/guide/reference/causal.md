@@ -7,13 +7,13 @@
 > [!TIP]
 > **See also**
 >
-> - [`cookbook/causal/causal_demo.eta`](../../../cookbook/causal/causal_demo.eta) — gentle
->   end-to-end primer (3-node DAG, single confounder) combining symbolic
+> - [`cookbook/causal/causal_demo.eta`](../../../cookbook/causal/causal_demo.eta) — a
+>   compact end-to-end example (3-node DAG, single confounder) combining symbolic
 >   differentiation, do-calculus identification, `findall` + CLP
 >   validation, and a libtorch neural ATE.
 > - [Causal Counterfactual](./causal-counterfactual.md) - focused
 >   counterfactual reference for twin networks, ID*, IDC*, and ETT.
-> - [Portfolio](../../featured/portfolio.md) — full institutional pipeline:
+> - [Portfolio](../../featured/portfolio.md) — portfolio pipeline example:
 >   6-node macro DAG, AAD risk sensitivities, CLP(R) + QP allocation,
 >   scenario stress, dynamic control.
 
@@ -22,8 +22,8 @@
 ## Overview
 
 This page is the **API reference** for Eta's causal-inference stack.
-The implementation is research-grade and covers Pearl's identification
-and estimation surface end-to-end:
+It covers the identification and estimation modules and shows how the
+pieces fit together:
 
 | Layer | Module |
 | :---- | :----- |
@@ -556,7 +556,7 @@ Once an estimand is identified, two estimation surfaces are available:
 
 1. **Plug-in stratified adjustment** — bundled in `std.causal`,
    evaluates the back-door formula directly from the data.
-2. **Modern estimators** — in `std.causal.estimate`:
+2. **Extended estimators** — in `std.causal.estimate`:
    g-formula, IPW, AIPW, TMLE, plus bootstrap CIs and sensitivity tools.
 
 ### 1. Plug-in adjustment (`std.causal`)
@@ -580,7 +580,7 @@ E[Y | do(X=x)] = Σ_s  E[Y | X=x, sector=s]  ·  P(sector=s)
 ;; => sample mean of stock-return in the tech stratum
 ```
 
-### 2. Modern estimators (`std.causal.estimate`)
+### 2. Extended estimators (`std.causal.estimate`)
 
 For practical ATE estimation on binary-treatment observational data:
 

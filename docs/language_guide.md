@@ -58,11 +58,10 @@
 
 Eta is a Lisp/Scheme-like language with a hygienic macro system and a
 stack-based bytecode VM that uses NaN-boxing for value representation.
-The same VM hosts a wide range of capabilities  the symbolic core,
-logic programming, constraint logic programming (CLP), automatic
-adjoint differentiation, statistics, neural networks, causal inference,
-and BEAM-like actor concurrenc  delivered as first-class language features
-or as packaged `std.*` modules.
+The same VM supports symbolic programming, logic and constraint solving
+(CLP), automatic differentiation, statistics, neural-network workflows,
+causal inference, and BEAM-like actor concurrency through language
+features and `std.*` modules.
 
 ### Toolchain
 
