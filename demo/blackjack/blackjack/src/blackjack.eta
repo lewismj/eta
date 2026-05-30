@@ -54,6 +54,7 @@
     trace-row->alist
     simulate-profiled
     simulate
+    simulate-summary-only
     simulate-summary
     replay-deterministic
     replay-worker-parity

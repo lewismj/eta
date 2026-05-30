@@ -539,6 +539,110 @@ BOOST_AUTO_TEST_CASE(actor_spawned_closure_resumes_across_budget_slices) {
     BOOST_TEST(harness.as_int(result) == 80000);
 }
 
+BOOST_AUTO_TEST_CASE(actor_spawned_closure_blackjack_like_round_kernel_runs_across_schedulers) {
+    constexpr std::array<std::string_view, 3> kSchedulerModes{
+        "thread-per-actor",
+        "pool",
+        "pool-shadow"};
+
+    for (const auto mode : kSchedulerModes) {
+        ScopedEnvVar scheduler_mode("ETA_ACTOR_SCHEDULER", std::string(mode));
+        ScopedEnvVar reduction_budget("ETA_ACTOR_REDUCTION_BUDGET", "2000");
+
+        ActorHarness harness;
+        auto result = harness.run_module(R"eta(
+(module actor.runtime.spawn.blackjack.like
+  (import std.actor)
+
+  (define hi-lo-weights (vector -1 1 1 1 1 1 0 0 0 -1 -1 -1 -1))
+
+  (defun normalize-seed (seed)
+    (let ((s (modulo (+ (abs seed) 1) 2147483647)))
+      (if (= s 0) 1 s)))
+
+  (defun lcg-next (seed)
+    (let ((s (if (<= seed 0) 1 seed)))
+      (modulo (* 48271 s) 2147483647)))
+
+  (defun mix-seed (seed round-index)
+    (normalize-seed
+      (+ (* 1103515245 (+ seed 1))
+         (* 12345 (+ round-index 1)))))
+
+  (defun fresh-counts ()
+    (vector 24 24 24 24 24 24 24 24 24 24 24 24 24))
+
+  (defun fresh-shoe (seed)
+    (vector (fresh-counts) 312 0 (normalize-seed seed)))
+
+  (defun draw-index (counts pick)
+    (let loop ((i 0) (acc 0))
+      (if (= i 13)
+          12
+          (let ((next (+ acc (vector-ref counts i))))
+            (if (<= pick next)
+                i
+                (loop (+ i 1) next))))))
+
+  (defun draw-card! (shoe)
+    (let ((remaining (vector-ref shoe 1)))
+      (if (= remaining 0)
+          0
+          (let* ((seed2 (lcg-next (vector-ref shoe 3)))
+                 (pick (+ 1 (modulo seed2 remaining)))
+                 (counts (vector-ref shoe 0))
+                 (idx (draw-index counts pick))
+                 (bucket (vector-ref counts idx))
+                 (rank (+ idx 1)))
+            (if (<= bucket 0)
+                0
+                (begin
+                  (vector-set! counts idx (- bucket 1))
+                  (vector-set! shoe 1 (- remaining 1))
+                  (vector-set! shoe 2 (+ (vector-ref shoe 2)
+                                         (vector-ref hi-lo-weights idx)))
+                  (vector-set! shoe 3 seed2)
+                  rank))))))
+
+  (defun play-until-17 (shoe total)
+    (let loop ((t total) (steps 0))
+      (if (or (>= t 17) (>= steps 16))
+          t
+          (loop (+ t (draw-card! shoe)) (+ steps 1)))))
+
+  (defun simulate-round! (shoe)
+    (let* ((dealer-up (draw-card! shoe))
+           (player-a (draw-card! shoe))
+           (dealer-hole (draw-card! shoe))
+           (player-b (draw-card! shoe))
+           (player-final (play-until-17 shoe (+ player-a player-b)))
+           (dealer-final (play-until-17 shoe (+ dealer-up dealer-hole))))
+      (- player-final dealer-final)))
+
+  (defun simulate-many (seed rounds)
+    (let loop ((i 0) (acc 0))
+      (if (= i rounds)
+          acc
+          (let* ((shoe (fresh-shoe (mix-seed seed i)))
+                 (score (simulate-round! shoe)))
+            (loop (+ i 1) (+ acc score))))))
+
+  (define me (self))
+  (spawn
+    (lambda ()
+      (send me (simulate-many 42 128))))
+  (define result (receive-after 5000)))
+)eta");
+
+        BOOST_TEST_CONTEXT("ETA_ACTOR_SCHEDULER=" << mode) {
+            BOOST_REQUIRE_MESSAGE(
+                result != eta::runtime::nanbox::False,
+                "timed out waiting for blackjack-like spawned actor result");
+            BOOST_TEST(harness.as_int(result) != 0);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(actor_scheduler_env_thread_per_actor_is_honored) {
     using eta::runtime::actor::ActorSystem;
 

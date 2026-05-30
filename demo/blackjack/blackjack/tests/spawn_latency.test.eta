@@ -1,0 +1,25 @@
+(module blackjack.tests.spawn_latency
+  (import std.test std.time std.actor)
+  (begin
+
+    (define suite
+      (make-group "spawn latency"
+        (list
+          (make-test "spawn sends ping to parent"
+            (lambda ()
+              (let* ((me (self))
+                     (t0 (time:monotonic-ms))
+                     (_worker
+                       (spawn
+                         (lambda ()
+                           (send/checked me '(ping)))))
+                     (msg (receive-match
+                            (lambda (m) (and (pair? m) (eq? (car m) 'ping)))
+                            180000
+                            (lambda () #f)))
+                     (t1 (time:monotonic-ms))
+                     (elapsed (time:elapsed-ms t0 t1)))
+                (assert-true msg)
+                (assert-true (>= elapsed 0))))))))
+
+    (print-tap (run suite))))

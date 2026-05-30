@@ -1,7 +1,7 @@
 {
   "seed": 42,
-  "induce_rounds": 240,
-  "induce_workers": 24,
+  "rollout_rounds": 240,
+  "rollout_workers": 24,
   "learn_mode": "supervised",
   "learn_epochs": 12,
   "learn_batch_size": 64,

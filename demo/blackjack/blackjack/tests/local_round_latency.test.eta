@@ -1,0 +1,18 @@
+(module blackjack.tests.local_round_latency
+  (import std.test mc)
+  (begin
+
+    (define suite
+      (make-group "local round latency"
+        (list
+          (make-test "local one-round simulate-shard latency"
+            (lambda ()
+              (let ((latency (debug-local-round-latency)))
+                (if (= latency -1)
+                    (error "local round failed")
+                    (if (> latency 5000)
+                        (error (string-append "local round latency-ms="
+                                              (number->string latency)))
+                        (assert-true #t)))))))))
+
+    (print-tap (run suite))))

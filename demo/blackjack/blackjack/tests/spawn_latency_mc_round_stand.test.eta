@@ -1,0 +1,22 @@
+(module blackjack.tests.spawn_latency_mc_round_stand
+  (import std.test mc)
+  (begin
+
+    (define suite
+      (make-group "spawn latency mc round stand"
+        (list
+          (make-test "spawn closure runs one stand-only round"
+            (lambda ()
+              (let ((worker-latency (debug-worker-round-stand-latency))
+                    (local-latency (debug-local-round-stand-latency)))
+                (if (= worker-latency -1)
+                    (error "mc round stand ping timed out")
+                    (if (> worker-latency 5000)
+                        (error (string-append
+                                 "mc round stand worker-latency-ms="
+                                 (number->string worker-latency)
+                                 ", local-latency-ms="
+                                 (number->string local-latency)))
+                        (assert-true #t)))))))))
+
+    (print-tap (run suite))))

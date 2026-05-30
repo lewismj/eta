@@ -228,7 +228,7 @@
                 (assert-true (contains? help "--workers"))
                 (assert-true (contains? help "--app-log"))
                 (assert-true (contains? help "app_log_path"))
-                (assert-true (contains? help "induce_workers")))))
+                (assert-true (contains? help "rollout_workers")))))
           (%make-logged-test "b7.1-workbook-api-exposes-step-flow"
             (lambda ()
               (let* ((overview (workbook-overview))
@@ -271,7 +271,7 @@
                            '("all" "--config" "tests/config/supervised_demo.json"
                              "--app-log" "smoke.test.log"))))
                 (assert-true (contains? out "Blackjack demo scaffold ready."))
-                (assert-true (contains? out "== induce =="))
+                (assert-true (contains? out "== rollout =="))
                 (assert-true (contains? out "== causal =="))
                 (assert-true (contains? out "== learn =="))
                 (assert-true (contains? out "== chart =="))
@@ -291,8 +291,8 @@
           (%make-logged-test "b7-single-smoke-log-path-is-used"
             (lambda ()
               (let* ((out (%run-command-logged
-                            "induce-auto-app-log"
-                            '("induce" "--config" "tests/config/supervised_demo.json"
+                            "rollout-auto-app-log"
+                            '("rollout" "--config" "tests/config/supervised_demo.json"
                               "--app-log" "auto")))
                      (path (%extract-app-log-path out)))
                 (assert-equal %smoke-log-path path)
@@ -314,7 +314,7 @@
                     (assert-true (contains? log-text "command-complete=all"))
                     (assert-true (contains? log-text "elapsed-ms="))
                     (assert-true (contains? log-text "total-elapsed-ms="))
-                    (assert-true (contains? log-text "induce-worker-profile"))
+                    (assert-true (contains? log-text "rollout-worker-profile"))
                     (assert-true (contains? log-text "learn-training-output-path="))
                     (assert-true (contains? log-text "report-summary="))))))
           (%make-logged-test "b7-unknown-subcommand-returns-runtime-error"

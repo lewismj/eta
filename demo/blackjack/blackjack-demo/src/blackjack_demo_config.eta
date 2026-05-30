@@ -24,7 +24,7 @@
               (list (cons 'choices '("joint" "supervised"))))
         '(help (--help -h) flag)))
 
-    (define %default-induce-rounds 200000)
+    (define %default-rollout-rounds 200000)
     (define %default-learn-epochs 24)
     (define %default-learn-batch-size 64)
 
@@ -65,10 +65,12 @@
     (defun resolve-run-config (parsed)
       (let* ((config-path (args:get parsed 'config))
              (file-cfg (%load-config-file config-path))
+             (legacy-induce-rounds (%cfg-ref file-cfg "induce_rounds" #f))
+             (legacy-induce-workers (%cfg-ref file-cfg "induce_workers" #f))
              (seed (%cfg-ref file-cfg "seed" (args:get parsed 'seed)))
              (app-log-path (%cfg-ref file-cfg "app_log_path" (args:get parsed 'app-log)))
              (run-name (%cfg-ref file-cfg "run_name" (args:get parsed 'run-name)))
-             (induce-workers (%cfg-ref file-cfg "induce_workers" (args:get parsed 'workers)))
+             (rollout-workers (%cfg-ref file-cfg "rollout_workers" (args:get parsed 'workers)))
              (learn-mode-name (%cfg-ref file-cfg "learn_mode" (args:get parsed 'learn)))
              (learn-epochs (%cfg-ref file-cfg "learn_epochs" %default-learn-epochs))
              (learn-batch-size (%cfg-ref file-cfg "learn_batch_size" %default-learn-batch-size))
@@ -78,30 +80,34 @@
              (learn-policy-refresh (%cfg-ref file-cfg
                                              "learn_policy_refresh"
                                              (%default-policy-refresh learn-mode-name)))
-             (induce-rounds (%cfg-ref file-cfg "induce_rounds" %default-induce-rounds)))
+             (rollout-rounds (%cfg-ref file-cfg "rollout_rounds" %default-rollout-rounds)))
         (learn-mode-from-string learn-mode-name)
-        (if (<= induce-rounds 0)
-            (error "blackjack-demo: induce_rounds must be positive")
-            (if (<= induce-workers 0)
-                (error "blackjack-demo: induce_workers must be positive")
-                (hash-map
-                  'config-path config-path
-                  'seed seed
-                  'app-log-path app-log-path
-                  'run-name run-name
-                  'induce-workers induce-workers
-                  'learn-mode learn-mode-name
-                  'learn-epochs learn-epochs
-                  'learn-batch-size learn-batch-size
-                  'learn-learning-rate learn-learning-rate
-                  'learn-policy-refresh learn-policy-refresh
-                  'induce-rounds induce-rounds)))))
+        (if legacy-induce-rounds
+            (error "blackjack-demo: config key induce_rounds is no longer supported; use rollout_rounds")
+            (if legacy-induce-workers
+                (error "blackjack-demo: config key induce_workers is no longer supported; use rollout_workers")
+                (if (<= rollout-rounds 0)
+                    (error "blackjack-demo: rollout_rounds must be positive")
+                    (if (<= rollout-workers 0)
+                        (error "blackjack-demo: rollout_workers must be positive")
+                        (hash-map
+                          'config-path config-path
+                          'seed seed
+                          'app-log-path app-log-path
+                          'run-name run-name
+                          'rollout-workers rollout-workers
+                          'learn-mode learn-mode-name
+                          'learn-epochs learn-epochs
+                          'learn-batch-size learn-batch-size
+                          'learn-learning-rate learn-learning-rate
+                          'learn-policy-refresh learn-policy-refresh
+                          'rollout-rounds rollout-rounds)))))))
 
     (defun run-cfg-ref (cfg key)
       (hash-map-ref cfg key))
 
     (defun timed-command? (command)
-      (or (string=? command "induce")
+      (or (string=? command "rollout")
           (string=? command "causal")
           (string=? command "learn")
           (string=? command "chart")
@@ -113,7 +119,7 @@
       (string-append
         (args:help cli-spec "blackjack-demo <subcommand>")
         "\nsubcommands:\n"
-        "  induce   generate deterministic trace summary and rule surface\n"
+        "  rollout  generate deterministic trace summary and rule surface\n"
         "  causal   print do() EV sweep and action flip threshold\n"
         "  learn    run weight recovery and print normalized weights\n"
         "  chart    render multi-bucket strategy charts\n"
@@ -121,11 +127,11 @@
         "  report   run full pipeline and include bottleneck report\n"
         "  all      run the full pipeline in order\n"
         "\njson config keys:\n"
-        "  seed, app_log_path, run_name, induce_rounds, induce_workers, learn_mode, learn_epochs,\n"
+        "  seed, app_log_path, run_name, rollout_rounds, rollout_workers, learn_mode, learn_epochs,\n"
         "  learn_batch_size, learn_learning_rate, learn_policy_refresh\n"
         "\nrollout scaling:\n"
-        "  --workers <n> controls in-proc actor workers for induce (default: 8)\n"
-        "  induce writes worker timing profiles into the app log\n"
+        "  --workers <n> controls in-proc actor workers for rollout (default: 8)\n"
+        "  rollout writes worker timing profiles into the app log\n"
         "\napp log:\n"
         "  --app-log auto|off|<path> (default: auto timestamped file)\n"
         "  --run-name <name-or-path> forces auto log path to <run-name>.log\n"

@@ -1,0 +1,18 @@
+(module blackjack.tests.spawn_latency_mc_bootstrap
+  (import std.test mc)
+  (begin
+
+    (define suite
+      (make-group "spawn latency mc bootstrap"
+        (list
+          (make-test "spawn closure that references simulate-shard"
+            (lambda ()
+              (let ((latency (debug-worker-bootstrap-latency)))
+                (if (= latency -1)
+                    (error "mc bootstrap ping timed out")
+                    (if (> latency 5000)
+                        (error (string-append "mc bootstrap latency-ms="
+                                              (number->string latency)))
+                        (assert-true #t)))))))))
+
+    (print-tap (run suite))))

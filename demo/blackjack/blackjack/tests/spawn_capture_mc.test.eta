@@ -1,0 +1,29 @@
+(module blackjack.tests.spawn_capture_mc
+  (import std.test std.time std.actor blackjack)
+  (begin
+
+    (define suite
+      (make-group "spawn capture mc"
+        (list
+          (make-test "spawn captures cfg and policy"
+            (lambda ()
+              (let* ((me (self))
+                     (cfg (make-mc-shoe 42))
+                     (policy policy-hit-below-17)
+                     (t0 (time:monotonic-ms))
+                     (_worker
+                       (spawn
+                         (lambda ()
+                           (let ((_ok (mc-shoe? cfg))
+                                 (_a (policy 16 10 #f 0)))
+                             (send/checked me '(ping))))))
+                     (msg (receive-match
+                            (lambda (m) (and (pair? m) (eq? (car m) 'ping)))
+                            180000
+                            (lambda () #f)))
+                     (t1 (time:monotonic-ms))
+                     (elapsed (time:elapsed-ms t0 t1)))
+                (assert-true msg)
+                (assert-true (>= elapsed 0))))))))
+
+    (print-tap (run suite))))

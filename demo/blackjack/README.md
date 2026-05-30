@@ -6,7 +6,7 @@ This directory contains the blackjack demo packages defined in
 ## Packages
 
 - [`blackjack/`](blackjack/README.md): library package with deterministic shoe/rules, causal checks, learning, strategy charts, and maxim induction.
-- [`blackjack-demo/`](blackjack-demo/README.md): app package with the `induce|causal|learn|chart|maxims|report|all` CLI.
+- [`blackjack-demo/`](blackjack-demo/README.md): app package with the `rollout|causal|learn|chart|maxims|report|all` CLI.
 - [`notebooks/`](notebooks/README.md): optional Jupyter notebook wrapper with explicit `run-step-1/2/3` workbook calls.
 
 ## Quick run (copy/paste)
@@ -23,7 +23,7 @@ eta run -- all --config tests/config/supervised_demo.json
 
 The `all` command prints deterministic section headers:
 
-- `== induce ==`
+- `== rollout ==`
 - `== causal ==`
 - `== learn ==`
 - `== chart ==`

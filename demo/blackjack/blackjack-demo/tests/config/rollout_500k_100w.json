@@ -1,0 +1,5 @@
+{
+  "seed": 42,
+  "rollout_rounds": 500000,
+  "rollout_workers": 100
+}

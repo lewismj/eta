@@ -3,7 +3,7 @@
     startup-message
     chart-output
     timed-section
-    render-induce
+    render-rollout
     render-causal
     render-learn
     render-chart
@@ -103,10 +103,12 @@
       (string-append
         "worker=worker_"
         (number->string (%alist-get 'worker-id stat))
-        ", shard-start="
-        (number->string (%alist-get 'shard-start stat))
-        ", shard-count="
-        (number->string (%alist-get 'shard-count stat))
+        ", worker-start="
+        (number->string (%alist-get 'worker-start stat))
+        ", worker-rounds="
+        (number->string (%alist-get 'worker-rounds stat))
+        ", chunk-count="
+        (number->string (%alist-get 'chunk-count stat))
         ", produced="
         (number->string (%alist-get 'rows stat))
         ", elapsed-ms="
@@ -123,38 +125,37 @@
                 #t
                 (begin
                   (log-session-write session
-                                     (string-append "induce-worker-profile, "
+                                     (string-append "rollout-worker-profile, "
                                                     (%worker-profile-line (car rest))))
                   (loop (cdr rest)))))
           #f))
 
-    (defun render-induce (run-cfg . rest)
+    (defun render-rollout (run-cfg . rest)
       (let* ((session (if (null? rest) #f (car rest)))
              (seed (run-cfg-ref run-cfg 'seed))
-             (rounds (run-cfg-ref run-cfg 'induce-rounds))
-             (workers (run-cfg-ref run-cfg 'induce-workers))
+             (rounds (run-cfg-ref run-cfg 'rollout-rounds))
+             (workers (run-cfg-ref run-cfg 'rollout-workers))
              (cfg (make-mc-shoe seed))
              (worker-log-prefix
                (if session
-                   (string-append (log-session-path session) ".induce")
+                   (string-append (log-session-path session) ".rollout")
                    ""))
              (progress-hook (if session
                                 (lambda (message)
                                   (log-session-write session
                                                      (string-append
-                                                       "induce-progress="
+                                                       "rollout-progress="
                                                        message)))
                                 #f))
-              (profile (simulate-profiled policy-hit-below-17
-                                          cfg
-                                          rounds
-                                          workers
-                                          worker-log-prefix
-                                          progress-hook))
-             (rows (%alist-get 'rows profile))
-             (summary (simulate-summary rows))
-             (worker-stats (%alist-get 'worker-stats profile))
-             (worker-lines (map* %worker-profile-line worker-stats))
+              (profile (simulate-summary-only policy-hit-below-17
+                                              cfg
+                                              rounds
+                                              workers
+                                              worker-log-prefix
+                                              progress-hook))
+              (summary (%alist-get 'summary profile))
+              (worker-stats (%alist-get 'worker-stats profile))
+              (worker-lines (map* %worker-profile-line worker-stats))
              (worker-block (if (null? worker-lines)
                                "worker-profiles=none"
                                (string-append
@@ -169,21 +170,23 @@
           "\nrounds="
           (number->string rounds)
           "\nworkers="
-          (number->string workers)
+          (number->string (%alist-get 'workers profile))
+          "\nworkers-requested="
+          (number->string (%alist-get 'workers-requested profile))
+          "\nchunk-count="
+          (number->string (%alist-get 'chunk-count profile))
           "\nworker-log-prefix="
           (if (> (string-length worker-log-prefix) 0)
               worker-log-prefix
               "off")
           "\nsummary="
           (display->string summary)
-          "\ndispatch-ms="
-          (number->string (%alist-get 'dispatch-ms profile))
+          "\nspawn-ms="
+          (number->string (%alist-get 'spawn-ms profile))
           "\ncollect-ms="
           (number->string (%alist-get 'collect-ms profile))
-          "\ncleanup-ms="
-          (number->string (%alist-get 'cleanup-ms profile))
-          "\nflatten-ms="
-          (number->string (%alist-get 'flatten-ms profile))
+          "\nassemble-ms="
+          (number->string (%alist-get 'assemble-ms profile))
           "\nworker-elapsed-ms-total="
           (number->string (%alist-get 'worker-elapsed-ms-total profile))
           "\nworker-elapsed-ms-max="
@@ -351,7 +354,7 @@
                             #f))
              (total-start (time:monotonic-ms))
              (phases (list
-                       (%timed-phase "induce" (lambda () (render-induce run-cfg session))
+                       (%timed-phase "rollout" (lambda () (render-rollout run-cfg session))
                                      on-start on-finish)
                        (%timed-phase "causal" (lambda () (render-causal run-cfg))
                                      on-start on-finish)

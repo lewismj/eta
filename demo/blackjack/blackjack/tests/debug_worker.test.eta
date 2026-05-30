@@ -1,0 +1,29 @@
+(module blackjack.tests.debug_worker
+  (import std.test std.time std.fs std.core blackjack)
+  (begin
+    (defun alist-get (key rows)
+      (let ((pair (assoc key rows)))
+        (if (non-pair? pair) #f (cdr pair))))
+
+    (define suite
+      (make-group "debug worker"
+        (list
+          (make-test "simulate-profiled one-round one-worker"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 42))
+                     (t0 (time:monotonic-ms))
+                     (profile
+                       (simulate-profiled
+                         policy-hit-below-17
+                         cfg
+                         1
+                         1))
+                     (t1 (time:monotonic-ms))
+                     (elapsed (time:elapsed-ms t0 t1))
+                     (rows (alist-get 'rows profile))
+                     (stats (alist-get 'worker-stats profile)))
+                (assert-equal 1 (length rows))
+                (assert-equal 1 (length stats))
+                (assert-true (>= elapsed 0))))))))
+
+    (print-tap (run suite))))

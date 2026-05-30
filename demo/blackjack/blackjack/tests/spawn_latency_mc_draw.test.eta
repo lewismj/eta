@@ -1,0 +1,22 @@
+(module blackjack.tests.spawn_latency_mc_draw
+  (import std.test mc)
+  (begin
+
+    (define suite
+      (make-group "spawn latency mc draw"
+        (list
+          (make-test "spawn closure draws one card"
+            (lambda ()
+              (let ((worker-latency (debug-worker-draw-latency))
+                    (local-latency (debug-local-draw-latency)))
+                (if (= worker-latency -1)
+                    (error "mc draw ping timed out")
+                    (if (> worker-latency 5000)
+                        (error (string-append
+                                 "mc draw worker-latency-ms="
+                                 (number->string worker-latency)
+                                 ", local-latency-ms="
+                                 (number->string local-latency)))
+                        (assert-true #t)))))))))
+
+    (print-tap (run suite))))

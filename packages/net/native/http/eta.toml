@@ -15,7 +15,7 @@ entry = "eta_register_http_extension_v1"
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
 artifact = "libs/amd64/eta_http.dll"
-sha256 = "231f383e5dae38e7d6fa2908e7b0178bccc1a52389f50f7fe304e632e8f65a10"
+sha256 = "1ad97d87fadb244830303fd7462fa5b7786c38d1caaf3a3e0ac0b2acacf807f3"
 
 [[native.targets]]
 triple = "x86_64-unknown-linux-gnu"

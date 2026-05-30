@@ -87,6 +87,14 @@
                 (assert-true (>= (alist-get 'worker-elapsed-ms-total profile)
                                  (alist-get 'worker-elapsed-ms-max profile))))))
 
+          (make-test "simulate-profiled uses requested worker count, not shard count"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 27))
+                     (profile (simulate-profiled policy-hit-below-17 cfg 2000 2))
+                     (stats (alist-get 'worker-stats profile)))
+                (assert-equal 2 (alist-get 'workers profile))
+                (assert-equal 2 (length stats)))))
+
           (make-test "single-worker budget-boundary shard completes"
             (lambda ()
               (let* ((cfg (make-mc-shoe 42))
@@ -111,6 +119,19 @@
                      (stats (alist-get 'worker-stats profile)))
                 (assert-equal 240 (length rows))
                 (assert-equal 24 (length stats)))))
+
+          (make-test "simulate-summary-only skips row accumulation"
+            (lambda ()
+              (let* ((cfg (make-mc-shoe 59))
+                     (profile (simulate-summary-only
+                                policy-hit-below-17
+                                cfg
+                                120
+                                4))
+                     (rows (alist-get 'rows profile))
+                     (summary (alist-get 'summary profile)))
+                (assert-equal 0 (length rows))
+                (assert-equal 120 (alist-get 'rounds summary)))))
 
           (make-test "simulate can emit per-worker log files"
             (lambda ()

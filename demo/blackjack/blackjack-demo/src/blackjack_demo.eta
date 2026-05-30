@@ -55,9 +55,9 @@
                                        (string=? command "-h")
                                        (string=? command "--help"))
                                    (cli-help))
-                                  ((string=? command "induce")
-                                   (timed-section "induce"
-                                                  (lambda () (render-induce run-cfg session))
+                                  ((string=? command "rollout")
+                                   (timed-section "rollout"
+                                                  (lambda () (render-rollout run-cfg session))
                                                   on-start
                                                   on-finish))
                                   ((string=? command "causal")

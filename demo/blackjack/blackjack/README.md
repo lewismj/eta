@@ -14,7 +14,7 @@ Library package for the blackjack demo.
 - `src/mc.eta`
   - compact rollout core (`[13]` rank-count vector and fixed-size hand tuple)
   - frozen trace schema: `blackjack-trace-v1`
-  - deterministic in-proc actor sharding (default `8` workers) with replay checks
+  - deterministic in-proc actor rollout (one actor per requested worker, with internal chunking) and replay checks
 - `src/causal.eta`
   - causal DAG declaration via `std.causal.render/define-dag`
   - observational EV (`ev-obs`) and interventional EV (`ev-do`) for hit/stand

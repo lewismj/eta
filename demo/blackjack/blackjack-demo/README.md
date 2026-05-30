@@ -6,7 +6,7 @@ Executable package for the blackjack demo.
 
 ```console
 eta run -- help
-eta run -- induce --config tests/config/supervised_demo.json
+eta run -- rollout --config tests/config/supervised_demo.json
 eta run -- causal --config tests/config/supervised_demo.json
 eta run -- learn --config tests/config/supervised_demo.json
 eta run -- chart --config tests/config/supervised_demo.json
@@ -41,14 +41,14 @@ Step source locations:
 - `src/blackjack_demo.eta`: thin CLI entrypoint and command dispatch.
 - `src/blackjack_demo_config.eta`: CLI spec + JSON/run config resolution.
 - `src/blackjack_demo_logging.eta`: app-log session handling and phase log lines.
-- `src/blackjack_demo_render.eta`: induce/causal/learn/chart/maxims/report rendering.
+- `src/blackjack_demo_render.eta`: rollout/causal/learn/chart/maxims/report rendering.
 - `src/blackjack_workbook.eta`: explicit step-by-step notebook/workbook API.
 
 Supported options:
 
 - `--config <path>`: JSON config for seed + ML settings
 - `--seed <n>`: seed fallback/override when `--config` is not used
-- `--workers <n>`: in-proc actor workers for induce rollouts (default: `8`)
+- `--workers <n>`: in-proc actor workers for rollout simulation (default: `8`)
 - `--app-log <auto|off|path>`: app timing log destination (default: `auto`)
 - `--learn <joint|supervised>`: mode fallback/override when `--config` is not used
 
@@ -56,8 +56,8 @@ Config keys read from JSON:
 
 - `seed`
 - `app_log_path`
-- `induce_rounds`
-- `induce_workers`
+- `rollout_rounds`
+- `rollout_workers`
 - `learn_mode`
 - `learn_epochs`
 - `learn_batch_size`
@@ -65,19 +65,19 @@ Config keys read from JSON:
 - `learn_policy_refresh`
 
 Defaults are tuned for performance profiling:
-`induce_rounds=200000`, `induce_workers=8`.
+`rollout_rounds=200000`, `rollout_workers=8`.
 The test config (`tests/config/supervised_demo.json`) keeps
-`induce_rounds=64` for fast smoke runs.
+`rollout_rounds=64` for fast smoke runs.
 
 Each section prints `elapsed-ms=...`, and `all`/`report` print `total-elapsed-ms=...`.
 Timed commands persist progress and timings to a timestamped app log:
 `blackjack-demo-<command>-<seed>-<epoch_ms>.log`.
-Induce worker timing profiles are written into the app log with timestamps.
+Rollout worker timing profiles are written into the app log with timestamps.
 `learn` output embeds the Torch training log content and file path.
 Use `--app-log off` (or `app_log_path: "off"`) to disable file logging.
 
 `all` and `report` run the full pipeline in this order:
-`induce -> causal -> learn -> chart -> maxims`.
+`rollout -> causal -> learn -> chart -> maxims`.
 
 ## Test/build
 

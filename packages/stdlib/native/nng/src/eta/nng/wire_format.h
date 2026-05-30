@@ -171,7 +171,7 @@ struct BinaryWriter {
         return !strict;
     }
 
-    bool write_heap_value(LispVal v) {
+    bool write_heap_value(LispVal v, std::vector<LispVal>& pending) {
         using namespace eta::runtime::memory::heap;
         auto id = ops::payload(v);
 
@@ -184,16 +184,19 @@ struct BinaryWriter {
         /// Cons cell
         if (auto* cons = heap.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
             write_u8(BT_HeapCons);
-            if (!write_value(cons->car)) return false;
-            if (!write_value(cons->cdr)) return false;
+            // Preserve wire order (car then cdr) with LIFO stack.
+            pending.push_back(cons->cdr);
+            pending.push_back(cons->car);
             return true;
         }
         /// Vector
         if (auto* vec = heap.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
             write_u8(BT_HeapVec);
             write_u32(static_cast<uint32_t>(vec->elements.size()));
-            for (auto elem : vec->elements)
-                if (!write_value(elem)) return false;
+            // Preserve element order with LIFO stack.
+            for (std::size_t i = vec->elements.size(); i > 0; --i) {
+                pending.push_back(vec->elements[i - 1]);
+            }
             return true;
         }
         /// ByteVector
@@ -216,60 +219,70 @@ struct BinaryWriter {
         return true;
     }
 
-    bool write_value(LispVal v) {
-        /// Sentinel values
-        if (v == Nil)   { write_u8(BT_Nil);   return true; }
-        if (v == True)  { write_u8(BT_True);  return true; }
-        if (v == False) { write_u8(BT_False); return true; }
+    bool write_value(LispVal root) {
+        std::vector<LispVal> pending;
+        pending.push_back(root);
 
-        if (!ops::is_boxed(v)) {
-            /// Raw double (including negative doubles)
-            write_u8(BT_Double);
-            write_f64(std::bit_cast<double>(v));
-            return true;
-        }
+        while (!pending.empty()) {
+            const LispVal v = pending.back();
+            pending.pop_back();
 
-        switch (ops::tag(v)) {
-            case Tag::Nil:
-            case Tag::TapeRef:
-                if (!fail_non_serializable(v)) return false;
-                write_u8(BT_Nil);
-                return true;
-            case Tag::Fixnum: {
-                write_u8(BT_Fixnum);
-                write_i64(ops::decode<int64_t>(v).value_or(0));
-                return true;
-            }
-            case Tag::Char: {
-                write_u8(BT_Char);
-                write_u32(static_cast<uint32_t>(ops::decode<char32_t>(v).value_or(0)));
-                return true;
-            }
-            case Tag::String: {
-                write_u8(BT_String);
-                auto sv = intern.get_string(ops::payload(v));
-                write_str(sv.value_or(""));
-                return true;
-            }
-            case Tag::Symbol: {
-                write_u8(BT_Symbol);
-                auto sv = intern.get_string(ops::payload(v));
-                write_str(sv.value_or(""));
-                return true;
-            }
-            case Tag::HeapObject: {
-                return write_heap_value(v);
-            }
-            case Tag::Nan: {
+            /// Sentinel values
+            if (v == Nil)   { write_u8(BT_Nil);   continue; }
+            if (v == True)  { write_u8(BT_True);  continue; }
+            if (v == False) { write_u8(BT_False); continue; }
+
+            if (!ops::is_boxed(v)) {
+                /// Raw double (including negative doubles)
                 write_u8(BT_Double);
-                write_f64(std::numeric_limits<double>::quiet_NaN());
-                return true;
+                write_f64(std::bit_cast<double>(v));
+                continue;
             }
-            default:
-                if (!fail_non_serializable(v)) return false;
-                write_u8(BT_Nil);
-                return true;
+
+            switch (ops::tag(v)) {
+                case Tag::Nil:
+                case Tag::TapeRef:
+                    if (!fail_non_serializable(v)) return false;
+                    write_u8(BT_Nil);
+                    continue;
+                case Tag::Fixnum: {
+                    write_u8(BT_Fixnum);
+                    write_i64(ops::decode<int64_t>(v).value_or(0));
+                    continue;
+                }
+                case Tag::Char: {
+                    write_u8(BT_Char);
+                    write_u32(static_cast<uint32_t>(ops::decode<char32_t>(v).value_or(0)));
+                    continue;
+                }
+                case Tag::String: {
+                    write_u8(BT_String);
+                    auto sv = intern.get_string(ops::payload(v));
+                    write_str(sv.value_or(""));
+                    continue;
+                }
+                case Tag::Symbol: {
+                    write_u8(BT_Symbol);
+                    auto sv = intern.get_string(ops::payload(v));
+                    write_str(sv.value_or(""));
+                    continue;
+                }
+                case Tag::HeapObject: {
+                    if (!write_heap_value(v, pending)) return false;
+                    continue;
+                }
+                case Tag::Nan: {
+                    write_u8(BT_Double);
+                    write_f64(std::numeric_limits<double>::quiet_NaN());
+                    continue;
+                }
+                default:
+                    if (!fail_non_serializable(v)) return false;
+                    write_u8(BT_Nil);
+                    continue;
+            }
         }
+        return true;
     }
 };
 
@@ -339,101 +352,156 @@ struct BinaryReader {
 
     std::expected<LispVal, RuntimeError> read_value() {
         uint8_t tag_byte;
-        if (!read_u8(tag_byte)) return err("truncated (missing tag byte)");
-
         using namespace memory::factory;
 
-        switch (static_cast<BinaryTag>(tag_byte)) {
-            case BT_Nil:   return Nil;
-            case BT_True:  return True;
-            case BT_False: return False;
+        struct PendingFrame {
+            enum class Kind { Cons, Vector };
+            Kind kind{Kind::Cons};
+            bool have_car{false};
+            LispVal car{Nil};
+            std::uint32_t expected_len{0};
+            std::vector<LispVal> elems{};
+        };
 
-            case BT_Fixnum: {
-                int64_t val;
-                if (!read_i64(val)) return err("truncated fixnum");
-                auto res = make_fixnum(heap, val);
-                if (!res) return std::unexpected(res.error());
-                return *res;
-            }
-            case BT_Double: {
-                double val;
-                if (!read_f64(val)) return err("truncated double");
-                auto enc = make_flonum(val);
-                if (!enc) return std::unexpected(enc.error());
-                return *enc;
-            }
-            case BT_Char: {
-                uint32_t cp;
-                if (!read_u32(cp)) return err("truncated char");
-                auto enc = ops::encode(static_cast<char32_t>(cp));
-                if (!enc) return std::unexpected(RuntimeError{enc.error()});
-                return *enc;
-            }
-            case BT_String: {
-                std::string s;
-                if (!read_str(s)) return err("truncated string");
-                auto res = make_string(heap, intern, s);
-                if (!res) return std::unexpected(res.error());
-                return *res;
-            }
-            case BT_Symbol: {
-                std::string s;
-                if (!read_str(s)) return err("truncated symbol");
-                auto res = make_symbol(intern, s);
-                if (!res) return std::unexpected(res.error());
-                return *res;
-            }
-            case BT_HeapCons: {
-                auto roots = heap.make_external_root_frame();
-                auto car = read_value();
-                if (!car) return car;
-                roots.push(*car);
-                auto cdr = read_value();
-                if (!cdr) return cdr;
-                roots.push(*cdr);
-                auto res = make_cons(heap, *car, *cdr);
-                if (!res) return std::unexpected(res.error());
-                return *res;
-            }
-            case BT_HeapVec: {
-                uint32_t len;
-                if (!read_u32(len)) return err("truncated vector length");
-                std::vector<LispVal> elems;
-                elems.reserve(len);
-                auto roots = heap.make_external_root_frame();
-                for (uint32_t i = 0; i < len; ++i) {
-                    auto elem = read_value();
-                    if (!elem) return elem;
-                    elems.push_back(*elem);
-                    roots.push(*elem);
+        std::vector<PendingFrame> frames;
+        frames.reserve(32);
+        auto roots = heap.make_external_root_frame();
+        std::optional<LispVal> current{};
+
+        while (true) {
+            if (current.has_value()) {
+                const LispVal produced = *current;
+                current.reset();
+                roots.push(produced);
+
+                if (frames.empty()) {
+                    return produced;
                 }
-                auto res = make_vector(heap, std::move(elems));
-                if (!res) return std::unexpected(res.error());
-                return *res;
+
+                auto& frame = frames.back();
+                if (frame.kind == PendingFrame::Kind::Cons) {
+                    if (!frame.have_car) {
+                        frame.car = produced;
+                        frame.have_car = true;
+                        continue;
+                    }
+
+                    auto cons = make_cons(heap, frame.car, produced);
+                    if (!cons) return std::unexpected(cons.error());
+                    frames.pop_back();
+                    current = *cons;
+                    continue;
+                }
+
+                frame.elems.push_back(produced);
+                if (frame.elems.size() == frame.expected_len) {
+                    auto vec = make_vector(heap, std::move(frame.elems));
+                    if (!vec) return std::unexpected(vec.error());
+                    frames.pop_back();
+                    current = *vec;
+                }
+                continue;
             }
-            case BT_ByteVec: {
-                uint32_t len;
-                if (!read_u32(len)) return err("truncated bytevector length");
-                if (pos + len > data.size()) return err("truncated bytevector data");
-                std::vector<uint8_t> bytes(data.begin() + pos, data.begin() + pos + len);
-                pos += len;
-                auto res = make_bytevector(heap, std::move(bytes));
-                if (!res) return std::unexpected(res.error());
-                return *res;
+
+            if (!read_u8(tag_byte)) return err("truncated (missing tag byte)");
+
+            switch (static_cast<BinaryTag>(tag_byte)) {
+                case BT_Nil:
+                    current = Nil;
+                    continue;
+                case BT_True:
+                    current = True;
+                    continue;
+                case BT_False:
+                    current = False;
+                    continue;
+
+                case BT_Fixnum: {
+                    int64_t val;
+                    if (!read_i64(val)) return err("truncated fixnum");
+                    auto res = make_fixnum(heap, val);
+                    if (!res) return std::unexpected(res.error());
+                    current = *res;
+                    continue;
+                }
+                case BT_Double: {
+                    double val;
+                    if (!read_f64(val)) return err("truncated double");
+                    auto enc = make_flonum(val);
+                    if (!enc) return std::unexpected(enc.error());
+                    current = *enc;
+                    continue;
+                }
+                case BT_Char: {
+                    uint32_t cp;
+                    if (!read_u32(cp)) return err("truncated char");
+                    auto enc = ops::encode(static_cast<char32_t>(cp));
+                    if (!enc) return std::unexpected(RuntimeError{enc.error()});
+                    current = *enc;
+                    continue;
+                }
+                case BT_String: {
+                    std::string s;
+                    if (!read_str(s)) return err("truncated string");
+                    auto res = make_string(heap, intern, s);
+                    if (!res) return std::unexpected(res.error());
+                    current = *res;
+                    continue;
+                }
+                case BT_Symbol: {
+                    std::string s;
+                    if (!read_str(s)) return err("truncated symbol");
+                    auto res = make_symbol(intern, s);
+                    if (!res) return std::unexpected(res.error());
+                    current = *res;
+                    continue;
+                }
+                case BT_HeapCons: {
+                    frames.push_back(PendingFrame{});
+                    continue;
+                }
+                case BT_HeapVec: {
+                    uint32_t len;
+                    if (!read_u32(len)) return err("truncated vector length");
+                    if (len == 0) {
+                        auto vec = make_vector(heap, {});
+                        if (!vec) return std::unexpected(vec.error());
+                        current = *vec;
+                        continue;
+                    }
+                    PendingFrame frame;
+                    frame.kind = PendingFrame::Kind::Vector;
+                    frame.expected_len = len;
+                    frame.elems.reserve(len);
+                    frames.push_back(std::move(frame));
+                    continue;
+                }
+                case BT_ByteVec: {
+                    uint32_t len;
+                    if (!read_u32(len)) return err("truncated bytevector length");
+                    if (pos + len > data.size()) return err("truncated bytevector data");
+                    std::vector<uint8_t> bytes(data.begin() + pos, data.begin() + pos + len);
+                    pos += len;
+                    auto res = make_bytevector(heap, std::move(bytes));
+                    if (!res) return std::unexpected(res.error());
+                    current = *res;
+                    continue;
+                }
+                case BT_Pid: {
+                    std::uint64_t node_id = 0;
+                    std::uint64_t actor_id = 0;
+                    std::uint32_t incarnation = 0;
+                    if (!read_u64(node_id)) return err("truncated pid node id");
+                    if (!read_u64(actor_id)) return err("truncated pid actor id");
+                    if (!read_u32(incarnation)) return err("truncated pid incarnation");
+                    auto res = make_pid(heap, types::Pid{node_id, actor_id, incarnation});
+                    if (!res) return std::unexpected(res.error());
+                    current = *res;
+                    continue;
+                }
+                default:
+                    return err("unknown binary tag");
             }
-            case BT_Pid: {
-                std::uint64_t node_id = 0;
-                std::uint64_t actor_id = 0;
-                std::uint32_t incarnation = 0;
-                if (!read_u64(node_id)) return err("truncated pid node id");
-                if (!read_u64(actor_id)) return err("truncated pid actor id");
-                if (!read_u32(incarnation)) return err("truncated pid incarnation");
-                auto res = make_pid(heap, types::Pid{node_id, actor_id, incarnation});
-                if (!res) return std::unexpected(res.error());
-                return *res;
-            }
-            default:
-                return err("unknown binary tag");
         }
     }
 };
