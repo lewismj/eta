@@ -71,8 +71,149 @@ $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = (Resolve-Path "$ScriptDir\..").Path
 $BuildDir    = Join-Path $ProjectRoot "build-release"
 
+function Get-VswherePath {
+    if (-not ${env:ProgramFiles(x86)}) { return $null }
+    $candidate = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $candidate) { return $candidate }
+    return $null
+}
+
+function Get-DefaultVsGenerator {
+    $vswhere = Get-VswherePath
+    if (-not $vswhere) { return $null }
+
+    try {
+        $versionRaw = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion 2>$null | Select-Object -First 1)
+        if (-not $versionRaw) { return $null }
+        $major = [int]($versionRaw -split '\.')[0]
+
+        # Pick a generator that matches both the installed VS major and this CMake.
+        $cmakeHelp = (& cmake --help 2>$null) -join "`n"
+        if (-not $cmakeHelp) { return $null }
+
+        $preferred = switch ($major) {
+            17 { "Visual Studio 17 2022" }
+            16 { "Visual Studio 16 2019" }
+            default { $null }
+        }
+
+        if ($preferred -and ($cmakeHelp -match [Regex]::Escape($preferred))) {
+            return $preferred
+        }
+
+        # VS 2026+ installs can still build through NMake in a dev shell.
+        if ($cmakeHelp -match [Regex]::Escape("NMake Makefiles")) {
+            return "NMake Makefiles"
+        }
+
+        return $null
+    } catch {
+        return $null
+    }
+}
+
+function Import-VsDevEnvironmentIfNeeded {
+    if (Get-Command cl -ErrorAction SilentlyContinue) { return }
+
+    $vswhere = Get-VswherePath
+    if (-not $vswhere) {
+        throw "MSVC compiler not found on PATH and vswhere.exe is missing. Install Visual Studio C++ Build Tools or run from a Developer Command Prompt."
+    }
+
+    $installPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
+    if (-not $installPath) {
+        throw "MSVC compiler not found on PATH and no Visual Studio C++ toolset installation was detected."
+    }
+
+    $vsDevCmd = Join-Path $installPath "Common7\Tools\VsDevCmd.bat"
+    if (-not (Test-Path $vsDevCmd)) {
+        throw "MSVC compiler not found on PATH and VsDevCmd.bat was not found at: $vsDevCmd"
+    }
+
+    $envDump = & cmd.exe /d /s /c "`"$vsDevCmd`" -no_logo -arch=x64 -host_arch=x64 && set"
+    foreach ($line in $envDump) {
+        if ($line -match '^(.*?)=(.*)$') {
+            Set-Item -Path "Env:$($Matches[1])" -Value $Matches[2]
+        }
+    }
+
+    if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
+        throw "Failed to import Visual Studio developer environment from: $vsDevCmd"
+    }
+
+    Write-Host "  Loaded Visual Studio developer environment (x64)."
+}
+
+function Reset-BuildDirOnGeneratorMismatch {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BuildDir,
+        [Parameter(Mandatory = $true)]
+        [string]$SelectedGenerator
+    )
+
+    if (-not (Test-Path $BuildDir)) { return }
+
+    $cachePath = Join-Path $BuildDir "CMakeCache.txt"
+    if (-not (Test-Path $cachePath)) { return }
+
+    $cachedLine = Get-Content $cachePath | Where-Object { $_ -like "CMAKE_GENERATOR:INTERNAL=*" } | Select-Object -First 1
+    if (-not $cachedLine) { return }
+
+    $cachedGenerator = ($cachedLine -split "=", 2)[1]
+    if ($cachedGenerator -and ($cachedGenerator -ne $SelectedGenerator)) {
+        Write-Host "  Existing build cache uses generator '$cachedGenerator'; resetting build directory for '$SelectedGenerator'." -ForegroundColor Yellow
+        Remove-Item -LiteralPath $BuildDir -Recurse -Force
+    }
+}
+
+function Test-IsVisualStudioGenerator {
+    param([string]$Generator)
+    return ($Generator -like "Visual Studio *")
+}
+
 if (-not $PSBoundParameters.ContainsKey("IncludeHttp")) {
     $IncludeHttp = ($env:ETA_INCLUDE_HTTP -eq "1")
+}
+
+Import-VsDevEnvironmentIfNeeded
+
+if (-not $env:VCPKG_DEFAULT_TRIPLET) {
+    $env:VCPKG_DEFAULT_TRIPLET = "x64-windows"
+}
+if (-not $env:VCPKG_TARGET_TRIPLET) {
+    $env:VCPKG_TARGET_TRIPLET = "x64-windows"
+}
+
+$GeneratorArg = @()
+$SelectedGenerator = $null
+if ($env:CMAKE_GENERATOR) {
+    $SelectedGenerator = $env:CMAKE_GENERATOR
+    $GeneratorArg += @("-G", $env:CMAKE_GENERATOR)
+    if ((Test-IsVisualStudioGenerator -Generator $env:CMAKE_GENERATOR) -and $env:CMAKE_GENERATOR_PLATFORM) {
+        $GeneratorArg += @("-A", $env:CMAKE_GENERATOR_PLATFORM)
+    }
+    if ((Test-IsVisualStudioGenerator -Generator $env:CMAKE_GENERATOR) -and $env:CMAKE_GENERATOR_TOOLSET) {
+        $GeneratorArg += @("-T", $env:CMAKE_GENERATOR_TOOLSET)
+    }
+} else {
+    $DefaultGenerator = Get-DefaultVsGenerator
+    if ($DefaultGenerator) {
+        $SelectedGenerator = $DefaultGenerator
+        $GeneratorArg += @("-G", $DefaultGenerator)
+        if (Test-IsVisualStudioGenerator -Generator $DefaultGenerator) {
+            $GeneratorArg += @("-A", "x64", "-T", "host=x64")
+            Write-Host "  Using default CMake generator: $DefaultGenerator (x64)"
+        } else {
+            Write-Host "  Using default CMake generator: $DefaultGenerator"
+        }
+    } else {
+        Write-Host "  [WARN] Unable to detect a Visual Studio generator; CMake default generator will be used." -ForegroundColor Yellow
+    }
+}
+
+if ($SelectedGenerator) {
+    Reset-BuildDirOnGeneratorMismatch -BuildDir $BuildDir -SelectedGenerator $SelectedGenerator
 }
 
 function Copy-VsRuntimeDllsToBin {
@@ -209,7 +350,7 @@ Write-Host ""
 
 # -- 1. Configure --------------------------------------------------------------
 Write-Host "> [1/6] Configuring CMake..."
-& cmake -B $BuildDir -DCMAKE_INSTALL_PREFIX="$Prefix" @ToolchainArg @TorchArg $ProjectRoot
+& cmake @GeneratorArg -B $BuildDir -DCMAKE_INSTALL_PREFIX="$Prefix" @ToolchainArg @TorchArg $ProjectRoot
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
 # -- 2. Build ------------------------------------------------------------------
