@@ -26,13 +26,14 @@ namespace {
     namespace eta::reader::lexer {
 
     /// Constructor
-    Lexer::Lexer(FileId file_id, std::string_view source)
+    Lexer::Lexer(FileId file_id, std::string_view source, const ScanObserver* observer)
         : file_id_(file_id)
         , source_(source)
         , pos_(0)
         , current_line_(1)
         , current_col_(1)
-        , at_bof_(true) {}
+        , at_bof_(true)
+        , observer_(observer) {}
 
     /// Error helper
     LexError Lexer::make_error(LexErrorKind kind, Position start, std::string msg, std::string_view detail) const {

@@ -81,12 +81,12 @@ eta_core                 existing reader, diagnostics, module/builtin metadata
 ### 2.1 Relationship to Eta's reader
 
 Reuse Eta's lexical recognisers and reader rules through a lossless scanning
-mode. The current `lexer::Lexer::next_token()` discards whitespace, ordinary
-comments and datum comments in `skip_whitespace_and_comments()`; simply wrapping
-its existing token stream cannot reconstruct source. Add a shared scanning
-entry point that exposes raw reader items while keeping the compiler's existing
-skip-trivia API and behaviour unchanged. Do not create a second independent
-language grammar for tooling.
+mode. `lexer::Lexer::next_token()` discards whitespace, ordinary comments and
+datum comments using `next_raw_item()` and `skip_datum()`; simply wrapping
+its token stream cannot reconstruct source. The shared `next_raw_item()` and
+`scan_next()` entry points expose raw reader items and actual discard boundaries
+while keeping the compiler's skip-trivia API and behaviour unchanged. Do not
+create a second independent language grammar for tooling.
 
 Phase 0 records the supported reader inventory from
 `eta/core/src/eta/reader/{lexer,parser}.{h,cpp}`, with fixtures and source references
@@ -236,15 +236,16 @@ accounted for. This is a permanent property test, not a one-off milestone.
 
 ## 3) Repository layout
 
+The CST subtree reflects Phase 0. The linter and formatter subtrees describe
+the later implementation phases.
+
 ```
 eta/
 ├── core/
-│   └── src/eta/cst/                  # NEW shared CST + trivia
+│   └── src/eta/cst/                  # shared CST + trivia
 │       ├── source.h / .cpp   # immutable source and position maps
-│       ├── token.h / .cpp    # lossless scanning and raw tokens
-│       ├── trivia.h / .cpp
-│       ├── node.h   / .cpp
-│       ├── parse.h  / .cpp
+│       ├── parse.h  / .cpp   # tokens, trivia, nodes, scanning and recovery
+│       ├── diagnostic.h / .cpp # native diagnostic adaptation
 │       └── bridge_sexpr.h / .cpp
 └── tools/
     ├── linter/                       # eta_lint
@@ -1484,6 +1485,25 @@ not gain extra rules or editor features to work around uncertain semantics.
 
 ### Phase 0 — Shared foundation
 
+**Status: complete (2026-10-11).** The Windows MSVC Release `eta_all` build
+and all 15 CTest targets pass. The strengthened CST differential suite passes
+10 cases and 14,229 assertions, including all 191 present corpus files,
+supported reader constructs, malformed recovery and seeded arbitrary bytes.
+The [recorded baseline](../benchmarks/tooling_baseline.json) includes all size
+bins, memory accounting and cancellation measurements; maximum cancellation
+p95 is 1.9866 ms against the 50 ms gate. Clang/libFuzzer execution remains a
+platform-specific validation task; its target is wired, while the deterministic
+property suite runs on MSVC.
+
+Implementation and audit: [lossless reader foundation](../cst_reader.md),
+[native diagnostic inventory](../tooling_diagnostics.md),
+[benchmark manifest](../benchmarks/tooling_manifest.json), and
+[rule schema](../../eta/tools/linter/rules/schema.json).
+The audit records compiler BOM rejection and incomplete UTF-8 validation in
+comments/bar identifiers; these inputs retain all bytes and remain ineligible
+for formatting. The current checkout has no `demo` source directory, which the
+manifest records explicitly.
+
 1. Audit and document actual reader/module/binding behaviour with source references
    and independent fixtures. Record selected reader configurations/state traces and
    unsupported constructs.
@@ -1619,7 +1639,7 @@ minimum number of unproven rules.
 - [ ] CMake builds targets `eta_linter` / `eta_formatter` producing `eta_lint` /
       `eta_fmt`; installed executables and runtime dependencies work without a
       checkout. Three internal static libraries exist; LSP links the tool libraries.
-- [ ] Reader inventory/modes, lossless tokens and unique trivia ownership,
+- [x] Reader inventory/modes, lossless tokens and unique trivia ownership,
       datum-comment/prefix structure, spans, lifetimes and recovery are documented
       and tested, including BOM/shebang byte ownership, selected reader configurations
       and directive/state traces, plus adversarial/malformed inputs within limits.

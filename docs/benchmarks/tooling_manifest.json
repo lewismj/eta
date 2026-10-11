@@ -1,0 +1,1222 @@
+{
+  "corpora": {
+    "cookbook": 73,
+    "demo": 0,
+    "stdlib": 118
+  },
+  "corpus_revision": "9c86bfec2bd3fabf4fe0b300cd05c2972761a611",
+  "files": [
+    {
+      "bin": "medium",
+      "bytes": 8578,
+      "path": "stdlib/std/aad.eta",
+      "sha256": "84a03f0ba8712174f19adb02fdf4a263b348aa5871b8a8e7bbf4402a63a6e178"
+    },
+    {
+      "bin": "medium",
+      "bytes": 14576,
+      "path": "stdlib/std/actor/gen_server.eta",
+      "sha256": "d216c8fd3d56d1d32f549a2a916b7524d5d7f808e87df99b4052af87b92c2083"
+    },
+    {
+      "bin": "small",
+      "bytes": 584,
+      "path": "stdlib/std/actor/node.eta",
+      "sha256": "fcfe1fa173c242cd538e43dce7d3a6ac1cc566be1d89346c3c2138772ec7b061"
+    },
+    {
+      "bin": "medium",
+      "bytes": 14988,
+      "path": "stdlib/std/actor/supervisor.eta",
+      "sha256": "0622e0469363f25cf4568e7aca94e85f57de529f1008d11af1aed884b8a90fb6"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4251,
+      "path": "stdlib/std/actor.eta",
+      "sha256": "cb5fa4811d4b5f31709a1c71e6e1a039d8bdf75158f850a775edc6eb6975ae87"
+    },
+    {
+      "bin": "medium",
+      "bytes": 27720,
+      "path": "stdlib/std/args.eta",
+      "sha256": "8eb78c8c6436047e4965b8482330a17ef06061351744be44fe1e9a020484b969"
+    },
+    {
+      "bin": "small",
+      "bytes": 959,
+      "path": "stdlib/std/atom.eta",
+      "sha256": "2647047a9de9afb61fe5d184f09f324b6325d5fa9a857248a39a22d240f7b675"
+    },
+    {
+      "bin": "medium",
+      "bytes": 25100,
+      "path": "stdlib/std/causal/adjustment.eta",
+      "sha256": "0d6d5d9cf4be4917527dadd187f38acb3d4611941a3e5b13fc0ef41cf4f15fb8"
+    },
+    {
+      "bin": "medium",
+      "bytes": 20922,
+      "path": "stdlib/std/causal/admg.eta",
+      "sha256": "6e092a76d89c500254eccfabb6deb425f4c7d0e60bb720a0f2fa542b715d339f"
+    },
+    {
+      "bin": "medium",
+      "bytes": 22734,
+      "path": "stdlib/std/causal/cate.eta",
+      "sha256": "9839dc27c2ebc3375041f8951b011ce69ffa7ae4f0bf98a2f9f97b44c227c5cc"
+    },
+    {
+      "bin": "medium",
+      "bytes": 15585,
+      "path": "stdlib/std/causal/counterfactual.eta",
+      "sha256": "2dc279e67d809882249ec5efa7bdb3a4177c961b2fba3d640081f1bb55852a9f"
+    },
+    {
+      "bin": "medium",
+      "bytes": 18717,
+      "path": "stdlib/std/causal/crossfit.eta",
+      "sha256": "fe36f8d4dd01fb2257bf67bf618740e41e17d24dc27166fa38aec871d36af38c"
+    },
+    {
+      "bin": "medium",
+      "bytes": 20224,
+      "path": "stdlib/std/causal/estimate.eta",
+      "sha256": "08cedc97f80ed45c81cda4af71e9bf41b54e4795689225940110eaa484908762"
+    },
+    {
+      "bin": "medium",
+      "bytes": 16159,
+      "path": "stdlib/std/causal/forest.eta",
+      "sha256": "658bffb8506fdbcc77dd551d1c0bc99d005933bb0d961180fe2a1edc63b1de35"
+    },
+    {
+      "bin": "medium",
+      "bytes": 32467,
+      "path": "stdlib/std/causal/identify.eta",
+      "sha256": "c1236dc191091089a30388d915470d6e4c609dd893185b193f42b353695a3a21"
+    },
+    {
+      "bin": "medium",
+      "bytes": 35916,
+      "path": "stdlib/std/causal/learn.eta",
+      "sha256": "33c88917299f980caeb14c9937aedf7aba0c2d280167c605404ade7b4df4407e"
+    },
+    {
+      "bin": "medium",
+      "bytes": 10084,
+      "path": "stdlib/std/causal/mediation.eta",
+      "sha256": "9de982bb8effed091703fa31a86148353f94d1071815dbfae6cbcf9fe76a5775"
+    },
+    {
+      "bin": "medium",
+      "bytes": 16307,
+      "path": "stdlib/std/causal/policy.eta",
+      "sha256": "a88a03d3e332a6ba5b6077f3b0310e19285790a80f30403f6a56c9168eb1ac14"
+    },
+    {
+      "bin": "medium",
+      "bytes": 20019,
+      "path": "stdlib/std/causal/render.eta",
+      "sha256": "7521f7874bcb8cc207f819da9e158fa0d6bf2862724fb80988789cd55af412e1"
+    },
+    {
+      "bin": "medium",
+      "bytes": 19957,
+      "path": "stdlib/std/causal/transport.eta",
+      "sha256": "80258f0420aa9f914437b0d79f8d109043d04f2d3a06731a1fdc7a366352095f"
+    },
+    {
+      "bin": "medium",
+      "bytes": 45958,
+      "path": "stdlib/std/causal.eta",
+      "sha256": "f943940e4bf11acac43419dbb9a3e409a8db3c8b9990b6f6035b6947f3db6b23"
+    },
+    {
+      "bin": "medium",
+      "bytes": 25302,
+      "path": "stdlib/std/clp.eta",
+      "sha256": "cbba8a906f6a5689bedccbdad128e3db9a97447a9485b1445570e2566429d9e3"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6836,
+      "path": "stdlib/std/clpb.eta",
+      "sha256": "2bde06a5180faa4e405b35121904f56d005713860cc086a11f04197f25ae9090"
+    },
+    {
+      "bin": "medium",
+      "bytes": 12158,
+      "path": "stdlib/std/clpr.eta",
+      "sha256": "fe8b5266c58d83928523b4756bd9650415413b5e40ab9baa469f89c5db511adf"
+    },
+    {
+      "bin": "medium",
+      "bytes": 11377,
+      "path": "stdlib/std/collections.eta",
+      "sha256": "9b6b6793881651cabf24eb1c7c32f489172567140e5d2fa8ba2079c7898d16ad"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4875,
+      "path": "stdlib/std/core.eta",
+      "sha256": "b75ef57c563add9086255c5d7ad82a53559240edb1e91795cbbdbc88ad420a56"
+    },
+    {
+      "bin": "medium",
+      "bytes": 8418,
+      "path": "stdlib/std/csv.eta",
+      "sha256": "9ff7a241ceb7b841d3298d8c04dd2cb20d812196c558c124404b4aed4a94a6ba"
+    },
+    {
+      "bin": "medium",
+      "bytes": 22564,
+      "path": "stdlib/std/db.eta",
+      "sha256": "9e09f4f120651dff55e9e83c187beaf763e6eadb76fd3d71421c146452fccb9c"
+    },
+    {
+      "bin": "medium",
+      "bytes": 12481,
+      "path": "stdlib/std/fact_table.eta",
+      "sha256": "fbbacc0dd8fdd4f349a11ea4f5f2eb4329d459e0e62e69d3006e9bde2a3f8065"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6815,
+      "path": "stdlib/std/freeze.eta",
+      "sha256": "6573029bf36fdf58733ad664a94658f90c208d7e38c2a4c925d7ddd953edacd6"
+    },
+    {
+      "bin": "small",
+      "bytes": 1091,
+      "path": "stdlib/std/fs.eta",
+      "sha256": "6aef470a77e44a28efd88400bda23a87033ac3526a412ea8e011537c819f5184"
+    },
+    {
+      "bin": "small",
+      "bytes": 3701,
+      "path": "stdlib/std/hashmap.eta",
+      "sha256": "78560d2856bd48bb434b6dea7e28bee6f60030a705c91e425c3526ee50645efc"
+    },
+    {
+      "bin": "small",
+      "bytes": 1540,
+      "path": "stdlib/std/hashset.eta",
+      "sha256": "7bb9bdae36ef67f82322e9e5cf4f0636fce9f0c4b0a6f48f75909569f636a515"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5217,
+      "path": "stdlib/std/io.eta",
+      "sha256": "890e94468b09c7e38f013f257b969bb381d7099e513242fc760f8dceabd94d4c"
+    },
+    {
+      "bin": "small",
+      "bytes": 3591,
+      "path": "stdlib/std/json.eta",
+      "sha256": "8cc60b450f748ef4401c05d876cef08d676a37c3cf01fb51fef25fad3e446fbd"
+    },
+    {
+      "bin": "medium",
+      "bytes": 8925,
+      "path": "stdlib/std/jupyter.eta",
+      "sha256": "0c47158514da161dc3cbf50f47ebeb9e55dd93ee7e6e2779265fdb88d2a98111"
+    },
+    {
+      "bin": "medium",
+      "bytes": 9189,
+      "path": "stdlib/std/log.eta",
+      "sha256": "b0dc1368bb589d7371f13517dcfca53740729abee39bc9cc5988f44e5f152776"
+    },
+    {
+      "bin": "medium",
+      "bytes": 17712,
+      "path": "stdlib/std/logic.eta",
+      "sha256": "a415bfa6a62ac513c241fe4617510a7447515d92209cafd4a098b860e91431aa"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5156,
+      "path": "stdlib/std/math.eta",
+      "sha256": "01fbe3fc5b5f5de89eff53e39e05351786bcde65efc8a52a348120ef708f25ce"
+    },
+    {
+      "bin": "medium",
+      "bytes": 11956,
+      "path": "stdlib/std/ml/forest.eta",
+      "sha256": "a65521573651bb046d06cad9ab8ae27e9f8d0cb5bf61cafc5fa3d851bd793a06"
+    },
+    {
+      "bin": "medium",
+      "bytes": 29393,
+      "path": "stdlib/std/ml/tree.eta",
+      "sha256": "b654efbecfa58a44f9a2e0c00ee79c0ececfa3aa15d7f94d0596bd3567cfd831"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7581,
+      "path": "stdlib/std/net.eta",
+      "sha256": "c29206688b1ff4cb09c78f51c355ffd1a709fabd1c465d0ad53135643ebb662a"
+    },
+    {
+      "bin": "small",
+      "bytes": 820,
+      "path": "stdlib/std/os.eta",
+      "sha256": "506ae8419b1814670be5fc84d62ed87f45ff1598a014b56546ab2e81bd235dd4"
+    },
+    {
+      "bin": "small",
+      "bytes": 1507,
+      "path": "stdlib/std/process.eta",
+      "sha256": "483ea403c931bcd8d360d794db5b9bfe38f55487f6eabd950b6a60e291c86faf"
+    },
+    {
+      "bin": "small",
+      "bytes": 2424,
+      "path": "stdlib/std/prof.eta",
+      "sha256": "9b6e99ee8a3912262ac24b8f6c0fa3cba2a038daa2692987c199fa2faac08def"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7388,
+      "path": "stdlib/std/regex.eta",
+      "sha256": "c90eed0e65075204cbcbf84525b43eabb6ac35cd063c52b3df406a392652b5a1"
+    },
+    {
+      "bin": "medium",
+      "bytes": 22877,
+      "path": "stdlib/std/stats.eta",
+      "sha256": "55526595dda71a4cba1b53113cdee83f3df711c76fd18e061a6779aa3f31a10d"
+    },
+    {
+      "bin": "small",
+      "bytes": 254,
+      "path": "stdlib/std/supervisor.eta",
+      "sha256": "fc7d8eda425f1b76882df4754fec48547d74d878cdae922d2366525dd65c7d63"
+    },
+    {
+      "bin": "medium",
+      "bytes": 15297,
+      "path": "stdlib/std/test.eta",
+      "sha256": "368ffce228f143ad7bb04a68f50bec9302969973afac6c546b1c5a7f86d7becf"
+    },
+    {
+      "bin": "small",
+      "bytes": 3030,
+      "path": "stdlib/std/time.eta",
+      "sha256": "2886661e2b388737de871cf54e8067e7b6a0f1de767f050989b8d2d20bc15aa6"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7340,
+      "path": "stdlib/std/torch.eta",
+      "sha256": "1a7eec3cf6af37546a361d5572aadb473963343a2854a1c1ee34144d082409c5"
+    },
+    {
+      "bin": "small",
+      "bytes": 1465,
+      "path": "stdlib/tests/_cf_smoke.eta",
+      "sha256": "e451f689a2c4a79c6025c6f9b59def7b91ac9d913244dda6f7628e200e1abe5f"
+    },
+    {
+      "bin": "small",
+      "bytes": 2692,
+      "path": "stdlib/tests/_cf_smoke2.eta",
+      "sha256": "2703b211d2bf1f15cde71645d4db4e88425bb5e33548f1e01eed9dfdda860bb7"
+    },
+    {
+      "bin": "small",
+      "bytes": 3114,
+      "path": "stdlib/tests/aad.test.eta",
+      "sha256": "a5e3532154fc5ba32a9d689ccfb1396a0348671cbae4a11d0d11151caa3d3632"
+    },
+    {
+      "bin": "medium",
+      "bytes": 9167,
+      "path": "stdlib/tests/actor.test.eta",
+      "sha256": "881d46abc4a45e1a3b39cd9836ea6527ed5144ae6ae9b54e0e6bcb1a3713f327"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5572,
+      "path": "stdlib/tests/actor_gen_server.test.eta",
+      "sha256": "35560a02a2327ac41fa352794d234550f1a484d58ae79dff6bda5bbf80d71eb7"
+    },
+    {
+      "bin": "small",
+      "bytes": 843,
+      "path": "stdlib/tests/actor_node.test.eta",
+      "sha256": "ccd99813441a3ac55e16813a6148090885c017ad63b21ef7040eb188b47252f8"
+    },
+    {
+      "bin": "small",
+      "bytes": 3885,
+      "path": "stdlib/tests/args.test.eta",
+      "sha256": "9f9a9e0ae0dbeac0bb2bd7fb429deb22afcb1a287cad6999fb2681f36648e220"
+    },
+    {
+      "bin": "small",
+      "bytes": 1773,
+      "path": "stdlib/tests/atom.test.eta",
+      "sha256": "e3860df5f545962382651d4a5e677d3a8b0405fd2e0a822cfab583bb6bf8b39e"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6566,
+      "path": "stdlib/tests/attrvar_freeze_dif_trail.test.eta",
+      "sha256": "a247c398ace73c54870a5f83efd9caef75927cd118b10f012bcbd5c32420f090"
+    },
+    {
+      "bin": "small",
+      "bytes": 1973,
+      "path": "stdlib/tests/causal-adjustment.test.eta",
+      "sha256": "ed3813d51e4c0222382b4d35a9d4e889de9f1cef6968abc22ee1423f0f6e34b8"
+    },
+    {
+      "bin": "small",
+      "bytes": 1975,
+      "path": "stdlib/tests/causal-admg.test.eta",
+      "sha256": "d12a181f719cb3e6c5ddc4fb0934f9d2b5487d6c330bbd26fc59462190e1675e"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6076,
+      "path": "stdlib/tests/causal-cate.test.eta",
+      "sha256": "df6cb52526e32bf68da95205b476a51c046911dff1d7fa104a354fb9d1be8cbb"
+    },
+    {
+      "bin": "small",
+      "bytes": 2488,
+      "path": "stdlib/tests/causal-counterfactual.test.eta",
+      "sha256": "412491cc836a805682bee6ae1238f6bb1cd52a3133be2ec0c73ef1f812ede537"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7825,
+      "path": "stdlib/tests/causal-crossfit.test.eta",
+      "sha256": "6a112082698f28cc1360c1363533816a30501ebc186e34c3a09da6206d3eece4"
+    },
+    {
+      "bin": "small",
+      "bytes": 1915,
+      "path": "stdlib/tests/causal-dsep.test.eta",
+      "sha256": "fafb36cf28ec462145f493d1183cf045889f99520b888353ad50a42a54a4cc30"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7296,
+      "path": "stdlib/tests/causal-estimate.test.eta",
+      "sha256": "4112a36b5cb9b5ea408c714b5eb0bb34aa9518e9516c96d66da53efc5916d301"
+    },
+    {
+      "bin": "small",
+      "bytes": 1910,
+      "path": "stdlib/tests/causal-id.test.eta",
+      "sha256": "5895808d51a6a9d4843485e243dc56b2dc84fefe6e0135816eac67bf77cfd599"
+    },
+    {
+      "bin": "small",
+      "bytes": 1668,
+      "path": "stdlib/tests/causal-idc.test.eta",
+      "sha256": "5a96defb0cc145e1167432bd730aa5305c36f260a7f161aa293169dc69cb2fc1"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6391,
+      "path": "stdlib/tests/causal-learn.test.eta",
+      "sha256": "733cd3a721fa5f3fc3cef3c136a51baf9bd00b822fcb0cedfcf24b848192341b"
+    },
+    {
+      "bin": "small",
+      "bytes": 3594,
+      "path": "stdlib/tests/causal-mediation.test.eta",
+      "sha256": "1a4563dd6c9b93b379766296746b5d8d44324a629c70eef0a60b2284a6d77846"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7164,
+      "path": "stdlib/tests/causal-policy.test.eta",
+      "sha256": "1702d9531f482e1039af059d06eda8c07493eacb84162fdb10dff9a403289468"
+    },
+    {
+      "bin": "small",
+      "bytes": 3324,
+      "path": "stdlib/tests/causal-render.test.eta",
+      "sha256": "17cd31005b62e7660ab4b924923f405ace91e6820771400d0a2c3a394d1dae48"
+    },
+    {
+      "bin": "small",
+      "bytes": 2503,
+      "path": "stdlib/tests/causal-transport.test.eta",
+      "sha256": "ffb12687476551802e82876b5085f2ddc0a8c2306ce91ada93ddb61d6c7885ec"
+    },
+    {
+      "bin": "medium",
+      "bytes": 10377,
+      "path": "stdlib/tests/causal.test.eta",
+      "sha256": "4c75308f22b6535280ef87a7d182bf7f5cf2ef4b0529ea5e454b6b633a1d64bc"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6599,
+      "path": "stdlib/tests/clp.test.eta",
+      "sha256": "9dd2193be1099b55e86f66678cfc7a2aff2f948ce23f3845919fda6a0304c72c"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6525,
+      "path": "stdlib/tests/clp_ac3_labeling_minimize.test.eta",
+      "sha256": "caa0df570a2926fa5456dcc76db5e47b37ed785b0f92a7205043473413e563ee"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6019,
+      "path": "stdlib/tests/clp_alldiff_regin.test.eta",
+      "sha256": "872443e22d5f903b6ef38b30353bd9aa2e889bf5a5abe01e5fd737d3fe8c7e8f"
+    },
+    {
+      "bin": "medium",
+      "bytes": 8416,
+      "path": "stdlib/tests/clp_arithmetic_global_propagators.test.eta",
+      "sha256": "69adb06b42bb862047ebcf52e8c20c4fe9c5db360f56f2a687eefb684e3fd957"
+    },
+    {
+      "bin": "medium",
+      "bytes": 8874,
+      "path": "stdlib/tests/clp_bounds_consistency_propagators.test.eta",
+      "sha256": "d4d82f7628f6ef12624c4e95f066f717cfe7adf8ef4272e0b894fc9fd789960d"
+    },
+    {
+      "bin": "small",
+      "bytes": 3563,
+      "path": "stdlib/tests/clp_fourier_motzkin.test.eta",
+      "sha256": "7ec020293521d578e29eae4a94796928cdb671ea25b48db1b67862ca11d7dde8"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5347,
+      "path": "stdlib/tests/clp_labeling_options.test.eta",
+      "sha256": "33af246de644f91961913d89649f79e2f65207594ca27abfe31dc72d4234adb5"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4314,
+      "path": "stdlib/tests/clp_linearize.test.eta",
+      "sha256": "df9f038d00080a81eb376d81062fb2e2cbe232664789e61afd9ee0659b279afd"
+    },
+    {
+      "bin": "small",
+      "bytes": 2556,
+      "path": "stdlib/tests/clp_nqueens_regression.test.eta",
+      "sha256": "0f4e12068db3392f78eb1597fec9650b61a0af02460c9bde88faf595075e60d9"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7115,
+      "path": "stdlib/tests/clp_propagation_queue.test.eta",
+      "sha256": "8537db31c5fc9e891f02d46846e9eb8afd258e5f61d46aa1bb9eb17310a866c8"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5027,
+      "path": "stdlib/tests/clp_varvar_domain_intersection.test.eta",
+      "sha256": "42075923dde889d4f641e12d28958e3a90e35cddc229b80aef458200f890d66d"
+    },
+    {
+      "bin": "medium",
+      "bytes": 11119,
+      "path": "stdlib/tests/clpb_propagation.test.eta",
+      "sha256": "11e06e04718d6b97b102581ca946a8ef377ba542b3572d3554c56124b721473f"
+    },
+    {
+      "bin": "medium",
+      "bytes": 9966,
+      "path": "stdlib/tests/clpr_optimization.test.eta",
+      "sha256": "5ff24c6e20fa662e04cae9612d312797a17cfa50fdf922f18981849d2623008d"
+    },
+    {
+      "bin": "small",
+      "bytes": 2674,
+      "path": "stdlib/tests/clpr_posting.test.eta",
+      "sha256": "498f0bc30ebce5892387357033d4c4a407ba1f1174a21121ccd40587cf51bc56"
+    },
+    {
+      "bin": "medium",
+      "bytes": 9604,
+      "path": "stdlib/tests/clpr_qp_optimization.test.eta",
+      "sha256": "2cde21b4bb1adb470d1aa3c6ee6eb45afc8a77bc9c6f56ad4865ac6f75aa67b9"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6850,
+      "path": "stdlib/tests/clpr_real_domain.test.eta",
+      "sha256": "fdf222fbd6496ebb0bb0ab1fac8a25c3a6829f57a37112b1cf8652a4830ec8a3"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4116,
+      "path": "stdlib/tests/clpr_simplex.test.eta",
+      "sha256": "59c476c1909f731c2ec17fef525f0883f08b6b3a9e0f04bf19b92e0968c52b3a"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6758,
+      "path": "stdlib/tests/collections.test.eta",
+      "sha256": "645dbf1ae12e9030fc19dea1da1f326e6725404cb2029d7bfd41cc4333bcf276"
+    },
+    {
+      "bin": "small",
+      "bytes": 2884,
+      "path": "stdlib/tests/compound_term_primitives.test.eta",
+      "sha256": "4d371348ba0e4cc7c2fed845391b8b83ec93b9078a52bc847700e6a7594b84ca"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7505,
+      "path": "stdlib/tests/core.test.eta",
+      "sha256": "828ac527363d17def85b88498bea39b912eeb06762d6b86f12a6357dc39fc456"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5344,
+      "path": "stdlib/tests/csv.test.eta",
+      "sha256": "b7b775bfdbbd9486534314c962d8454aa22ad21edad22472c865c67252e8cc72"
+    },
+    {
+      "bin": "small",
+      "bytes": 3940,
+      "path": "stdlib/tests/db.test.eta",
+      "sha256": "2c752273418fb5234e4f3b4d76fcb758bec5da0536c278bbd60c8521e4c81171"
+    },
+    {
+      "bin": "small",
+      "bytes": 2797,
+      "path": "stdlib/tests/eval.test.eta",
+      "sha256": "9d02cfc355c6b6f4769dbca8a5b4faafae770efa248954d902f0b58f79a2a34d"
+    },
+    {
+      "bin": "medium",
+      "bytes": 12189,
+      "path": "stdlib/tests/fact_table.test.eta",
+      "sha256": "109d319bf7a06f7db7d126c0d249d988028bc3dbf322dca998ee84df8c30cf5d"
+    },
+    {
+      "bin": "small",
+      "bytes": 3761,
+      "path": "stdlib/tests/hashmap.test.eta",
+      "sha256": "afe6dada8098a1c3c61463125e3f399a664af27bdd53f285811ea65c9f19a2fa"
+    },
+    {
+      "bin": "small",
+      "bytes": 2838,
+      "path": "stdlib/tests/hashset.test.eta",
+      "sha256": "4869b676e72c754aae791ac17ed4e583dbb5a49e800abd2815641cbe0f42e3fc"
+    },
+    {
+      "bin": "small",
+      "bytes": 2787,
+      "path": "stdlib/tests/json.test.eta",
+      "sha256": "628e1ab5a83ba6e659f98a3efdbb6647f7aacc82ac1403631cb3242d9c03a423"
+    },
+    {
+      "bin": "small",
+      "bytes": 1978,
+      "path": "stdlib/tests/jupyter.test.eta",
+      "sha256": "97ad629f92be1220465c2c0927bd829c8df708b8bd95bbe13817c86c14d88717"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5757,
+      "path": "stdlib/tests/log.test.eta",
+      "sha256": "395a5b1e42720ea80c934bb579e7eb60ca41c0e564a503d9febf9b631a852213"
+    },
+    {
+      "bin": "medium",
+      "bytes": 16044,
+      "path": "stdlib/tests/logic.test.eta",
+      "sha256": "1c46c477d53459ace27da4d5037303d755b671da17b0ffaab98e8e62adb4c61d"
+    },
+    {
+      "bin": "small",
+      "bytes": 1587,
+      "path": "stdlib/tests/logic_core_primitives.test.eta",
+      "sha256": "6332f3ad2ac024a3e4131fd88fcba20c3830db99266c756b5831275fae9a09b7"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7919,
+      "path": "stdlib/tests/logic_minikanren_combinators.test.eta",
+      "sha256": "21430bec41858b28cfbe3aaf6703e77ad660d78b0eccf958181085c39f7bd06f"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4436,
+      "path": "stdlib/tests/math.test.eta",
+      "sha256": "3b82227a09d6cd56fdd6eb0933ab217b6ac7c5bcb953851fb0bdad440b57848a"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7846,
+      "path": "stdlib/tests/ml-tree.test.eta",
+      "sha256": "a77a12e6ee909d57f2a34c1c56a0518e84d2274e9cbef5d4acc7b78c291f6cb5"
+    },
+    {
+      "bin": "small",
+      "bytes": 2605,
+      "path": "stdlib/tests/os_fs.test.eta",
+      "sha256": "45717c0261c396cf895eef39fc3317275d5c5f87dbba0a78150606deda03e871"
+    },
+    {
+      "bin": "medium",
+      "bytes": 8376,
+      "path": "stdlib/tests/process.test.eta",
+      "sha256": "de814777a2a76abe93685d8a3b8f013f63a335e997fecf0b2e8f42574b3f88b1"
+    },
+    {
+      "bin": "small",
+      "bytes": 3192,
+      "path": "stdlib/tests/prof.test.eta",
+      "sha256": "adee6606a733edf322dbc7a3424dbe6da5b1f4651734c3c8cd03c0a6efb4034c"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6774,
+      "path": "stdlib/tests/regex.test.eta",
+      "sha256": "d41fb68fc233a6f64fa6a85931d521b5134d83cc11541fd892379f02e527d9bf"
+    },
+    {
+      "bin": "small",
+      "bytes": 2989,
+      "path": "stdlib/tests/runtime_error_catchability.test.eta",
+      "sha256": "742cb6d9bb0a1fe63f17ab2b0101e115f18ac179630a27ed0de118b5cd94861c"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6713,
+      "path": "stdlib/tests/stats.test.eta",
+      "sha256": "235f539dbdbc88a241478bf00a74f115582e476e15acf8182a5f9a2ae24220ff"
+    },
+    {
+      "bin": "small",
+      "bytes": 2829,
+      "path": "stdlib/tests/test-framework.test.eta",
+      "sha256": "207fabd6a45c13fa798696dcc0da50a01c9293c183570548d86116f853f03600"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4812,
+      "path": "stdlib/tests/time.test.eta",
+      "sha256": "7a3e29d4b8b9424a688f82c4de82190b2baf2f5e16b6d25f5eea0cfaf26f2951"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6616,
+      "path": "stdlib/tests/torch.test.eta",
+      "sha256": "51ba4c8ae1e2422693eef0aac2155ca0f0f0d7aa340cfcf5ccdcf8c86f2e0b22"
+    },
+    {
+      "bin": "small",
+      "bytes": 1839,
+      "path": "cookbook/basics/args.eta",
+      "sha256": "8920bcf1b75da801dd32bb66095b791b264930c188db659d7ba6b415d46163f6"
+    },
+    {
+      "bin": "small",
+      "bytes": 2890,
+      "path": "cookbook/basics/basics.eta",
+      "sha256": "2930628e1872d7e095305bede809291b9a078aec20df739b382a328c145ac05c"
+    },
+    {
+      "bin": "small",
+      "bytes": 2978,
+      "path": "cookbook/basics/composition.eta",
+      "sha256": "fba7b25a4d92bf74b78b5e102d8c504efd36d65e36e9c05292f188e3d081e72c"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6780,
+      "path": "cookbook/basics/exceptions.eta",
+      "sha256": "6e9ed1cb6150b41b8accf8846ce622cf26162379331b01e5fb67af744ed91310"
+    },
+    {
+      "bin": "small",
+      "bytes": 2987,
+      "path": "cookbook/basics/functions.eta",
+      "sha256": "de69562d9214939b4da516090a07f3055a1289d48fa64c0ba16c14e5c0f7560d"
+    },
+    {
+      "bin": "small",
+      "bytes": 431,
+      "path": "cookbook/basics/hello.eta",
+      "sha256": "e475aaa3305afbbed86028eb97a2844c58766a80c073e6a18bf691d733221d5f"
+    },
+    {
+      "bin": "small",
+      "bytes": 3711,
+      "path": "cookbook/basics/higher-order.eta",
+      "sha256": "0ebaba350bdfecf6801c3e07754bfbbbe3a35214731e266bc41accfd07eb1955"
+    },
+    {
+      "bin": "small",
+      "bytes": 3753,
+      "path": "cookbook/basics/recursion.eta",
+      "sha256": "398a22362fea5a5d5562abb9c70c5687bbf888d160648a957f92fd6395e787ed"
+    },
+    {
+      "bin": "medium",
+      "bytes": 21506,
+      "path": "cookbook/causal/causal_demo.eta",
+      "sha256": "86c146da11bb02f9c4573aed6c8a6c8e7309f2197024daaa8600196834624b0c"
+    },
+    {
+      "bin": "small",
+      "bytes": 1646,
+      "path": "cookbook/concurrency/distributed-actors.eta",
+      "sha256": "bea9a21cf6450b65360e3f432a2a58c21ebf1651c599377a373e47b32b29e4b9"
+    },
+    {
+      "bin": "small",
+      "bytes": 1669,
+      "path": "cookbook/concurrency/distributed-compute-server.eta",
+      "sha256": "ed8797f1e58704a9401f19d43bf69a977c8b1db6dd23ae077815cd2f3a19235a"
+    },
+    {
+      "bin": "small",
+      "bytes": 698,
+      "path": "cookbook/concurrency/distributed-compute.eta",
+      "sha256": "f84d3f36ea0c4863584a50402705882e5d972b266c9fa2298cc981528643948a"
+    },
+    {
+      "bin": "small",
+      "bytes": 1182,
+      "path": "cookbook/concurrency/echo-client.eta",
+      "sha256": "9200f630d0879b72a1e2359026a878f48158a3e0af702941f22522508da21fd5"
+    },
+    {
+      "bin": "small",
+      "bytes": 1673,
+      "path": "cookbook/concurrency/echo-server.eta",
+      "sha256": "4bdd6fefd51237bb303d4ef0e6cbb69f247754a96c997574bd43f5f636108e36"
+    },
+    {
+      "bin": "small",
+      "bytes": 2028,
+      "path": "cookbook/concurrency/gen-server-counter.eta",
+      "sha256": "e72096a20ff8ee5c716b6a3d87e8d86511960b4715bad4d1438aecadc58c368e"
+    },
+    {
+      "bin": "small",
+      "bytes": 2053,
+      "path": "cookbook/concurrency/inproc.eta",
+      "sha256": "1b5855f19ad0da2c5128758e70ae548b31fe1d33d8938e3430f82c1a50bbfae9"
+    },
+    {
+      "bin": "small",
+      "bytes": 1229,
+      "path": "cookbook/concurrency/message-passing.eta",
+      "sha256": "2a52151d0fb8037ae3e42950bfe53478380a28249979c0b27ac531a2cddd1f8f"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4763,
+      "path": "cookbook/concurrency/monte-carlo.eta",
+      "sha256": "ee0b16d28460a0486eba21c6ccf213097f91561d2b9eccb95d18ca02725cb38f"
+    },
+    {
+      "bin": "small",
+      "bytes": 1968,
+      "path": "cookbook/concurrency/parallel-fib.eta",
+      "sha256": "63ee7ac2a2dcbb9de439e3cbafd464269819ab14aba9d1ebd2af5b9a2c081988"
+    },
+    {
+      "bin": "small",
+      "bytes": 1829,
+      "path": "cookbook/concurrency/parallel-map.eta",
+      "sha256": "8c7c9103ea3de96b8a60dda15709b9fa9c137603938e9fe0b46881db9668dd74"
+    },
+    {
+      "bin": "small",
+      "bytes": 2678,
+      "path": "cookbook/concurrency/pub-sub.eta",
+      "sha256": "1b083059c5f4a86da7a2647b2cfc37188fb2b8a9b169160b97cb6b640d2b6c8b"
+    },
+    {
+      "bin": "small",
+      "bytes": 2230,
+      "path": "cookbook/concurrency/scatter-gather.eta",
+      "sha256": "7ec84784442bac98c3df14b8678e900955fe269057c97ea625693631ab7ce669"
+    },
+    {
+      "bin": "small",
+      "bytes": 1801,
+      "path": "cookbook/concurrency/worker-pool.eta",
+      "sha256": "c8166044af489f366afaead634bb42ebac3ae1a59094e7325b61aa93169673c3"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4615,
+      "path": "cookbook/do-calculus/dag.eta",
+      "sha256": "9cf1ec168a3f54ab5b065ec92d31b72aeb6be96cbd2a18342691c0088685a9b2"
+    },
+    {
+      "bin": "medium",
+      "bytes": 8202,
+      "path": "cookbook/do-calculus/demo.eta",
+      "sha256": "41cf8e92c08ce39cee37a16a2f0943779de56de6990728f7eeed0d78e30281d2"
+    },
+    {
+      "bin": "medium",
+      "bytes": 8972,
+      "path": "cookbook/do-calculus/do-rules.eta",
+      "sha256": "22e5a8e71c360add1e8246f2527682dda2f03a9fe4a893d6180a62fe32da34ed"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5867,
+      "path": "cookbook/logic/boolean-simplifier.eta",
+      "sha256": "773c46e87899b2fef5dbe36a60458ac824782d2816fb880c36bcab2ca346622d"
+    },
+    {
+      "bin": "medium",
+      "bytes": 10237,
+      "path": "cookbook/logic/logic.eta",
+      "sha256": "df6715b54dbc4fc8d395492dbad9fa7e662010461f96a7aa0933e24b699f3b8f"
+    },
+    {
+      "bin": "small",
+      "bytes": 3404,
+      "path": "cookbook/logic/nqueens.eta",
+      "sha256": "2e06133efaf11ac93ea96a1a80bbe049b2def6d75551879e9fb81a161f2b4601"
+    },
+    {
+      "bin": "small",
+      "bytes": 3202,
+      "path": "cookbook/logic/send-more-money.eta",
+      "sha256": "860416cbf18d8f684401b31af7b48b6d4358a343df13f0f425bb7058938438bb"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7049,
+      "path": "cookbook/logic/symbolic-diff.eta",
+      "sha256": "091def2969a02bade8dcda9b5478b6a60d35f57b4687061d8aad4a9afce774bf"
+    },
+    {
+      "bin": "medium",
+      "bytes": 14532,
+      "path": "cookbook/logic/unification.eta",
+      "sha256": "ec15e1ebfd84e6a986e0cdf58ba0a538c2edcd278d6ed061e70d25089f3621dd"
+    },
+    {
+      "bin": "small",
+      "bytes": 692,
+      "path": "cookbook/ml/lightgbm.eta",
+      "sha256": "42bc474561b0f88a080b8a116d8bd0544e9a0e90b75af4f87a6e0729ffacd988"
+    },
+    {
+      "bin": "medium",
+      "bytes": 10753,
+      "path": "cookbook/ml/torch.eta",
+      "sha256": "18ec6730bb2a5fdb67dba11d15856b7a4aa98cb211df1b618c1cd4ab58dc3aa1"
+    },
+    {
+      "bin": "small",
+      "bytes": 859,
+      "path": "cookbook/net/download-large-file.eta",
+      "sha256": "5afd8bf6a11578252dcc58d5fce01978aeb7e1a9390857c94e008b96e9de88a5"
+    },
+    {
+      "bin": "small",
+      "bytes": 1018,
+      "path": "cookbook/net/http-quickstart.eta",
+      "sha256": "fbe7a0a48d14f4c4c75f0aeb9596c94f8b2ca22719d6faafc2e7babaa61bef0a"
+    },
+    {
+      "bin": "small",
+      "bytes": 1022,
+      "path": "cookbook/net/rest-client.eta",
+      "sha256": "12c640f0ced2141887c15bd1176918a78c447f413a931eb42b89b27993367ca5"
+    },
+    {
+      "bin": "small",
+      "bytes": 3696,
+      "path": "cookbook/numerics/aad.eta",
+      "sha256": "291c2fd46ecaa664299d8db79eb8f21f3533cca135d0f81600ed0a5e8ffc0e38"
+    },
+    {
+      "bin": "medium",
+      "bytes": 15164,
+      "path": "cookbook/numerics/european.eta",
+      "sha256": "c2779bc47018308103ae0713ba2ec5f92ef6ca631ff185dd9ec24de18108a89c"
+    },
+    {
+      "bin": "small",
+      "bytes": 733,
+      "path": "cookbook/numerics/fact-table-tensor.eta",
+      "sha256": "edb606db7a696cd2e7fd464f4a7d81add407b7beab269718f1a3f3e680415468"
+    },
+    {
+      "bin": "small",
+      "bytes": 3974,
+      "path": "cookbook/numerics/fact-table.eta",
+      "sha256": "eda6d4517f7c34d24b8aaf2efc7199a15e94e789532995dc4e64014bc9d29b55"
+    },
+    {
+      "bin": "small",
+      "bytes": 3733,
+      "path": "cookbook/numerics/portfolio-lp.eta",
+      "sha256": "439b32feb04fc73ba83a26c21375fea54cc449e15e42e15840855927841b3f02"
+    },
+    {
+      "bin": "large",
+      "bytes": 159088,
+      "path": "cookbook/numerics/portfolio.eta",
+      "sha256": "69463459e7d49d39148460baafccca2f2145b668016eac5daa9a42a0429a3919"
+    },
+    {
+      "bin": "medium",
+      "bytes": 19362,
+      "path": "cookbook/numerics/sabr.eta",
+      "sha256": "3f172d7fb320c61d7df20fd1cacc9e7a10c0d1f95e9afd7f03526b05ee35ef5c"
+    },
+    {
+      "bin": "medium",
+      "bytes": 8512,
+      "path": "cookbook/numerics/stats.eta",
+      "sha256": "8586de88201e7903d0dd530d7a8214124249a38fa6c1e06d63493256cdb6ca79"
+    },
+    {
+      "bin": "medium",
+      "bytes": 20703,
+      "path": "cookbook/numerics/xva.eta",
+      "sha256": "a30e65d72feb7128897bdc84393a873adccf90c1f78abe117a92d251c4d9749f"
+    },
+    {
+      "bin": "small",
+      "bytes": 383,
+      "path": "cookbook/packaging/end-to-end/mathx/src/mathx.eta",
+      "sha256": "cf134d5741013591b214c6e06752068ac108eaa90a0e52d12c495e9f72a49d0b"
+    },
+    {
+      "bin": "small",
+      "bytes": 494,
+      "path": "cookbook/packaging/end-to-end/mathx/tests/smoke.test.eta",
+      "sha256": "637e32414a724dd894cdd1d4566d24420f8935635f03a1499f68117d9b529f15"
+    },
+    {
+      "bin": "small",
+      "bytes": 249,
+      "path": "cookbook/packaging/end-to-end/myapp/src/myapp.eta",
+      "sha256": "5a07744e3a28e434a7cbcab10f3003017724cf0e11888f424205bd1c7bc67fb1"
+    },
+    {
+      "bin": "small",
+      "bytes": 2859,
+      "path": "cookbook/process/process-pipeline.eta",
+      "sha256": "1ce044dd65d8786ce17251c4e898b528d42301e767a3e6e6c8720f3dba440bc2"
+    },
+    {
+      "bin": "small",
+      "bytes": 1040,
+      "path": "cookbook/process/process-shellout.eta",
+      "sha256": "31a93968fa6e9aafe5e695cd3bab2f7b945702886627c5a1d3f39d0fa89e2d76"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4969,
+      "path": "cookbook/tests/torch/arithmetic.eta",
+      "sha256": "534754ab911df06bbcea39fd3971b7d1c238106367453d50b71f8a56b195f82f"
+    },
+    {
+      "bin": "small",
+      "bytes": 3681,
+      "path": "cookbook/tests/torch/autograd.eta",
+      "sha256": "922d82a354ec6be88f636925c556429351b07617d7946f693cd352f0d23de6c6"
+    },
+    {
+      "bin": "small",
+      "bytes": 1958,
+      "path": "cookbook/tests/torch/device_info.eta",
+      "sha256": "54dbb1dcc211e3a180c8a53940bb4b90e448b94bc52c4d680d7d4773ef32f743"
+    },
+    {
+      "bin": "small",
+      "bytes": 3060,
+      "path": "cookbook/tests/torch/loss_functions.eta",
+      "sha256": "bea0a0b968600c1eb6b0744fea9dc9752ec191a339ee5e9b7a73b0de0c4e840d"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5810,
+      "path": "cookbook/tests/torch/nn_layers.eta",
+      "sha256": "ca79cfd6a571ccc9fc93cb752efaf8415600e7f8123d0b8aedaeba3d96db1885"
+    },
+    {
+      "bin": "small",
+      "bytes": 3637,
+      "path": "cookbook/tests/torch/optimizers.eta",
+      "sha256": "b72436cc3017ef64118912590b55d894ca39eca6acf89635203cf47990ed3389"
+    },
+    {
+      "bin": "small",
+      "bytes": 1634,
+      "path": "cookbook/tests/torch/reductions.eta",
+      "sha256": "c11ad2e76fe6f41f1b4a60bbc27cf59c81a0d676d22af9ff0e5ad1b59c1e43c4"
+    },
+    {
+      "bin": "small",
+      "bytes": 2396,
+      "path": "cookbook/tests/torch/shape_ops.eta",
+      "sha256": "23bd5527bbed989db4fcbdbcb19ba48eadfb200c36bfcd018c83b9d7ee90c549"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4360,
+      "path": "cookbook/tests/torch/tensor_creation.eta",
+      "sha256": "78bd96b7dd849505bbd4dd938226cc703da90e7cb50379138c2b9731a8e4e256"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5548,
+      "path": "cookbook/tests/torch/training.eta",
+      "sha256": "104c4c735b748ab360038006f64ebdc59ce6f9bb41b9a529b920dc8585d3970f"
+    },
+    {
+      "bin": "small",
+      "bytes": 3052,
+      "path": "cookbook/xva-wwr/book.eta",
+      "sha256": "8cd93875bbef758040dbaf46129fdf60c397fe51152c3f2b6252854b08dc1c74"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6788,
+      "path": "cookbook/xva-wwr/compress.eta",
+      "sha256": "4e1a3986c2cf775baf2b5547215e32f0115661bb369d1ac6ffe94f6621285bef"
+    },
+    {
+      "bin": "medium",
+      "bytes": 7810,
+      "path": "cookbook/xva-wwr/learn-betas.eta",
+      "sha256": "6a32fffc281f18b9dbf70c7596e20082be5df2b2f9f64e82cc4b3f9c5def7357"
+    },
+    {
+      "bin": "medium",
+      "bytes": 6811,
+      "path": "cookbook/xva-wwr/main.eta",
+      "sha256": "75dd02eed98bbb2db234c2cc0391486a46bb6ca284b86fcf5d125e5056530959"
+    },
+    {
+      "bin": "small",
+      "bytes": 2956,
+      "path": "cookbook/xva-wwr/market.eta",
+      "sha256": "69e233dd12cf07fd8aea39bed0deb02447990a63d4186707d8a2d804635d8c34"
+    },
+    {
+      "bin": "small",
+      "bytes": 3917,
+      "path": "cookbook/xva-wwr/ml-calibration-test.eta",
+      "sha256": "6c6fac7d420e0789b194cc8ea65f23ca46716d73851a5619462539956847d5c0"
+    },
+    {
+      "bin": "small",
+      "bytes": 3261,
+      "path": "cookbook/xva-wwr/paths.eta",
+      "sha256": "285cb177c405e65aad42253a5e7b98a0db266bf254e6fd56536f4af32148513e"
+    },
+    {
+      "bin": "medium",
+      "bytes": 28095,
+      "path": "cookbook/xva-wwr/report.eta",
+      "sha256": "6b97bd282eb2ddcbe6f76e9833234e549de62d6fcf64bfbb7bcf23c335ee1998"
+    },
+    {
+      "bin": "medium",
+      "bytes": 5816,
+      "path": "cookbook/xva-wwr/symbolic.eta",
+      "sha256": "4d4c93024958529733385fa3dfb6bf8086780766259cc71e2cab9c100fa06b3a"
+    },
+    {
+      "bin": "small",
+      "bytes": 1682,
+      "path": "cookbook/xva-wwr/workers.eta",
+      "sha256": "490d0c807fa9ffddcf5761eb43b689aba3a6766d9da0a075359c61a582f1c106"
+    },
+    {
+      "bin": "medium",
+      "bytes": 15480,
+      "path": "cookbook/xva-wwr/wwr-causal.eta",
+      "sha256": "04d3a5a5f38d379201d34e75b8f0dbd7b078bc888eb887595f1845045c69c26b"
+    },
+    {
+      "bin": "medium",
+      "bytes": 4108,
+      "path": "cookbook/xva-wwr/xva.eta",
+      "sha256": "5db3b645e488aa5b6cb217e271823c3d822462e0cffc75e28ce46aa81f6be4f5"
+    },
+    {
+      "bin": "large",
+      "bytes": 1048576,
+      "generated": "comment-heavy-1m",
+      "sha256": "588b1356c00864c9d391f9e56910ba82bfdcd69cd573ca46eee64660f1e02f98"
+    },
+    {
+      "bin": "small",
+      "bytes": 513,
+      "generated": "depth-256",
+      "sha256": "c846e1b38040adbddefda16149d6d13956ad3a963b5132516f7dec262fa848e1"
+    },
+    {
+      "bin": "medium",
+      "bytes": 20000,
+      "generated": "ordinary-medium",
+      "sha256": "414b421c9d78b465f59960edc0684fe73d845fa8bfa00f39a7aa59e1054a6794"
+    },
+    {
+      "bin": "large",
+      "bytes": 160000,
+      "generated": "ordinary-large",
+      "sha256": "923e36d82288403b436b45c81cead91eeef5310bb1a2f8efdda6fab20caf9ff7"
+    }
+  ],
+  "generator": "scripts/tooling_benchmark.py:generated",
+  "generator_seed": 59296,
+  "initial_budgets": {
+    "cancellation_p95_ms": 50,
+    "formatter_small_p95_ms": 2,
+    "per_rule_small_p95_ms": 1
+  },
+  "measurement_selection": [
+    "stdlib/tests/causal-dsep.test.eta",
+    "stdlib/std/test.eta",
+    "cookbook/net/download-large-file.eta",
+    "cookbook/numerics/stats.eta",
+    "cookbook/numerics/portfolio.eta",
+    "comment-heavy-1m",
+    "depth-256",
+    "ordinary-medium",
+    "ordinary-large"
+  ],
+  "method": {
+    "cancellation": "10 warmup + 100 measured 16 MiB comments; cancellation request after 2 ms; latency measured from request to parse return",
+    "library": "resident input; single worker; allocation/destruction included; CST includes reader validation",
+    "measured": 100,
+    "median": "mean of sorted samples 49 and 50 (zero based)",
+    "memory": "process peak RSS; tooling arena peak plus conservative reader/transient reservations; shared runtime excluded from owned memory",
+    "p95": "nearest rank, sample 94 (zero based)",
+    "process_io": "fresh --probe process startup/read/parse measured separately; warm I/O uses 10 warmup/100 resident-process rereads; page cache uncontrolled",
+    "timer": "std::chrono::steady_clock",
+    "warmup": 10
+  },
+  "options": {
+    "depth": 256,
+    "grammar": "EtaCurrent",
+    "input_bytes": 16777216,
+    "jobs": 1,
+    "memory_bytes": 268435456,
+    "nodes": 1000000,
+    "output_bytes": 33554432,
+    "preset": null,
+    "strict_quasiquote": false,
+    "tokens": 1000000
+  },
+  "schema": 1
+}

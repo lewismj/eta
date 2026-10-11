@@ -1,5 +1,10 @@
 # Architecture
 
+The internal lossless tooling reader is documented in
+[Lossless reader foundation](cst_reader.md). `eta_cst` links the shared reader
+without owning compilation, expansion or execution; compiler clients keep their
+compact S-expression representation.
+
 [← Back to README](../README.md)
 
 ---

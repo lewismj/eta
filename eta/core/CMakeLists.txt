@@ -4,6 +4,14 @@ project(eta_core LANGUAGES CXX)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 add_library(${PROJECT_NAME} STATIC)
+add_library(eta_cst STATIC
+    src/eta/cst/source.cpp
+    src/eta/cst/parse.cpp
+    src/eta/cst/bridge_sexpr.cpp
+    src/eta/cst/diagnostic.cpp
+)
+target_link_libraries(eta_cst PUBLIC eta_core)
+set_target_properties(eta_cst PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_SCAN_FOR_MODULES OFF)
 set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(${PROJECT_NAME}
@@ -241,6 +249,17 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC)
     target_compile_options(${PROJECT_NAME}_sanitized PRIVATE -Wswitch-enum)
 
     target_link_options(${PROJECT_NAME}_sanitized PRIVATE -fsanitize=address)
+
+    add_library(eta_cst_sanitized STATIC
+        src/eta/cst/source.cpp
+        src/eta/cst/parse.cpp
+        src/eta/cst/bridge_sexpr.cpp
+        src/eta/cst/diagnostic.cpp
+    )
+    target_link_libraries(eta_cst_sanitized PUBLIC eta_core_sanitized Eigen3::Eigen)
+    target_include_directories(eta_cst_sanitized SYSTEM PUBLIC ${Boost_INCLUDE_DIRS})
+    target_compile_options(eta_cst_sanitized PRIVATE -fsanitize=address -fno-omit-frame-pointer -g -O1 -Wswitch-enum)
+    target_link_options(eta_cst_sanitized PRIVATE -fsanitize=address)
 endif()
 
 

@@ -15,7 +15,7 @@ entry = "eta_register_duckdb_extension_v1"
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
 artifact = "libs/amd64/eta_duckdb.dll"
-sha256 = "4605788f5ec4b41f83a20aeeb5ab060c696fa5e601c4fa090932c3adf495daec"
+sha256 = "ea97f725bdb7a35566d7161a3f6ff135c9434eabdf491f4afc51289f5da1b081"
 
 [[native.targets]]
 triple = "x86_64-unknown-linux-gnu"

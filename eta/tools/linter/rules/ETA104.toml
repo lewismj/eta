@@ -1,0 +1,21 @@
+code = "ETA104"
+name = "NonKebabCase"
+owner = "eta_lint"
+status = "enabled"
+severity = "info"
+analysis-level = "cst"
+rationale = "Recognised definition names use kebab-case; underscores and ASCII upper-case letters indicate snake_case or camelCase instead."
+prerequisites = ["recognised-definition-name"]
+verified-prerequisites = ["recognised-definition-name"]
+metadata = []
+unknown-behaviour = "skip-affected-region"
+false-positives = ["escaped or generated spellings carrying bars or escapes are excluded", "conventional sigils such as ? ! and -> remain valid"]
+fix = "none"
+fix-safety = "No automatic rename: renaming a definition changes its public identity."
+positive-fixtures = ["ETA104_snake_case"]
+negative-fixtures = ["ETA104_kebab_case"]
+dependency-fixtures = ["shared_mismatch"]
+unknown-fixtures = ["shared_recovered"]
+options = {}
+presets = ["recommended", "strict", "all"]
+

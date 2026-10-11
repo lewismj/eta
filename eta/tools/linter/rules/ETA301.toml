@@ -1,0 +1,18 @@
+code = "ETA301"
+name = "UnusedLetBinding"
+owner = "eta_lint"
+status = "gated"
+severity = "warn"
+analysis-level = "scope"
+rationale = "Report a binding with no resolved references once ordinary-let binding and reference semantics are proven."
+prerequisites = ["verified-let-scopes", "complete-reference-coverage"]
+metadata = ["binding-identities"]
+unknown-behaviour = "skip-affected-scope"
+false-positives = ["unmodelled macro references: suppress the affected scope"]
+fix = "none"
+fix-safety = "No removal fix: the initializer can have effects."
+positive-fixtures = []
+negative-fixtures = []
+options = {}
+presets = []
+

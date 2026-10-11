@@ -174,6 +174,12 @@ namespace eta::reader::parser {
         /// One datum (useful for REPL/tests)
         std::expected<SExprPtr, ReaderError> parse_datum();
 
+        /// Shared post-read normalization; tooling must apply the same policy.
+        /// May move elements out of a recognized module list; discard that list afterward.
+        static std::optional<ModuleForm> recognize_module(List& list);
+
+        [[nodiscard]] int quasiquote_depth() const noexcept { return qq_depth_; }
+
     private:
         lexer::Lexer& lexer_;
         std::optional<Token> lookahead_;
@@ -190,13 +196,6 @@ namespace eta::reader::parser {
         std::expected<SExprPtr, ReaderError> parse_byte_vector(Span open_span);
         std::expected<SExprPtr, ReaderError> parse_atom(const Token& tok);
         std::expected<SExprPtr, ReaderError> parse_abbreviation(const Token& tok);
-
-        /**
-         * Post-parse recognition
-         * Note: May move elements out of the provided list when a module is recognized.
-         * The caller discards the original datum afterward, so this is safe.
-         */
-        std::optional<ModuleForm> try_parse_module(List& list);
 
         /// Span utility
         static Span merge_spans(Span open, Span close);

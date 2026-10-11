@@ -196,7 +196,7 @@ namespace eta::reader::lexer {
 
     class Lexer {
     public:
-        explicit Lexer(FileId file_id, std::string_view source);
+        explicit Lexer(FileId file_id, std::string_view source, const ScanObserver* observer = nullptr);
 
         std::expected<Token, LexError> next_token();
 

@@ -1,0 +1,4 @@
+(import alpha.core)
+(import zeta.core)
+(define ok 1)
+

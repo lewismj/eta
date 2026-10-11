@@ -54,7 +54,8 @@ find_package(Boost 1.88 REQUIRED COMPONENTS unit_test_framework)
 if(NOT Boost_FOUND)
     message(FATAL_ERROR "Boost not found.")
 endif()
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_package(Python3 3.11 REQUIRED COMPONENTS Interpreter)
+find_package(CMakeTools)
 
 option(ETA_PROF_PPROF "Enable experimental pprof export support for profiling" OFF)
 if(ETA_PROF_PPROF)
@@ -230,6 +231,8 @@ else()
     endif()
 endif()
 
+set(ETA_LINTER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/linter")
+
 function(eta_add_stdlib_native_sidecar target_name output_name package_dir)
     set(_eta_stdlib_package_root "${ETA_STDLIB_NATIVE_DIR}/${package_dir}")
     set(_eta_stdlib_artifact_dir
@@ -289,15 +292,26 @@ eta_add_stdlib_native_sidecar(eta_torch_sidecar eta_torch torch)
 eta_add_stdlib_native_sidecar(eta_nng_sidecar eta_nng nng)
 
 # User-facing tools and protocol servers.
-add_subdirectory("${ETA_INTERPRETER_DIR}")
-add_subdirectory("${ETA_COMPILER_DIR}")
-add_subdirectory("${ETA_PROF_DIR}")
-add_subdirectory("${ETA_CLI_DIR}")
-add_subdirectory("${ETA_LSP_DIR}")
-add_subdirectory("${ETA_DAP_DIR}")
-add_subdirectory("${ETA_JUPYTER_DIR}")
+add_subdirectory("${ETA_INTERPRETER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/interpreter")
+add_subdirectory("${ETA_COMPILER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/compiler")
+add_subdirectory("${ETA_PROF_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/prof")
+add_subdirectory("${ETA_CLI_DIR}" "${CMAKE_BINARY_DIR}/eta/cli")
+add_subdirectory("${ETA_LSP_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/lsp")
+add_subdirectory("${ETA_DAP_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/dap")
+add_subdirectory("${ETA_JUPYTER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/jupyter")
+add_subdirectory("tools/shared" "${CMAKE_BINARY_DIR}/eta/tools/shared")
+add_subdirectory("${ETA_LINTER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/linter")
+add_subdirectory("tools/formatter" "${CMAKE_BINARY_DIR}/eta/tools/formatter")
 
 # Quality and performance targets.
+add_test(NAME eta_lint_rule_schema
+    COMMAND ${Python3_EXECUTABLE} "${ETA_REPO_ROOT_DIR}/scripts/check_lint_rule_specs.py")
+add_test(NAME eta_lint_rule_schema_tests
+    COMMAND ${Python3_EXECUTABLE} "${ETA_REPO_ROOT_DIR}/scripts/tests/test_lint_rule_specs.py")
+add_test(NAME eta_tooling_diagnostic_inventory
+    COMMAND ${Python3_EXECUTABLE} "${ETA_REPO_ROOT_DIR}/scripts/tooling_diagnostic_inventory.py")
+add_test(NAME eta_tooling_benchmark_manifest
+    COMMAND ${Python3_EXECUTABLE} "${ETA_REPO_ROOT_DIR}/scripts/tooling_benchmark.py" --check)
 add_subdirectory("${ETA_TEST_DIR}")
 add_subdirectory("${ETA_PKG_TEST_DIR}")
 add_subdirectory("${ETA_CLI_TEST_DIR}")

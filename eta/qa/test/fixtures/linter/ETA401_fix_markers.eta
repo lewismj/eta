@@ -1,0 +1,4 @@
+(define x 1) ;; trailing
+; standalone
+(define y 2)
+

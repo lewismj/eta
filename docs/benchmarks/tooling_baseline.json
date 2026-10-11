@@ -1,0 +1,365 @@
+{
+  "assertions": "disabled (NDEBUG)",
+  "bins": {
+    "large": {
+      "cst_file_p95_max_ms": 100.963,
+      "files": 3,
+      "reader_file_p95_max_ms": 33.944
+    },
+    "medium": {
+      "cst_file_p95_max_ms": 9.9871,
+      "files": 3,
+      "reader_file_p95_max_ms": 3.644
+    },
+    "small": {
+      "cst_file_p95_max_ms": 2.5394,
+      "files": 3,
+      "reader_file_p95_max_ms": 0.0819
+    }
+  },
+  "build": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_CXX_COMPILER": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe",
+    "CMAKE_CXX_FLAGS": "/DWIN32 /D_WINDOWS /EHsc",
+    "CMAKE_CXX_FLAGS-ADVANCED": "1",
+    "CMAKE_CXX_FLAGS_DEBUG": "/Ob0 /Od /RTC1",
+    "CMAKE_CXX_FLAGS_DEBUG-ADVANCED": "1",
+    "CMAKE_CXX_FLAGS_MINSIZEREL": "/O1 /Ob1 /DNDEBUG",
+    "CMAKE_CXX_FLAGS_MINSIZEREL-ADVANCED": "1",
+    "CMAKE_CXX_FLAGS_RELEASE": "/O2 /Ob2 /DNDEBUG",
+    "CMAKE_CXX_FLAGS_RELEASE-ADVANCED": "1",
+    "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "/O2 /Ob1 /DNDEBUG",
+    "CMAKE_CXX_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+    "CMAKE_GENERATOR": "Ninja",
+    "ETA_ENABLE_PACKAGE_NATIVE_SIDECARS": "ON",
+    "compiler_version": "Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36260 for x64"
+  },
+  "cancellation_p95_max_ms": 1.9866,
+  "manifest_sha256": "58f86a998e82e5e6831432127a324551200f8e996c59a884ac92191f3ae0eac3",
+  "reference_machine": {
+    "architecture": "AMD64",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz",
+    "logical_cores": 16,
+    "os": "Windows-11-10.0.26300-SP0",
+    "physical_cores": 8,
+    "ram_bytes": 16915197952
+  },
+  "samples": [
+    {
+      "bin": "small",
+      "bridge": {
+        "below_timer_resolution": false,
+        "median_ms": 0.14735,
+        "mib_per_second": 12.3942,
+        "p95_ms": 0.1802
+      },
+      "cancellation_p95_ms": 1.1987,
+      "cold_process_startup_io_parse_ms": 36.25010000541806,
+      "cst_peak_owned_and_reserved_bytes": 277819,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 0.3358,
+        "mib_per_second": 5.43861,
+        "p95_ms": 0.3969
+      },
+      "first_io_ms": 0.1206,
+      "input": "stdlib/tests/causal-dsep.test.eta",
+      "measurement_process_total_ms": 1827.938999980688,
+      "process_peak_rss_bytes": 42987520,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 0.0614,
+        "mib_per_second": 29.7441,
+        "p95_ms": 0.0627
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 0.0442,
+        "mib_per_second": 41.3187,
+        "p95_ms": 0.0596
+      }
+    },
+    {
+      "bin": "medium",
+      "bridge": {
+        "below_timer_resolution": false,
+        "median_ms": 0.80435,
+        "mib_per_second": 18.1368,
+        "p95_ms": 1.1455
+      },
+      "cancellation_p95_ms": 1.2853,
+      "cold_process_startup_io_parse_ms": 34.326400025747716,
+      "cst_peak_owned_and_reserved_bytes": 1064691,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 1.6552,
+        "mib_per_second": 8.81365,
+        "p95_ms": 2.0469
+      },
+      "first_io_ms": 0.3342,
+      "input": "stdlib/std/test.eta",
+      "measurement_process_total_ms": 2106.161499978043,
+      "process_peak_rss_bytes": 43851776,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 0.42525,
+        "mib_per_second": 34.3054,
+        "p95_ms": 0.6623
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 0.1248,
+        "mib_per_second": 116.894,
+        "p95_ms": 0.1513
+      }
+    },
+    {
+      "bin": "small",
+      "bridge": {
+        "below_timer_resolution": false,
+        "median_ms": 0.05875,
+        "mib_per_second": 13.9439,
+        "p95_ms": 0.0638
+      },
+      "cancellation_p95_ms": 1.1527,
+      "cold_process_startup_io_parse_ms": 31.100699910894036,
+      "cst_peak_owned_and_reserved_bytes": 145243,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 0.13845,
+        "mib_per_second": 5.91698,
+        "p95_ms": 0.1552
+      },
+      "first_io_ms": 0.1399,
+      "input": "cookbook/net/download-large-file.eta",
+      "measurement_process_total_ms": 1771.9458000501618,
+      "process_peak_rss_bytes": 43130880,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 0.0279,
+        "mib_per_second": 29.3622,
+        "p95_ms": 0.03
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 0.0383,
+        "mib_per_second": 21.3892,
+        "p95_ms": 0.0472
+      }
+    },
+    {
+      "bin": "medium",
+      "bridge": {
+        "below_timer_resolution": false,
+        "median_ms": 0.4416,
+        "mib_per_second": 18.3824,
+        "p95_ms": 0.4971
+      },
+      "cancellation_p95_ms": 1.7894,
+      "cold_process_startup_io_parse_ms": 38.31809991970658,
+      "cst_peak_owned_and_reserved_bytes": 620079,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 0.86995,
+        "mib_per_second": 9.3312,
+        "p95_ms": 1.1598
+      },
+      "first_io_ms": 0.2061,
+      "input": "cookbook/numerics/stats.eta",
+      "measurement_process_total_ms": 1964.1489000059664,
+      "process_peak_rss_bytes": 43696128,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 0.2508,
+        "mib_per_second": 32.3671,
+        "p95_ms": 0.2788
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 0.0998,
+        "mib_per_second": 81.3394,
+        "p95_ms": 0.1133
+      }
+    },
+    {
+      "bin": "large",
+      "bridge": {
+        "below_timer_resolution": false,
+        "median_ms": 15.6543,
+        "mib_per_second": 9.69179,
+        "p95_ms": 21.5806
+      },
+      "cancellation_p95_ms": 1.8807,
+      "cold_process_startup_io_parse_ms": 56.82579998392612,
+      "cst_peak_owned_and_reserved_bytes": 14627855,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 23.6037,
+        "mib_per_second": 6.42773,
+        "p95_ms": 31.0731
+      },
+      "first_io_ms": 1.1242,
+      "input": "cookbook/numerics/portfolio.eta",
+      "measurement_process_total_ms": 7199.592099990696,
+      "process_peak_rss_bytes": 53551104,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 6.70445,
+        "mib_per_second": 22.6295,
+        "p95_ms": 7.9248
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 1.0803,
+        "mib_per_second": 140.441,
+        "p95_ms": 1.3731
+      }
+    },
+    {
+      "bin": "large",
+      "bridge": {
+        "below_timer_resolution": true,
+        "median_ms": 0,
+        "mib_per_second": null,
+        "p95_ms": 0.0001
+      },
+      "cancellation_p95_ms": 1.2252,
+      "cold_process_startup_io_parse_ms": 53.27999999281019,
+      "cst_peak_owned_and_reserved_bytes": 5506343,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 8.2468,
+        "mib_per_second": 121.259,
+        "p95_ms": 9.6203
+      },
+      "first_io_ms": 12.509,
+      "input": "comment-heavy-1m",
+      "measurement_process_total_ms": 3730.594699969515,
+      "process_peak_rss_bytes": 45436928,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 1.5075,
+        "mib_per_second": 663.35,
+        "p95_ms": 1.7401
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 7.646,
+        "mib_per_second": 130.787,
+        "p95_ms": 8.8807
+      }
+    },
+    {
+      "bin": "small",
+      "bridge": {
+        "below_timer_resolution": false,
+        "median_ms": 0.12305,
+        "mib_per_second": 3.9759,
+        "p95_ms": 0.1881
+      },
+      "cancellation_p95_ms": 1.2147,
+      "cold_process_startup_io_parse_ms": 48.7597999162972,
+      "cst_peak_owned_and_reserved_bytes": 1025283,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 2.15375,
+        "mib_per_second": 0.227155,
+        "p95_ms": 2.5394
+      },
+      "first_io_ms": 8.6166,
+      "input": "depth-256",
+      "measurement_process_total_ms": 2033.284300006926,
+      "process_peak_rss_bytes": 45211648,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 0.0715,
+        "mib_per_second": 6.84245,
+        "p95_ms": 0.0819
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 0.0428,
+        "mib_per_second": 11.4307,
+        "p95_ms": 0.0783
+      }
+    },
+    {
+      "bin": "medium",
+      "bridge": {
+        "below_timer_resolution": false,
+        "median_ms": 6.1942,
+        "mib_per_second": 3.07925,
+        "p95_ms": 7.0896
+      },
+      "cancellation_p95_ms": 1.9866,
+      "cold_process_startup_io_parse_ms": 57.45329998899251,
+      "cst_peak_owned_and_reserved_bytes": 6352631,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 8.3629,
+        "mib_per_second": 2.28073,
+        "p95_ms": 9.9871
+      },
+      "first_io_ms": 17.6516,
+      "input": "ordinary-medium",
+      "measurement_process_total_ms": 3914.8852999787778,
+      "process_peak_rss_bytes": 47968256,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 3.1325,
+        "mib_per_second": 6.0889,
+        "p95_ms": 3.644
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 0.1719,
+        "mib_per_second": 110.957,
+        "p95_ms": 0.1986
+      }
+    },
+    {
+      "bin": "large",
+      "bridge": {
+        "below_timer_resolution": false,
+        "median_ms": 52.8455,
+        "mib_per_second": 2.88743,
+        "p95_ms": 64.5467
+      },
+      "cancellation_p95_ms": 1.0036,
+      "cold_process_startup_io_parse_ms": 128.2495999475941,
+      "cst_peak_owned_and_reserved_bytes": 52783815,
+      "cst_with_validation": {
+        "below_timer_resolution": false,
+        "median_ms": 72.9812,
+        "mib_per_second": 2.09078,
+        "p95_ms": 100.963
+      },
+      "first_io_ms": 17.4465,
+      "input": "ordinary-large",
+      "measurement_process_total_ms": 19715.674100094475,
+      "process_peak_rss_bytes": 78123008,
+      "reader": {
+        "below_timer_resolution": false,
+        "median_ms": 27.0418,
+        "mib_per_second": 5.64268,
+        "p95_ms": 33.944
+      },
+      "status": 0,
+      "warm_io": {
+        "below_timer_resolution": false,
+        "median_ms": 1.20765,
+        "mib_per_second": 126.351,
+        "p95_ms": 1.5646
+      }
+    }
+  ],
+  "sanitizers": "none in MSVC Release reference build"
+}

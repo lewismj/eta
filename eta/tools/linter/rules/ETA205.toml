@@ -1,0 +1,22 @@
+code = "ETA205"
+name = "ImportOrder"
+owner = "eta_lint"
+status = "enabled"
+severity = "info"
+analysis-level = "semantic"
+rationale = "Contiguous import declarations in proven-safe groups use canonical lexical ordering."
+prerequisites = ["proven-reorderable-import-group"]
+verified-prerequisites = ["proven-reorderable-import-group"]
+metadata = []
+unknown-behaviour = "skip-affected-region"
+false-positives = ["groups with comments, directives or non-symbol import items are treated as unknown and skipped"]
+fix = "conditional"
+fix-safety = "Reordering is offered only for contiguous top-level imports with symbol-only module names and no overlapping comments/directives."
+positive-fixtures = ["ETA205_unsorted_imports"]
+negative-fixtures = ["ETA205_sorted_imports"]
+dependency-fixtures = ["shared_mismatch"]
+unknown-fixtures = ["shared_recovered"]
+fix-fixtures = ["ETA205_fix_reorder"]
+options = {}
+presets = ["strict", "all"]
+

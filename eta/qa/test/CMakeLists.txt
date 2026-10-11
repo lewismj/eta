@@ -3,6 +3,8 @@ project(eta_core_test LANGUAGES CXX)
 set(SOURCES
         src/parser_tests.cpp
         src/lexer_tests.cpp
+        src/cst_tests.cpp
+        src/formatter_tests.cpp
         src/heap_tests.cpp
         src/factory_tests.cpp
         src/gc_tests.cpp
@@ -159,6 +161,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 
 # Always link all runtime libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE eta_core)
+target_link_libraries(${PROJECT_NAME} PRIVATE eta_cst)
+target_link_libraries(${PROJECT_NAME} PRIVATE eta_format_lib eta_tooling_files)
 eta_link_sidecar_builtin_runtime(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)
 target_compile_definitions(${PROJECT_NAME} PRIVATE

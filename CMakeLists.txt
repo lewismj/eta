@@ -180,6 +180,10 @@ install(DIRECTORY "${ETA_HTTP_PACKAGE_DIR}/libs/"
 add_custom_target(eta_all)
 foreach(_t IN ITEMS
     eta_core
+    eta_cst
+    eta_reader_bench
+    eta_formatter
+    eta_formatter_bench
     eta
     etai
     eta_repl

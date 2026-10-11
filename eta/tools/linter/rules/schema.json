@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Eta lint rule specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "name", "owner", "status", "severity", "analysis-level", "rationale", "prerequisites", "metadata", "unknown-behaviour", "false-positives", "fix", "fix-safety", "positive-fixtures", "negative-fixtures", "options", "presets"],
+  "properties": {
+    "code": {"type": "string", "pattern": "^ETA[1-6][0-9]{2}$"},
+    "name": {"type": "string", "minLength": 1},
+    "owner": {"type": "string", "enum": ["eta_lint", "compiler"]},
+    "status": {"type": "string", "enum": ["gated", "enabled", "delegated", "deprecated"]},
+    "severity": {"type": "string", "enum": ["error", "warn", "info"]},
+    "analysis-level": {"type": "string", "enum": ["cst", "scope", "semantic"]},
+    "rationale": {"type": "string", "minLength": 1},
+    "prerequisites": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "verified-prerequisites": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "metadata": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "unknown-behaviour": {"type": "string", "enum": ["skip-affected-scope", "skip-affected-region", "skip-rule"]},
+    "false-positives": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "fix": {"type": "string", "enum": ["none", "safe", "conditional"]},
+    "fix-safety": {"type": "string", "minLength": 1},
+    "positive-fixtures": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}},
+    "negative-fixtures": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}},
+    "dependency-fixtures": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}},
+    "unknown-fixtures": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}},
+    "fix-fixtures": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}},
+    "options": {"type": "object", "additionalProperties": {
+      "type": "object", "additionalProperties": false, "required": ["type", "default"],
+      "properties": {
+        "type": {"type": "string", "enum": ["boolean", "integer", "number", "string"]},
+        "default": {},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "enum": {"type": "array", "minItems": 1, "uniqueItems": true}
+      }
+    }},
+    "presets": {"type": "array", "uniqueItems": true, "items": {"type": "string", "enum": ["recommended", "strict", "all"]}}
+  }
+}

@@ -1,6 +1,20 @@
 cmake_minimum_required(VERSION 3.28)
 project(eta_bench LANGUAGES CXX)
 
+add_executable(eta_formatter_bench src/formatter_benchmark.cpp)
+target_link_libraries(eta_formatter_bench PRIVATE eta_format_lib)
+set_target_properties(eta_formatter_bench PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+if(WIN32)
+    target_link_libraries(eta_formatter_bench PRIVATE psapi)
+endif()
+
+add_executable(eta_reader_bench src/reader_benchmark.cpp)
+target_link_libraries(eta_reader_bench PRIVATE eta_cst)
+set_target_properties(eta_reader_bench PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+if(WIN32)
+    target_link_libraries(eta_reader_bench PRIVATE psapi)
+endif()
+
 add_executable(eta_qp_bench
     src/qp_benchmark.cpp
 )

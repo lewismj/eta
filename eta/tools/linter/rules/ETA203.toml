@@ -1,0 +1,21 @@
+code = "ETA203"
+name = "DuplicateExport"
+owner = "eta_lint"
+status = "enabled"
+severity = "warn"
+analysis-level = "cst"
+rationale = "Explicit export declarations are unique within a recognised module; a repeated name is redundant and usually a copy/paste error."
+prerequisites = ["recognised-export-declaration"]
+verified-prerequisites = ["recognised-export-declaration"]
+metadata = []
+unknown-behaviour = "skip-affected-region"
+false-positives = ["rename and other non-symbol export specs are not compared as L0 duplicates"]
+fix = "none"
+fix-safety = "No automatic removal: deleting an export can change a module's public surface."
+positive-fixtures = ["ETA203_duplicate"]
+negative-fixtures = ["ETA203_unique"]
+dependency-fixtures = ["shared_mismatch"]
+unknown-fixtures = ["shared_recovered"]
+options = {}
+presets = ["recommended", "strict", "all"]
+

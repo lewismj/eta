@@ -89,7 +89,7 @@ namespace eta::reader::parser {
             if ((*datum) && (*datum)->is<List>()) {
                 auto* lst = (*datum)->as<List>();
                 if (lst) {
-                    if (auto mod = try_parse_module(*lst)) {
+                    if (auto mod = recognize_module(*lst)) {
                         ModuleForm mf = std::move(*mod);
                         mf.span = lst->span; ///< cover whole list
                         out.push_back(box(SExprValue{std::move(mf)}));
@@ -394,7 +394,7 @@ namespace eta::reader::parser {
     }
 
 
-    std::optional<ModuleForm> Parser::try_parse_module(List& list) {
+    std::optional<ModuleForm> Parser::recognize_module(List& list) {
         if (list.dotted) return std::nullopt;
         if (list.elems.size() < 3) return std::nullopt;
 

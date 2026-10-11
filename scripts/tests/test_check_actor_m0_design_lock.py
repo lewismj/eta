@@ -52,12 +52,12 @@ class ActorM0DesignLockGuardTests(unittest.TestCase):
             root = Path(temp_dir)
             write_fixture(root)
 
-            adr_path = root / "docs" / "adr" / "0001-actors-vm-mailboxes-and-nng-transport.md"
+            adr_path = root / "docs" / "plan" / "completed" / "adr" / "0001-actors-vm-mailboxes-and-nng-transport.md"
             adr_path.unlink()
 
             issues = MODULE.find_design_lock_issues(root)
             self.assertTrue(
-                any(issue.path == Path("docs/adr/0001-actors-vm-mailboxes-and-nng-transport.md")
+                any(issue.path == Path("docs/plan/completed/adr/0001-actors-vm-mailboxes-and-nng-transport.md")
                     and issue.reason == "missing required file"
                     for issue in issues))
 

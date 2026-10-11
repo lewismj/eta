@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 REQUIRED_MARKERS: dict[Path, tuple[str, ...]] = {
-    Path("docs/adr/0001-actors-vm-mailboxes-and-nng-transport.md"): (
+    Path("docs/plan/completed/adr/0001-actors-vm-mailboxes-and-nng-transport.md"): (
         "Actors Use VM Mailboxes; NNG Is Distribution Transport",
         "eta/core/src/eta/runtime/memory/heap.h",
         "eta/core/src/eta/runtime/factory.h",
@@ -25,8 +25,9 @@ REQUIRED_MARKERS: dict[Path, tuple[str, ...]] = {
         "VM mailboxes addressed by PIDs",
     ),
     Path("docs/guide/reference/message-passing.md"): (
-        "current socket-based concurrency compatibility",
-        "VM mailboxes with PID",
+        "BEAM-like actor runtime",
+        "actors are addressed by PIDs",
+        "a mailbox owned by the runtime, not an NNG socket",
     ),
     Path("docs/guide/reference/network-message-passing.md"): (
         "current socket mailbox model",

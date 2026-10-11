@@ -1,0 +1,21 @@
+code = "ETA501"
+name = "FunctionTooLong"
+owner = "eta_lint"
+status = "enabled"
+severity = "warn"
+analysis-level = "cst"
+rationale = "Recognised function definitions stay within the physical-line budget so individual procedures remain readable."
+prerequisites = ["recognised-function-extent"]
+verified-prerequisites = ["recognised-function-extent"]
+metadata = []
+unknown-behaviour = "skip-affected-region"
+false-positives = ["only define, defun and lambda extents are measured"]
+fix = "none"
+fix-safety = "No automatic fix: splitting a function is a semantic refactor."
+positive-fixtures = ["ETA501_long_function"]
+negative-fixtures = ["ETA501_short_function"]
+dependency-fixtures = ["shared_mismatch"]
+unknown-fixtures = ["shared_recovered"]
+options = {max-lines = {type = "integer", default = 60, minimum = 1}}
+presets = ["recommended", "strict", "all"]
+

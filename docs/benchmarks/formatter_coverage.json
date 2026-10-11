@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "reviewed_refusals": [
+    {
+      "path": "stdlib/std/test.eta",
+      "sha256": "368ffce228f143ad7bb04a68f50bec9302969973afac6c546b1c5a7f86d7becf",
+      "code": "format.LineEndings",
+      "reason": "Mixed LF/CRLF in the frozen corpus; bytes and file metadata must remain unchanged."
+    }
+  ],
+  "passthrough_policy": [
+    {
+      "construct": "datum comment",
+      "reason": "Exact compiler discard extent; permissive suppressed grammar."
+    },
+    {
+      "construct": "physical-line lint directive",
+      "reason": "Exact file passthrough preserves cross-sibling physical-line applicability."
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+{"diagnostics": [{"code": "ETA205", "span": [0, 37]}], "fixed-source": "(import alpha.core)\n(import zeta.core)\n(define ok 1)\n"}
+
