@@ -10,12 +10,12 @@
 
 namespace eta::linter::cli {
     constexpr std::string_view help_text =
-        "Usage: eta_lint [--format pretty|json|sarif|github] [--preset minimal|recommended|strict|all] [--rules ETA104,ETA203] [--no-rule ETA401] [paths...]\n"
+        "Usage: eta_lint [--format pretty|json|sarif|github] [--preset minimal|recommended|all] [--rules ETA104,ETA203] [--no-rule ETA401] [paths...]\n"
         "       eta_lint --stdin --stdin-filename sample.eta\n"
         "Lints .eta files recursively; with no paths, uses the current directory.\n"
         "  --format FORMAT        pretty|json|sarif|github (default: pretty)\n"
         "  --fix                  Apply validated ETA205/ETA401 fixes and re-lint\n"
-        "  --preset NAME          minimal|recommended|strict|all (default: recommended)\n"
+        "  --preset NAME          minimal|recommended|all (default: recommended)\n"
         "  --rules RULES          Comma-separated enabled rule codes (replaces the set)\n"
         "  --no-rule RULE         Remove a rule from the active set (repeatable)\n"
         "  --max-warnings N       Fail when warnings exceed N (default: unlimited)\n"

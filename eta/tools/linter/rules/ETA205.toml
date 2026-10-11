@@ -18,5 +18,5 @@ dependency-fixtures = ["shared_mismatch"]
 unknown-fixtures = ["shared_recovered"]
 fix-fixtures = ["ETA205_fix_reorder"]
 options = {}
-presets = ["strict", "all"]
+presets = ["all"]
 

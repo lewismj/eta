@@ -4,6 +4,7 @@
 #include <cctype>
 #include <expected>
 #include <fstream>
+#include <map>
 #include <string_view>
 #include <sstream>
 #include <utility>
@@ -94,8 +95,68 @@ namespace eta::linter {
             return value;
         }
 
-        void merge_rule_disable(const std::string &key, const std::string &value, LintConfig &config) {
-            if (value == "\"off\"" || value == "off") config.disabled_rules.push_back(key);
+        std::vector<std::string> split_top_level(std::string_view text, char separator) {
+            std::vector<std::string> parts;
+            std::size_t start = 0;
+            bool quoted_text = false;
+            bool escaped = false;
+            int braces = 0;
+            for (std::size_t i = 0; i < text.size(); ++i) {
+                const char ch = text[i];
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+                if (quoted_text) {
+                    if (ch == '\\') escaped = true;
+                    else if (ch == '"') quoted_text = false;
+                    continue;
+                }
+                if (ch == '"') {
+                    quoted_text = true;
+                    continue;
+                }
+                if (ch == '{') ++braces;
+                else if (ch == '}') --braces;
+                else if (ch == separator && braces == 0) {
+                    parts.push_back(trim(text.substr(start, i - start)));
+                    start = i + 1;
+                }
+            }
+            parts.push_back(trim(text.substr(start)));
+            return parts;
+        }
+
+        std::expected<RuleConfigOverride, std::string> parse_rule_override(const std::string &key, std::string_view value) {
+            RuleConfigOverride override;
+            if (value == "\"off\"" || value == "off") {
+                override.disabled = true;
+                return override;
+            }
+            if (value.size() < 2 || value.front() != '{' || value.back() != '}') {
+                return std::unexpected("rule " + key + " must be \"off\" or an inline table");
+            }
+            const auto entries = split_top_level(value.substr(1, value.size() - 2), ',');
+            for (const auto &entry : entries) {
+                if (entry.empty()) continue;
+                const auto equals = entry.find('=');
+                if (equals == std::string::npos) return std::unexpected("invalid rule override entry for " + key);
+                const auto name = trim(std::string_view(entry).substr(0, equals));
+                const auto raw_value = trim(std::string_view(entry).substr(equals + 1));
+                if (name == "severity") {
+                    auto parsed = parse_string(raw_value);
+                    if (!parsed) return std::unexpected(parsed.error());
+                    if (*parsed != "error" && *parsed != "warn" && *parsed != "info") {
+                        return std::unexpected("invalid severity for rule " + key + ": " + *parsed);
+                    }
+                    override.severity = *parsed;
+                    continue;
+                }
+                auto numeric = parse_size(raw_value);
+                if (!numeric) return std::unexpected("unsupported rule override key for " + key + ": " + name);
+                override.integer_options[name] = *numeric;
+            }
+            return override;
         }
     }
 
@@ -143,7 +204,9 @@ namespace eta::linter {
                     return std::unexpected("unknown config key on line " + std::to_string(line_number));
                 }
             } else if (section == Section::Rules) {
-                merge_rule_disable(key, value, config);
+                auto parsed = parse_rule_override(key, value);
+                if (!parsed) return std::unexpected(parsed.error() + " on line " + std::to_string(line_number));
+                config.rules[key] = std::move(*parsed);
             } else {
                 return std::unexpected("configuration entries must appear under [eta-lint] or [rules]");
             }

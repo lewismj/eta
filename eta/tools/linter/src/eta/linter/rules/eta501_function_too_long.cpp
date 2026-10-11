@@ -13,13 +13,15 @@ namespace eta::linter::rules {
     }
 
     void run_eta501(RuleContext &context) {
+        const auto configured = context.options.max_line_overrides.find("ETA501");
+        const auto limit = configured == context.options.max_line_overrides.end() ? default_max_lines : configured->second;
         for (const auto &form : context.forms) {
             if (form.head != "define" && form.head != "defun" && form.head != "lambda") continue;
             const auto span = node_extent(context.file, context.file.nodes[form.id]);
             const auto extent = context.file.source->slice(span);
-            if (physical_lines(extent) <= default_max_lines) continue;
+            if (physical_lines(extent) <= limit) continue;
             context.out.push_back({"ETA501", "eta_lint", Severity::Warning,
-                "function definition exceeds the default 60-line limit", span,
+                "function definition exceeds the configured line limit", span,
                 true, 1, 1, std::string(context.path)});
         }
     }

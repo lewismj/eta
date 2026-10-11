@@ -116,7 +116,7 @@ def inventory(rules, fixtures):
         codes.add(spec["code"])
         specs.append(spec)
     return {"rules": specs, "presets": {name: sorted(spec["code"] for spec in specs if name in spec["presets"])
-                                         for name in ("recommended", "strict", "all")}}
+                                         for name in ("minimal", "recommended", "all")}}
 
 
 def main():

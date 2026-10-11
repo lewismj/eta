@@ -1,1 +1,7 @@
 *.ipynb -linguist-detectable
+
+# Linter fixtures encode exact byte spans and fixed-source output, so their
+# line endings must stay LF on every platform.
+eta/qa/test/fixtures/linter/*.eta text eol=lf
+eta/qa/test/fixtures/linter/*.json text eol=lf
+

@@ -19,6 +19,7 @@ namespace eta::linter::rules {
         const cst::File &file;
         std::string_view path;
         const std::vector<ActiveForm> &forms;
+        const LintOptions &options;
         std::vector<Diagnostic> &out;
     };
 

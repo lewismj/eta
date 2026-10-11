@@ -23,7 +23,7 @@ def main() -> int:
         return listed.returncode or 1
 
     explained = run([str(binary), "--explain", "ETA401"])
-    if explained.returncode != 0 or "status: enabled" not in explained.stdout or "fix: none" not in explained.stdout:
+    if explained.returncode != 0 or "status: enabled" not in explained.stdout or "fix: safe" not in explained.stdout:
         print(explained.stdout, file=sys.stdout)
         print(explained.stderr, file=sys.stderr)
         return explained.returncode or 1
@@ -67,6 +67,51 @@ def main() -> int:
         if payload.get("diagnostics"):
             print("expected ETA104 to be disabled by config", file=sys.stderr)
             return 1
+
+        option_source = pathlib.Path(tempdir) / "long.eta"
+        option_source.write_text("(define (f x)\n  x\n)\n", encoding="utf-8")
+        option_config = pathlib.Path(tempdir) / "options.toml"
+        option_config.write_text(
+            textwrap.dedent(
+                """
+                [eta-lint]
+                preset = "all"
+
+                [rules]
+                ETA501 = { severity = "error", max-lines = 2 }
+                """
+            ).lstrip(),
+            encoding="utf-8",
+        )
+        option_result = run([str(binary), "--config", str(option_config), "--format", "json", str(option_source)])
+        if option_result.returncode != 1:
+            print(option_result.stdout, file=sys.stdout)
+            print(option_result.stderr, file=sys.stderr)
+            return option_result.returncode
+        option_payload = json.loads(option_result.stdout)
+        rule = [item for item in option_payload.get("diagnostics", []) if item.get("code") == "ETA501"]
+        if len(rule) != 1 or rule[0].get("severity") != "error":
+            print(option_result.stdout, file=sys.stdout)
+            return 1
+
+        bad_config = pathlib.Path(tempdir) / "bad.toml"
+        bad_config.write_text(
+            textwrap.dedent(
+                """
+                [eta-lint]
+                preset = "all"
+
+                [rules]
+                ETA501 = { unknown = 2 }
+                """
+            ).lstrip(),
+            encoding="utf-8",
+        )
+        bad_result = run([str(binary), "--config", str(bad_config), str(option_source)])
+        if bad_result.returncode != 64:
+            print(bad_result.stdout, file=sys.stdout)
+            print(bad_result.stderr, file=sys.stderr)
+            return bad_result.returncode
 
         suppressed = pathlib.Path(tempdir) / "suppressed.eta"
         suppressed.write_text(";; eta-lint:disable=ETA104\n(define foo_bar 1)\n", encoding="utf-8")

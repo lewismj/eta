@@ -17,5 +17,5 @@ negative-fixtures = ["ETA104_kebab_case"]
 dependency-fixtures = ["shared_mismatch"]
 unknown-fixtures = ["shared_recovered"]
 options = {}
-presets = ["recommended", "strict", "all"]
+presets = ["minimal", "recommended", "all"]
 

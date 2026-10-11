@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -48,6 +49,8 @@ namespace eta::linter {
         std::optional<std::filesystem::path> config;
         bool fix{false};
         std::size_t jobs{1};
+        std::map<std::string, Severity> severity_overrides;
+        std::map<std::string, std::size_t> max_line_overrides;
     };
 
     /// Result of analysing a single source buffer.

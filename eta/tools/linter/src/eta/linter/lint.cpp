@@ -467,7 +467,7 @@ namespace eta::linter {
                 if (!nested) roots.push_back(i);
             }
             for (const auto root : roots) collect_form_suppression(form_nodes, root, file_suppressed);
-            rules::RuleContext context{file, identity, forms, report.diagnostics};
+            rules::RuleContext context{file, identity, forms, options, report.diagnostics};
             const auto enabled = [&](std::string_view code) {
                 return std::find(rules.begin(), rules.end(), code) != rules.end();
             };
@@ -476,6 +476,11 @@ namespace eta::linter {
             if (enabled("ETA205")) rules::run_eta205(context);
             if (enabled("ETA401")) rules::run_eta401(context);
             if (enabled("ETA501")) rules::run_eta501(context);
+            for (auto &diagnostic : report.diagnostics) {
+                if (diagnostic.owner != "eta_lint") continue;
+                const auto override = options.severity_overrides.find(diagnostic.code);
+                if (override != options.severity_overrides.end()) diagnostic.severity = override->second;
+            }
             for (const auto &issue : directive_issues) {
                 report.diagnostics.push_back({"eta_lint.Directive", "eta_lint", Severity::Error, issue.message, issue.span, true, 1, 1, identity});
             }

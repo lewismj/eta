@@ -17,5 +17,5 @@ negative-fixtures = ["ETA203_unique"]
 dependency-fixtures = ["shared_mismatch"]
 unknown-fixtures = ["shared_recovered"]
 options = {}
-presets = ["recommended", "strict", "all"]
+presets = ["minimal", "recommended", "all"]
 

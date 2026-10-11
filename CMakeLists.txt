@@ -184,6 +184,7 @@ foreach(_t IN ITEMS
     eta_reader_bench
     eta_formatter
     eta_formatter_bench
+    eta_linter
     eta
     etai
     eta_repl

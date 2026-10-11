@@ -41,12 +41,35 @@ namespace {
         else std::cout << linter::cli::pretty_report(reports, options.quiet);
     }
 
-    void apply_config(const linter::LintConfig &config, linter::LintOptions &options) {
+    std::expected<void, std::string> apply_config(const linter::LintConfig &config, linter::LintOptions &options) {
+        auto severity_from_text = [](std::string_view text) -> std::optional<linter::Severity> {
+            if (text == "error") return linter::Severity::Error;
+            if (text == "warn") return linter::Severity::Warning;
+            if (text == "info") return linter::Severity::Info;
+            return std::nullopt;
+        };
         if (options.preset.empty() && config.preset) options.preset = *config.preset;
         if (!options.max_warnings && config.max_warnings) options.max_warnings = config.max_warnings;
         options.includes.insert(options.includes.end(), config.includes.begin(), config.includes.end());
         options.excludes.insert(options.excludes.end(), config.excludes.begin(), config.excludes.end());
-        options.no_rules.insert(options.no_rules.end(), config.disabled_rules.begin(), config.disabled_rules.end());
+        for (const auto &[code, override] : config.rules) {
+            if (!linter::find_rule(code)) return std::unexpected("unknown rule code in config: " + code);
+            if (override.disabled) options.no_rules.push_back(code);
+            if (override.severity) {
+                auto parsed = severity_from_text(*override.severity);
+                if (!parsed) return std::unexpected("invalid severity for " + code + ": " + *override.severity);
+                options.severity_overrides[code] = *parsed;
+            }
+            for (const auto &[name, numeric] : override.integer_options) {
+                if (code == "ETA501" && name == "max-lines") {
+                    if (!numeric) return std::unexpected("ETA501 max-lines must be positive");
+                    options.max_line_overrides[code] = numeric;
+                    continue;
+                }
+                return std::unexpected("unsupported rule option for " + code + ": " + name);
+            }
+        }
+        return {};
     }
 
     std::expected<std::optional<LoadedConfig>, std::string> load_config(const linter::cli::Arguments &args) {
@@ -80,7 +103,10 @@ namespace {
         if (!config) { std::cerr << "eta_lint: " << config.error() << '\n'; return 64; }
         std::filesystem::path discovery_root = fs::current_path();
         if (*config) {
-            apply_config((*config)->config, options);
+            if (auto applied = apply_config((*config)->config, options); !applied) {
+                std::cerr << "eta_lint: " << applied.error() << '\n';
+                return 64;
+            }
             discovery_root = fs::absolute((*config)->path).parent_path();
         }
 
@@ -121,7 +147,9 @@ namespace {
                 status = aggregate(status, 2);
                 continue;
             }
-            auto report = linter::lint_source(std::move(snapshot->bytes), file.display, *rules, options);
+            auto report = options.fix
+                ? linter::lint_source(snapshot->bytes, file.display, *rules, options)
+                : linter::lint_source(std::move(snapshot->bytes), file.display, *rules, options);
             status = aggregate(status, report.exit_class);
             if (options.fix && report.fixed_source && !internal && report.exit_class < 70) {
                 tooling::CommitHooks hooks;

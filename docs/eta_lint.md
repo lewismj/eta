@@ -15,7 +15,7 @@ formats:
   level and preset membership.
 - `--explain ETA401` prints the reviewed metadata, prerequisites, false-positive
   notes, fix policy and fixture inventory for one rule.
-- `--preset {minimal|recommended|strict|all}` selects the compiled rule set.
+- `--preset {minimal|recommended|all}` selects the compiled rule set.
 - `--config PATH` loads one `.eta-lint.toml` file.
 - `--rules CODE[,CODE...]` enables only the listed rules.
 - `--no-rule CODE[,CODE...]` disables rules after preset resolution.
@@ -58,12 +58,17 @@ exclude = ["**/generated/**"]
 
 [rules]
 ETA104 = "off"
+ETA501 = { severity = "warn", max-lines = 80 }
 ```
 
 - `preset` becomes the default compiled preset when the CLI did not specify one.
 - `max-warnings` raises the exit class once the warning count exceeds the limit.
 - `include` and `exclude` add discovery filters.
-- `[rules]` currently accepts `off` to disable a specific registered rule.
+- `[rules]` accepts either `"off"` or an inline table.
+- Supported inline fields are `severity = "error|warn|info"` and the reviewed
+  numeric options for that rule (currently `ETA501.max-lines`).
+- Unknown rule codes, unknown option keys, and ill-typed values are usage
+  errors (exit 64).
 
 The CLI merges config values after parsing command-line options and before rule
 resolution, so explicit CLI rule selections still take effect.

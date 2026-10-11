@@ -18,4 +18,4 @@ dependency-fixtures = ["shared_mismatch"]
 unknown-fixtures = ["shared_recovered"]
 fix-fixtures = ["ETA401_fix_markers"]
 options = {}
-presets = ["recommended", "strict", "all"]
+presets = ["minimal", "recommended", "all"]

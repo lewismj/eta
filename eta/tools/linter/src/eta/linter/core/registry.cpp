@@ -33,21 +33,21 @@ namespace eta::linter {
                   "conventional sigils such as ? ! and -> remain valid"},
                  "none", "No automatic rename: renaming a definition changes its public identity.",
                  {"ETA104_snake_case"}, {"ETA104_kebab_case"}, {"shared_mismatch"}, {"shared_recovered"},
-                 {"minimal", "recommended", "strict", "all"}},
+                 {"minimal", "recommended", "all"}},
                 {"ETA203", "DuplicateExport", "eta_lint", RuleStatus::Enabled, Severity::Warning, "cst",
                  "Explicit export declarations are unique within a recognised module; a repeated name is redundant and usually a copy/paste error.",
                  {"recognised-export-declaration"}, {"recognised-export-declaration"},
                  {"rename and other non-symbol export specs are not compared as L0 duplicates"},
                  "none", "No automatic removal: deleting an export can change a module's public surface.",
                  {"ETA203_duplicate"}, {"ETA203_unique"}, {"shared_mismatch"}, {"shared_recovered"},
-                 {"minimal", "recommended", "strict", "all"}},
+                 {"minimal", "recommended", "all"}},
                 {"ETA205", "ImportOrder", "eta_lint", RuleStatus::Enabled, Severity::Info, "semantic",
                  "Report import groups that are proven reorderable but not in canonical lexical order.",
                  {"proven-reorderable-import-group"}, {"proven-reorderable-import-group"},
                  {"groups with comments, directives or non-symbol import items are treated as unknown and skipped"},
                  "conditional", "Reordering is offered only for contiguous top-level imports with symbol-only module names and no overlapping comments/directives.",
                  {"ETA205_unsorted_imports"}, {"ETA205_sorted_imports"}, {"shared_mismatch"}, {"shared_recovered"},
-                 {"strict", "all"}},
+                 {"all"}},
                 {"ETA301", "UnusedLetBinding", "eta_lint", RuleStatus::Gated, Severity::Warning, "scope",
                  "Report a binding with no resolved references once ordinary-let binding and reference semantics are proven.",
                  {"verified-let-scopes", "complete-reference-coverage"}, {},
@@ -59,14 +59,14 @@ namespace eta::linter {
                  {"three-semicolon banners are permitted", "strings, block comments, datum comments and shebangs are never matched"},
                  "safe", "Marker-only fixes rewrite semicolon runs for ordinary non-directive line comments while preserving comment bodies and line endings.",
                  {"ETA401_double_eol"}, {"ETA401_canonical"}, {"shared_mismatch"}, {"shared_recovered"},
-                 {"minimal", "recommended", "strict", "all"}},
+                 {"minimal", "recommended", "all"}},
                 {"ETA501", "FunctionTooLong", "eta_lint", RuleStatus::Enabled, Severity::Warning, "cst",
                  "Recognised function definitions stay within the physical-line budget.",
                  {"recognised-function-extent"}, {"recognised-function-extent"},
                  {"only define, defun and lambda extents are measured"},
                  "none", "No automatic fix: splitting a function is a semantic refactor.",
                  {"ETA501_long_function"}, {"ETA501_short_function"}, {"shared_mismatch"}, {"shared_recovered"},
-                 {"minimal", "recommended", "strict", "all"}},
+                 {"minimal", "recommended", "all"}},
             };
             return rules;
         }
@@ -127,7 +127,7 @@ namespace eta::linter {
         std::vector<std::string> active;
         if (options.rules.empty()) {
             const auto preset = options.preset.empty() ? std::string_view{"recommended"} : std::string_view{options.preset};
-            if (preset != "minimal" && preset != "recommended" && preset != "strict" && preset != "all")
+            if (preset != "minimal" && preset != "recommended" && preset != "all")
                 return std::unexpected("unknown preset: " + std::string(preset));
             for (const auto &rule : registry()) {
                 if (rule.status != RuleStatus::Enabled) continue;
