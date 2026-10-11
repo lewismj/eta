@@ -15,12 +15,12 @@ entry = "eta_register_lgbm_extension_v1"
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
 artifact = "libs/amd64/eta_lightgbm.dll"
-sha256 = "5110f0d50b3c33a2cd50da6f04362410737541d2e63fde91be6066e32c7663ec"
+sha256 = "7c639b3b6582b83121da576020fb56d0ea7161d237518aad09dfc2169e904597"
 
 [[native.targets]]
 triple = "x86_64-unknown-linux-gnu"
 artifact = "libs/amd64/libeta_lightgbm.so"
-sha256 = "290a01eaefde91ffe6f6ebc37e36bdf3f31523750789a2a3c73f6716bc03cea7"
+sha256 = "6f4be3f0ba4b35242325c939709994627d000123e29c5255a793d77e7c32f78a"
 
 [[native.targets]]
 triple = "aarch64-unknown-linux-gnu"

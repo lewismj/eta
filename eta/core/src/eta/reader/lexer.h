@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -172,11 +173,39 @@ namespace eta::reader::lexer {
         return os << to_string(kind);
     }
 
+    /// Concrete reader items. Datum comments are consumed by next_token(),
+    /// not by next_raw_item(); both views use the same lexical recognisers.
+    struct RawItem {
+        enum class Kind : std::uint8_t {
+            Token, Whitespace, LineComment, BlockComment, DatumComment, Directive, Shebang
+        };
+        Kind kind{Kind::Token};
+        Span span{};
+        std::optional<Token> token;
+        bool at_bof_before{false};
+        bool at_bof_after{false};
+    };
+
+    struct ScanObserver {
+        std::function<void(const RawItem&)> item;
+        /// Called after the authoritative discard routine, including on failure.
+        std::function<void(Span, bool)> discarded;
+        /// Bounded polling during long atoms/comments as well as between items.
+        std::function<void()> checkpoint;
+    };
+
     class Lexer {
     public:
         explicit Lexer(FileId file_id, std::string_view source);
 
         std::expected<Token, LexError> next_token();
+
+        std::expected<RawItem, LexError> next_raw_item();
+
+        /// Observe a compiler token and every item consumed while obtaining it.
+        std::expected<Token, LexError> scan_next(const ScanObserver& observer);
+
+        [[nodiscard]] Position position() const noexcept { return current_position(); }
 
         [[nodiscard]] FileId file_id() const noexcept { return file_id_; }
 
@@ -187,6 +216,7 @@ namespace eta::reader::lexer {
         std::uint32_t current_line_;
         std::uint32_t current_col_;
         bool at_bof_;
+        const ScanObserver* observer_{nullptr};
 
         [[nodiscard]] bool is_eof() const noexcept {
             return pos_ >= source_.size();
@@ -200,7 +230,9 @@ namespace eta::reader::lexer {
             return std::tolower(static_cast<unsigned char>(peek(offset)));
         }
 
-        char advance() noexcept {
+        char advance() {
+            if (observer_ && observer_->checkpoint && (pos_ & 4095) == 0)
+                observer_->checkpoint();
             if (is_eof()) return '\0';
             const char c = source_[pos_++];
             if (c == '\n') {
@@ -231,13 +263,13 @@ namespace eta::reader::lexer {
 
         std::expected<void, LexError> require_token_boundary(Position start, std::string_view what) const;
 
-        std::expected<void, LexError> skip_whitespace_and_comments();
+        std::expected<Token, LexError> consume_token();
 
         bool skip_block_comment();
 
         std::expected<void, LexError> skip_datum(Position start);
 
-        void consume_directive_or_shebang();
+        bool consume_directive_or_shebang();
 
         /// Decode a single UTF-8 sequence from input without advancing on failure
         std::expected<char32_t, LexError> decode_utf8(Position start);
@@ -251,7 +283,7 @@ namespace eta::reader::lexer {
 
         std::expected<Token, LexError> consume_sharp();
 
-        bool consume_exact_tail_icase(std::string_view tail) noexcept;
+        bool consume_exact_tail_icase(std::string_view tail);
 
         std::expected<bool, LexError> consume_boolean();
 

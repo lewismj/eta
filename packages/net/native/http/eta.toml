@@ -15,12 +15,12 @@ entry = "eta_register_http_extension_v1"
 [[native.targets]]
 triple = "x86_64-pc-windows-msvc"
 artifact = "libs/amd64/eta_http.dll"
-sha256 = "1ad97d87fadb244830303fd7462fa5b7786c38d1caaf3a3e0ac0b2acacf807f3"
+sha256 = "9b76a63e457e827e3858f10e1b5f1b381ab9e5aed5b877ce4322ab83f1620181"
 
 [[native.targets]]
 triple = "x86_64-unknown-linux-gnu"
 artifact = "libs/amd64/libeta_http.so"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "93b93bcfe266315473217bd203429d4e85d8409bf04418c4e0cc88b3fb33c0eb"
 
 [[native.targets]]
 triple = "aarch64-unknown-linux-gnu"

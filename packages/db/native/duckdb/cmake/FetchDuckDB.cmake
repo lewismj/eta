@@ -1,6 +1,6 @@
 include(FetchContent)
 
-set(ETA_DUCKDB_UPSTREAM_TAG "v1.5.1" CACHE STRING
+set(ETA_DUCKDB_UPSTREAM_TAG "v1.5.6" CACHE STRING
     "Pinned DuckDB upstream tag used by the DuckDB sidecar package.")
 
 function(eta_duckdb_fetch)
@@ -54,7 +54,17 @@ function(eta_duckdb_fetch)
         set(_eta_duckdb_prev_skip_install_rules_defined FALSE)
     endif()
     set(CMAKE_SKIP_INSTALL_RULES ON)
+    # DuckDB's bundled fmt tests whether _SECURE_SCL is defined to select
+    # stdext::checked_array_iterator, which recent MSVC STLs have removed.
+    # Force its portable pointer path for every DuckDB C++ translation unit,
+    # including object libraries that do not link against duckdb_fmt.
+    set(_eta_duckdb_prev_cxx_flags "${CMAKE_CXX_FLAGS}")
+    if(MSVC)
+        string(APPEND CMAKE_CXX_FLAGS
+            " /FI\"${CMAKE_CURRENT_FUNCTION_LIST_DIR}/DuckDBMSVCCompat.h\"")
+    endif()
     FetchContent_MakeAvailable(duckdb_upstream)
+    set(CMAKE_CXX_FLAGS "${_eta_duckdb_prev_cxx_flags}")
     # Some CMake/generator combinations still emit parent install scripts that
     # include DuckDB's sub-build install script unconditionally, even when
     # install rules are skipped for the fetched project.

@@ -43,11 +43,7 @@ namespace {
         return LexError{kind, make_span(start, current_position()), std::move(msg)};
     }
 
-    /// Main tokenization entry
-    std::expected<Token, LexError> Lexer::next_token() {
-        if (auto skip_result = skip_whitespace_and_comments(); !skip_result)
-            return std::unexpected(skip_result.error());
-
+    std::expected<Token, LexError> Lexer::consume_token() {
         Position start = current_position();
 
         if (is_eof()) {
@@ -122,52 +118,60 @@ namespace {
         return tok;
     }
 
-    std::expected<void, LexError> Lexer::skip_whitespace_and_comments() {
-        while (!is_eof()) {
-            const char c = peek();
-
-            if (std::isspace(static_cast<unsigned char>(c))) {
-                advance();
-                continue;
-            }
-
-            if (c == ';') {
-                /// Line comment
-                while (!is_eof() && peek() != '\n') {
-                    advance();
-                }
-                continue;
-            }
-
-            if (c == '#') {
-                const char next = peek(1);
-                if (next == '|') {
-                    /// Block comment
-                    const Position start = current_position();
-                    advance(); advance();
-                    if (!skip_block_comment()) {
-                        return std::unexpected(make_error(LexErrorKind::UnterminatedComment, start));
-                    }
-                    continue;
-                }
-                if (next == ';') {
-                    /// Datum comment - skip one complete datum
-                    Position dc_start = current_position();
-                    advance(); advance();
-                    if (auto r = skip_datum(dc_start); !r) return std::unexpected(r.error());
-                    continue;
-                }
-                if (next == '!') {
-                    /// Directive or shebang
-                    advance(); advance();
-                    consume_directive_or_shebang();
-                    continue;
-                }
-            }
-
-            break;
+    std::expected<RawItem, LexError> Lexer::next_raw_item() {
+        const auto start = current_position();
+        RawItem item;
+        item.at_bof_before = at_bof_;
+        if (!is_eof() && std::isspace(static_cast<unsigned char>(peek()))) {
+            item.kind = RawItem::Kind::Whitespace;
+            do { advance(); } while (!is_eof() && std::isspace(static_cast<unsigned char>(peek())));
+        } else if (!is_eof() && peek() == ';') {
+            item.kind = RawItem::Kind::LineComment;
+            while (!is_eof() && peek() != '\n') advance();
+        } else if (peek() == '#' && peek(1) == '|') {
+            item.kind = RawItem::Kind::BlockComment;
+            advance(); advance();
+            if (!skip_block_comment())
+                return std::unexpected(make_error(LexErrorKind::UnterminatedComment, start));
+        } else if (peek() == '#' && peek(1) == ';') {
+            item.kind = RawItem::Kind::DatumComment;
+            advance(); advance();
+        } else if (peek() == '#' && peek(1) == '!') {
+            advance(); advance();
+            item.kind = consume_directive_or_shebang() ? RawItem::Kind::Shebang : RawItem::Kind::Directive;
+        } else {
+            auto token = consume_token();
+            if (!token) return std::unexpected(token.error());
+            item.token = std::move(*token);
         }
-        return {};
+        item.span = make_span(start, current_position());
+        item.at_bof_after = at_bof_;
+        if (observer_ && observer_->item) observer_->item(item);
+        return item;
+    }
+
+    std::expected<Token, LexError> Lexer::next_token() {
+        for (;;) {
+            auto item = next_raw_item();
+            if (!item) return std::unexpected(item.error());
+            if (item->token) return std::move(*item->token);
+            if (item->kind == RawItem::Kind::DatumComment) {
+                auto result = skip_datum(item->span.start);
+                if (observer_ && observer_->discarded)
+                    observer_->discarded(make_span(item->span.start, current_position()), result.has_value());
+                if (!result) return std::unexpected(result.error());
+            }
+        }
+    }
+
+    std::expected<Token, LexError> Lexer::scan_next(const ScanObserver& observer) {
+        struct Restore {
+            const ScanObserver*& slot;
+            const ScanObserver* previous;
+            ~Restore() { slot = previous; }
+        } restore{observer_, observer_};
+        observer_ = &observer;
+        return next_token();
     }
 
     bool Lexer::skip_block_comment() {
@@ -288,7 +292,7 @@ namespace {
         return {};
     }
 
-    void Lexer::consume_directive_or_shebang() {
+    bool Lexer::consume_directive_or_shebang() {
         const bool was_at_line_start = at_bof_ && current_line_ == 1 && current_col_ <= static_cast<std::uint32_t>(kShebangAllowedMaxCol);
 
         std::string word;
@@ -304,9 +308,10 @@ namespace {
             while (!is_eof() && peek() != '\n') {
                 advance();
             }
-            return;
+            return true;
         }
         /// For fold-case and no-fold-case directives: ignore (no-ops) to comply with modern Scheme defaults.
+        return false;
     }
 
     /// Decode a single UTF-8 sequence from input without advancing on failure
@@ -519,7 +524,7 @@ namespace {
         }
     }
 
-    bool Lexer::consume_exact_tail_icase(std::string_view tail) noexcept {
+    bool Lexer::consume_exact_tail_icase(std::string_view tail) {
         Position p = current_position();
         for (char want : tail) {
             if (is_eof() || std::tolower(static_cast<unsigned char>(peek())) != want) {
