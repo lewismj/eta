@@ -38,6 +38,15 @@
 #include "eta/package/manifest.h"
 #include "eta/package/resolver.h"
 
+/// Shared tooling libraries (§8.2): the LSP links the formatter and linter
+/// libraries directly and never shells out to eta_fmt / eta_lint.
+#include "eta/cst/parse.h"
+#include "eta/format/format_source.h"
+#include "eta/linter/core/engine.h"
+#include "eta/linter/core/registry.h"
+#include "eta/linter/lint.h"
+#include "eta/linter/rules/rules.h"
+
 namespace eta::lsp {
 
 using namespace eta::json;
@@ -634,6 +643,9 @@ void LspServer::dispatch(const Value& msg) {
     } else if (method == "textDocument/formatting") {
         auto result = handle_formatting(params);
         if (has_id) send_response(id, result);
+    } else if (method == "textDocument/rangeFormatting") {
+        auto result = handle_range_formatting(params);
+        if (has_id) send_response(id, result);
     } else if (method == "textDocument/documentHighlight") {
         auto result = handle_document_highlight(params);
         if (has_id) send_response(id, result);
@@ -654,14 +666,44 @@ void LspServer::dispatch(const Value& msg) {
  * LSP: initialize / shutdown
  */
 
-Value LspServer::handle_initialize(const Value& /*params*/) {
+Value LspServer::handle_initialize(const Value& params) {
     initialized_ = true;
+
+    /// Editor-configurable tooling options (§8.2/§8.3). Document-format options
+    /// still take precedence per request; these are the defaults.
+    const auto& init_options = params["initializationOptions"];
+    if (init_options.is_object()) {
+        if (auto enabled = init_options["lintEnabled"]; enabled.is_bool()) {
+            lint_enabled_ = enabled.as_bool();
+        }
+        if (auto width = init_options.get_int("maxWidth"); width && *width > 0) {
+            format_max_width_ = static_cast<std::size_t>(*width);
+        }
+        if (auto indent = init_options.get_int("indent"); indent && *indent > 0) {
+            format_indent_ = static_cast<std::size_t>(*indent);
+        }
+    }
+
+    /// Negotiate the position encoding. UTF-16 is the default; only switch to
+    /// UTF-8 when the client explicitly advertises it (§2.4).
+    std::string negotiated_encoding = "utf-16";
+    const auto& encodings = params["capabilities"]["general"]["positionEncodings"];
+    if (encodings.is_array()) {
+        for (const auto& enc : encodings.as_array()) {
+            if (enc.is_string() && enc.as_string() == "utf-8") {
+                position_encoding_ = cst::PositionEncoding::Utf8;
+                negotiated_encoding = "utf-8";
+                break;
+            }
+        }
+    }
 
     return json::object({
         {"capabilities", json::object({
+            {"positionEncoding", negotiated_encoding},
             {"textDocumentSync", json::object({
                 {"openClose", true},
-                {"change", 1},  ///< 1 = Full sync
+                {"change", 2},  ///< 2 = Incremental sync; full replacement is accepted too
                 {"save", json::object({{"includeText", true}})},
             })},
             {"hoverProvider", true},
@@ -680,6 +722,7 @@ Value LspServer::handle_initialize(const Value& /*params*/) {
             {"selectionRangeProvider", true},
             {"workspaceSymbolProvider", true},
             {"documentFormattingProvider", true},
+            {"documentRangeFormattingProvider", true},
             {"documentHighlightProvider", true},
             {"inlayHintProvider", json::object({
                 {"resolveProvider", false},
@@ -815,14 +858,38 @@ void LspServer::handle_did_change(const Value& params) {
 
     it->second.version = td.get_int("version").value_or(it->second.version);
 
-    /// Full sync: replace content with last change
+    /**
+     * Apply ordered content changes sequentially against the preceding version
+     * (§8.2). A change with a `range` is an incremental edit resolved through the
+     * negotiated position encoding; a change without one is a full replacement.
+     * An unresolvable position desynchronises the document, so we clear stale
+     * diagnostics and wait for the next full snapshot rather than guessing.
+     */
     const auto& changes = params["contentChanges"];
-    if (changes.is_array() && !changes.as_array().empty()) {
-        const auto& last = changes.as_array().back();
-        auto text = last.get_string("text");
-        if (text) {
-            it->second.content = *text;
+    if (!changes.is_array()) return;
+    for (const auto& change : changes.as_array()) {
+        if (!change.has("range")) {
+            if (auto text = change.get_string("text")) it->second.content = *text;
+            continue;
         }
+        const auto& range = change["range"];
+        const auto& start = range["start"];
+        const auto& end = range["end"];
+        cst::Source snapshot(0, uri, it->second.content);
+        const cst::SourcePosition start_pos{
+            static_cast<std::size_t>(start.get_int("line").value_or(0)),
+            static_cast<std::size_t>(start.get_int("character").value_or(0))};
+        const cst::SourcePosition end_pos{
+            static_cast<std::size_t>(end.get_int("line").value_or(0)),
+            static_cast<std::size_t>(end.get_int("character").value_or(0))};
+        auto begin = snapshot.offset(start_pos, position_encoding_);
+        auto finish = snapshot.offset(end_pos, position_encoding_);
+        if (!begin || !finish || *begin > *finish || *finish > it->second.content.size()) {
+            last_validated_content_.erase(uri);
+            publish_diagnostics(uri, {});
+            return;
+        }
+        it->second.content.replace(*begin, *finish - *begin, change.get_string("text").value_or(""));
     }
 
     validate_document(uri);
@@ -874,6 +941,11 @@ void LspServer::validate_document(const std::string& uri) {
     cached = source;
     std::vector<LspDiagnostic> diags;
 
+    /// Shared linter findings (§5.1) are merged with compiler diagnostics by the
+    /// single publisher below. Lint rules never run on reader-invalid input, so
+    /// the compiler pipeline remains the owner of syntax/semantic errors.
+    collect_lint_diagnostics(source, diags);
+
     /// Lex + Parse
     reader::lexer::Lexer lex(0, source);
     reader::parser::Parser parser(lex);
@@ -904,7 +976,7 @@ void LspServer::validate_document(const std::string& uri) {
 
     auto& parsed = *parsed_res;
     if (parsed.empty()) {
-        publish_diagnostics(uri, {});
+        publish_diagnostics(uri, diags);
         return;
     }
 
@@ -1007,7 +1079,41 @@ void LspServer::validate_document(const std::string& uri) {
         return;
     }
 
-    publish_diagnostics(uri, {});
+    publish_diagnostics(uri, diags);
+}
+
+void LspServer::collect_lint_diagnostics(const std::string& source, std::vector<LspDiagnostic>& diags) {
+    if (!lint_enabled_) return;
+
+    linter::LintOptions options;
+    options.preset = "recommended";
+    auto rules = linter::resolve_rules(options);
+    if (!rules) return;
+
+    auto report = linter::lint_source(source, "<document>", *rules, options);
+    if (report.diagnostics.empty()) return;
+
+    cst::Source map(0, "<document>", source);
+    for (const auto& finding : report.diagnostics) {
+        /// Reader/parse failures are owned by the compiler pipeline; skip them so
+        /// a single syntax error is not reported twice (§5.1).
+        if (finding.owner != "eta_lint" || !finding.located) continue;
+        auto start = map.position(finding.span.begin, position_encoding_);
+        auto end = map.position(finding.span.end, position_encoding_);
+        if (!start || !end) continue;
+        LspDiagnostic d;
+        d.range = Range{
+            Position{static_cast<int64_t>(start->line), static_cast<int64_t>(start->character)},
+            Position{static_cast<int64_t>(end->line), static_cast<int64_t>(end->character)}};
+        switch (finding.severity) {
+            case linter::Severity::Error: d.severity = 1; break;
+            case linter::Severity::Warning: d.severity = 2; break;
+            case linter::Severity::Info: d.severity = 3; break;
+        }
+        d.source = "eta_lint";
+        d.message = finding.code + ": " + finding.message;
+        diags.push_back(std::move(d));
+    }
 }
 
 void LspServer::publish_diagnostics(const std::string& uri,
@@ -1018,10 +1124,16 @@ void LspServer::publish_diagnostics(const std::string& uri,
         diag_array.push_back(diagnostic_to_json(d));
     }
 
-    send_notification("textDocument/publishDiagnostics", json::object({
+    /// Tag the set with the document version so the client can discard results
+    /// that race a newer edit (§8.2).
+    Object payload{
         {"uri", uri},
         {"diagnostics", Value(std::move(diag_array))},
-    }));
+    };
+    if (auto it = documents_.find(uri); it != documents_.end()) {
+        payload.insert_or_assign("version", Value(it->second.version));
+    }
+    send_notification("textDocument/publishDiagnostics", Value(std::move(payload)));
 }
 
 /**
@@ -2452,96 +2564,114 @@ Value LspServer::handle_formatting(const Value& params) {
     auto it = documents_.find(uri);
     if (it == documents_.end()) return Value(Array{});
 
-    /// Read tab size (default 2)
-    int64_t tab_size = 2;
-    if (params.has("options")) {
-        tab_size = params["options"].get_int("tabSize").value_or(2);
+    /// The canonical style uses spaces; a tab request is rejected explicitly
+    /// (§8.2) by returning no edits rather than emitting an unsupported layout.
+    const auto& opts = params["options"];
+    if (opts.is_object() && opts.has("insertSpaces") && opts["insertSpaces"].is_bool()
+        && !opts["insertSpaces"].as_bool()) {
+        return Value(Array{});
+    }
+
+    format::Options options;
+    options.width = format_max_width_;
+    options.indent = format_indent_;
+    /// `tabSize` maps to the canonical indent; document-format options take
+    /// precedence over the editor default where supplied (§8.2).
+    if (auto tab = opts.get_int("tabSize"); tab && *tab > 0) {
+        options.indent = static_cast<std::size_t>(*tab);
     }
 
     const auto& source = it->second.content;
+    auto result = format::format_source(source, options);
+    /// Malformed, unsupported or unsafe input yields no edits; the diagnostic
+    /// channel still reports the underlying reason (§8.2).
+    if (result.outcome == format::Outcome::Refused || !result.output) return Value(Array{});
+    if (*result.output == source) return Value(Array{});
 
-    /// Split into lines
-    std::vector<std::string> lines;
-    {
-        std::istringstream iss(source);
-        std::string ln;
-        while (std::getline(iss, ln)) {
-            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
-            lines.push_back(std::move(ln));
-        }
-    }
-
-    if (lines.empty()) return Value(Array{});
-
-    /// Rebuild with correct indentation based on paren depth
-    std::string formatted;
-    int depth = 0;
-    bool in_string = false;
-
-    for (std::size_t i = 0; i < lines.size(); ++i) {
-        const auto& raw_line = lines[i];
-
-        /// Strip leading whitespace to get content
-        auto first = raw_line.find_first_not_of(" \t");
-        std::string content = (first == std::string::npos) ? "" : raw_line.substr(first);
-
-        /// Trim trailing whitespace
-        auto last = content.find_last_not_of(" \t");
-        if (last != std::string::npos) content = content.substr(0, last + 1);
-
-        /// If line starts with ')', decrease depth before indenting
-        int pre_adjust = 0;
-        if (!content.empty() && !in_string) {
-            for (std::size_t c = 0; c < content.size(); ++c) {
-                if (content[c] == ')') ++pre_adjust;
-                else break;
-            }
-        }
-
-        int indent_depth = std::max(0, depth - pre_adjust);
-        std::string indent(static_cast<std::size_t>(indent_depth * tab_size), ' ');
-
-        if (content.empty()) {
-            formatted += "\n";
-        } else if (in_string) {
-            /// Inside a multi-line string, preserve as-is
-            formatted += raw_line + "\n";
-        } else {
-            formatted += indent + content + "\n";
-        }
-
-        /// Update depth for next line by scanning this line
-        for (std::size_t c = 0; c < content.size(); ++c) {
-            char ch = content[c];
-            if (in_string) {
-                if (ch == '\\') { ++c; continue; }
-                if (ch == '"') in_string = false;
-                continue;
-            }
-            if (ch == '"') { in_string = true; continue; }
-            if (ch == ';') break; ///< rest is comment
-            if (ch == '(') ++depth;
-            else if (ch == ')') --depth;
-        }
-        if (depth < 0) depth = 0;
-    }
-
-    /// Remove trailing newline if original didn't have one
-    bool orig_trailing_newline = !source.empty() && source.back() == '\n';
-    if (!orig_trailing_newline && !formatted.empty() && formatted.back() == '\n') {
-        formatted.pop_back();
-    }
-
-    /// Return a single TextEdit replacing the entire document
+    cst::Source map(0, uri, source);
+    auto end_pos = map.position(source.size(), position_encoding_);
+    if (!end_pos) return Value(Array{});
     return json::array({
         json::object({
             {"range", range_to_json(Range{
                 Position{0, 0},
-                Position{static_cast<int64_t>(lines.size()), 0},
+                Position{static_cast<int64_t>(end_pos->line), static_cast<int64_t>(end_pos->character)},
             })},
-            {"newText", formatted},
+            {"newText", *result.output},
         }),
     });
+}
+
+Value LspServer::handle_range_formatting(const Value& params) {
+    auto uri = params["textDocument"].get_string("uri").value_or("");
+    auto it = documents_.find(uri);
+    if (it == documents_.end()) return Value(Array{});
+
+    const auto& opts = params["options"];
+    if (opts.is_object() && opts.has("insertSpaces") && opts["insertSpaces"].is_bool()
+        && !opts["insertSpaces"].as_bool()) {
+        return Value(Array{});
+    }
+
+    format::Options options;
+    options.width = format_max_width_;
+    options.indent = format_indent_;
+    if (auto tab = opts.get_int("tabSize"); tab && *tab > 0) {
+        options.indent = static_cast<std::size_t>(*tab);
+    }
+
+    const auto& source = it->second.content;
+
+    /// Parse the whole document once. Range formatting never reparses a
+    /// state-sensitive slice with fresh defaults (§8.2.1); malformed input is
+    /// refused with no edits.
+    try {
+        auto parsed = cst::parse(source, cst::ReaderConfig{});
+        if (!parsed || parsed->status != cst::Status::Valid || !parsed->file) return Value(Array{});
+        const auto& file = *parsed->file;
+
+        const auto& range = params["range"];
+        const cst::SourcePosition start_pos{
+            static_cast<std::size_t>(range["start"].get_int("line").value_or(0)),
+            static_cast<std::size_t>(range["start"].get_int("character").value_or(0))};
+        const cst::SourcePosition end_pos{
+            static_cast<std::size_t>(range["end"].get_int("line").value_or(0)),
+            static_cast<std::size_t>(range["end"].get_int("character").value_or(0))};
+        auto range_begin = file.source->offset(start_pos, position_encoding_);
+        auto range_end = file.source->offset(end_pos, position_encoding_);
+        if (!range_begin || !range_end || *range_begin > *range_end) return Value(Array{});
+
+        Array edits;
+        /// Only whole top-level reader units that sit entirely inside the request
+        /// and begin at column zero qualify. Each is formatted in isolation and
+        /// replaces exactly its own concrete-token extent, leaving every
+        /// surrounding byte (indentation, trailing comments, separators)
+        /// untouched (§8.2.1).
+        for (const auto root : file.roots) {
+            const auto extent = linter::rules::node_extent(file, file.nodes[root]);
+            if (extent.begin < *range_begin || extent.end > *range_end) continue;
+            if (extent.begin != 0 && source[extent.begin - 1] != '\n') continue;
+
+            std::string unit(source.substr(extent.begin, extent.end - extent.begin));
+            auto formatted = format::format_source(unit, options);
+            if (formatted.outcome == format::Outcome::Refused || !formatted.output) continue;
+            if (*formatted.output == unit) continue;
+
+            auto unit_start = file.source->position(extent.begin, position_encoding_);
+            auto unit_end = file.source->position(extent.end, position_encoding_);
+            if (!unit_start || !unit_end) continue;
+            edits.push_back(json::object({
+                {"range", range_to_json(Range{
+                    Position{static_cast<int64_t>(unit_start->line), static_cast<int64_t>(unit_start->character)},
+                    Position{static_cast<int64_t>(unit_end->line), static_cast<int64_t>(unit_end->character)},
+                })},
+                {"newText", *formatted.output},
+            }));
+        }
+        return Value(std::move(edits));
+    } catch (const std::exception&) {
+        return Value(Array{});
+    }
 }
 
 /**

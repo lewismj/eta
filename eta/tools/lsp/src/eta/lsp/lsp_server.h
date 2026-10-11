@@ -12,6 +12,7 @@
 #include "eta/util/json.h"
 #include "eta/interpreter/module_path.h"
 #include "eta/reader/parser.h"
+#include "eta/cst/source.h"
 
 namespace eta::lsp {
 
@@ -148,12 +149,20 @@ private:
     Value handle_selection_range(const Value& params);
     Value handle_semantic_tokens_full(const Value& params);
     Value handle_formatting(const Value& params);
+    Value handle_range_formatting(const Value& params);
     Value handle_document_highlight(const Value& params);
     Value handle_inlay_hint(const Value& params);
 
     /// Diagnostics
     void validate_document(const std::string& uri);
     void publish_diagnostics(const std::string& uri, const std::vector<LspDiagnostic>& diags);
+
+    /**
+     * Run the shared linter library (eta_linter_lib) over a document snapshot and
+     * append its findings to `diags`. Reader/parse failures produce no lint
+     * findings here; the compiler pipeline owns those diagnostics (§5.1).
+     */
+    void collect_lint_diagnostics(const std::string& source, std::vector<LspDiagnostic>& diags);
 
     /// Helpers
     static Value position_to_json(const Position& p);
@@ -217,13 +226,20 @@ private:
 
     /// Validation content cache
     std::unordered_map<std::string, std::string> last_validated_content_;
-    std::optional<std::filesystem::path> active_manifest_path_;
-    std::optional<std::filesystem::path> package_manifest_path_;
+    std::optional<std::filesystem::path> active_manifest_path_;    std::optional<std::filesystem::path> package_manifest_path_;
     std::optional<std::filesystem::path> workspace_manifest_path_;
     std::optional<std::filesystem::path> workspace_root_path_;
     std::optional<std::string> workspace_context_;
     std::optional<std::string> manifest_diagnostics_uri_;
     std::optional<std::string> lockfile_diagnostics_uri_;
+
+    /// Editor-configurable tooling options supplied through initializationOptions
+    /// (§8.2/§8.3). The canonical formatter uses spaces, so tabs are rejected.
+    bool lint_enabled_{true};
+    std::size_t format_indent_{2};
+    std::size_t format_max_width_{100};
+    /// Negotiated LSP position encoding; UTF-16 unless UTF-8 is agreed (§2.4).
+    cst::PositionEncoding position_encoding_{cst::PositionEncoding::Utf16};
 };
 
 } ///< namespace eta::lsp

@@ -1,0 +1,43 @@
+name: lint
+
+# Formatter and linter gates for the Eta corpora (§8.5 of the lint/format plan).
+# format-check keeps stdlib and cookbook formatter-clean; lint-check keeps them
+# within the reviewed warning budget. The checkout has no `demo` tree, so it is
+# omitted here and recorded as absent in the benchmark manifest.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  format-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libboost-all-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build eta_fmt
+        run: cmake --build build --target eta_formatter
+      - name: Check formatting
+        run: ./build/eta/tools/formatter/eta_fmt --check stdlib cookbook
+
+  lint-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libboost-all-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build eta_lint
+        run: cmake --build build --target eta_linter
+      - name: Run linter
+        run: ./build/eta/tools/linter/eta_lint --max-warnings 0 --format github stdlib cookbook
+

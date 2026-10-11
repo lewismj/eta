@@ -448,6 +448,20 @@ export function activate(context: ExtensionContext) {
                 environmentProvider.refresh();
                 EnvironmentInspectorPanel.current()?.refresh();
             }
+            if (
+                e.affectsConfiguration('eta.lint.enabled')
+                || e.affectsConfiguration('eta.format.maxWidth')
+                || e.affectsConfiguration('eta.format.indent')
+            ) {
+                window.showInformationMessage(
+                    'Eta: formatter/linter settings changed. Reload the window to apply them to the language server.',
+                    'Reload Window',
+                ).then(choice => {
+                    if (choice === 'Reload Window') {
+                        commands.executeCommand('workbench.action.reloadWindow');
+                    }
+                });
+            }
         })
     );
 
@@ -478,10 +492,20 @@ export function activate(context: ExtensionContext) {
     const exec: Executable = { command: serverPath, options: { env: serverEnv } };
     const serverOptions: ServerOptions = { run: exec, debug: exec };
 
+    // Formatter/linter defaults are handed to the server through
+    // initializationOptions. Per-request document formatting options (tabSize)
+    // still take precedence for a given format request (§8.2/§8.3).
+    const lintConfig = workspace.getConfiguration('eta.lint');
+    const formatConfig = workspace.getConfiguration('eta.format');
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'eta' }],
         synchronize: {
             fileEvents: workspace.createFileSystemWatcher('**/*.eta'),
+        },
+        initializationOptions: {
+            lintEnabled: lintConfig.get<boolean>('enabled', true),
+            maxWidth: formatConfig.get<number>('maxWidth', 100),
+            indent: formatConfig.get<number>('indent', 2),
         },
         outputChannel,
     };

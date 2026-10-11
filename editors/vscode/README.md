@@ -26,6 +26,28 @@ Powered by the native `eta_lsp` binary:
 - **Find All References** — find every occurrence of a symbol in the current file
 - **Rename** — safely rename any local binding or module-scoped definition
 - **Signature Help** — parameter hints when calling functions (`(`, `,` triggers)
+- **Formatting** — document and range formatting via `eta_format_lib`, shared with the `eta_fmt` CLI
+- **Lint diagnostics** — `eta_lint` findings published alongside compiler diagnostics
+
+### Formatting and linting
+
+`eta_lsp` links the formatter and linter libraries directly; it never shells out
+to `eta_fmt` or `eta_lint`, and there is no silent fallback to a standalone
+executable. Use VS Code's standard `editor.formatOnSave` and *Format Selection*:
+
+- **Format Document** replaces the file with canonical whitespace, or makes no
+  change when it is already canonical or the input is refused.
+- **Format Selection** is strict (v1): it only rewrites whole top-level forms
+  that lie entirely inside the selection and start at column zero, leaving every
+  byte outside the edit untouched. Partial selections produce no edit.
+- The editor `tabSize` maps to the formatter indent; the canonical style is
+  space-only, so an `insertSpaces=false` request is rejected (no edits).
+- Lint findings carry the document version and clear automatically on edits.
+
+Explicit workspace CLI tasks (configured in `tasks.json`) remain separate from
+the LSP; `Eta: Lint workspace` output is matched by the bundled `$eta-lint`
+problem matcher. CLI task paths never override editor LSP requests.
+
 
 ### Debugger (DAP)
 
@@ -86,6 +108,9 @@ Install Eta from a [release bundle](https://github.com/eta-lang/eta/releases) �
 | `eta.modulePath` | `string` | `""` | Colon/semicolon-separated directories to search for Eta modules (`ETA_MODULE_PATH`). Used by both LSP and DAP servers. Falls back to the environment variable. |
 | `eta.lsp.serverPath` | `string` | `""` | Path to the `eta_lsp` executable. If empty, searches bundled binary, workspace build output, then `PATH`. |
 | `eta.lsp.enabled` | `boolean` | `true` | Enable the Eta Language Server for diagnostics and IDE features. |
+| `eta.lint.enabled` | `boolean` | `true` | Publish `eta_lint` findings through the language server (linked directly, no subprocess). |
+| `eta.format.maxWidth` | `integer` | `100` | Target line width for document and range formatting. |
+| `eta.format.indent` | `integer` | `2` | Spaces per indentation level; the editor `tabSize` takes precedence per request. |
 | `eta.lsp.modulePath` | `string` | `""` | Deprecated — use `eta.modulePath` instead. |
 | `eta.dap.executablePath` | `string` | `""` | Path to the `eta_dap` executable or its parent directory. |
 | `eta.test.runnerPath` | `string` | `""` | Path to `eta_test` or its parent directory. If empty, the extension searches next to resolved LSP/DAP binaries, workspace build output, then `PATH`. |

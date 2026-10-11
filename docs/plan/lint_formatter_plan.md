@@ -1571,6 +1571,22 @@ are reviewed. No unproven rule or fix is required just to satisfy a numeric quot
 
 ### Phase 4 — Editor, CI and separate bootstrap
 
+**Status: in progress (2026-10-11).** The LSP now links `eta_linter_lib` and
+`eta_format_lib` directly (§8.2): `eta_lsp` publishes versioned lint findings
+alongside compiler diagnostics through a single publisher, formats documents and
+strict ranges with the shared formatter library, applies incremental text sync
+with negotiated position encoding, and maps `tabSize`/`maxWidth`/`indent` while
+rejecting `insertSpaces=false`. The VS Code extension exposes `eta.lint.enabled`,
+`eta.format.maxWidth` and `eta.format.indent`, forwards them through
+`initializationOptions`, ships the `$eta-lint` problem matcher, and relies on
+standard `editor.formatOnSave` with no subprocess fallback. `.github/workflows/lint.yml`
+and `scripts/pre-commit-eta.sh` enforce the formatter/linter gates. The Windows
+MSVC Release `eta_all` build and all CTest targets pass, including the new LSP
+formatting/range tests. The formatter-only corpus bootstrap (item 3) remains a
+separate, style-reviewed formatting-only commit and is not bundled with this
+editor/CI work; the current corpora are not yet formatter-clean and some files
+are still refused, which the bootstrap/style review must resolve first.
+
 1. LSP direct-library integration, lifecycle/versioned diagnostics, debounce/idle
    analysis, cancellation, concurrent documents and strict range edit boundaries.
 2. VS Code LSP settings/tasks and standard format-on-save; no subprocess fallback.
@@ -1675,7 +1691,7 @@ minimum number of unproven rules.
 - [ ] LSP open/change/save/close, incremental text sync, negotiated position encoding,
       stale/cancelled result suppression and concurrent document tests pass.
       Range edits remain inside the requested range and preserve all outside bytes.
-- [ ] VS Code uses one LSP ownership path for diagnostics/full/range formatting,
+- [x] VS Code uses one LSP ownership path for diagnostics/full/range formatting,
       with standard format-on-save and explicit standalone CLI tasks only.
 - [ ] A separate formatter bootstrap commit is recorded. CI passes
       `eta_fmt --check stdlib cookbook demo` and

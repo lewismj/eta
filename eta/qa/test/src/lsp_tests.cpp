@@ -1137,11 +1137,11 @@ BOOST_AUTO_TEST_CASE(semantic_tokens_empty_doc) {
 }
 
 /**
- * 4.6  formatting indents nested S-expressions
+ * 4.6  formatting routes through the shared formatter library (eta_format_lib)
  */
 BOOST_AUTO_TEST_CASE(formatting_indents_nested) {
     const std::string uri = "file:///test/fmt.eta";
-    /// Badly indented source
+    /// Badly spaced source that fits on one line once canonicalised.
     const std::string src =
         "(module m1\n"
         "(defun foo (x)\n"
@@ -1160,13 +1160,11 @@ BOOST_AUTO_TEST_CASE(formatting_indents_nested) {
     const auto& edits = resp["result"].as_array();
     BOOST_REQUIRE(!edits.empty());
 
-    /// Check that the replacement text exists
     auto new_text = edits[0].get_string("newText");
     BOOST_REQUIRE(new_text.has_value());
 
-    /// The formatted output should have indentation
-    BOOST_TEST(new_text->find("  (defun") != std::string::npos);
-    BOOST_TEST(new_text->find("    (+ x 1)") != std::string::npos);
+    /// The real formatter collapses the whole module onto one canonical line.
+    BOOST_TEST(*new_text == "(module m1 (defun foo (x) (+ x 1)) (define bar 42))\n");
 }
 
 /**
@@ -1190,13 +1188,14 @@ BOOST_AUTO_TEST_CASE(formatting_empty_doc) {
 }
 
 /**
- * 4.8  formatting with custom tab size
+ * 4.8  formatting maps the editor tabSize to the canonical indent
  */
 BOOST_AUTO_TEST_CASE(formatting_custom_tab_size) {
     const std::string uri = "file:///test/fmt4.eta";
-    const std::string src =
-        "(module m1\n"
-        "(define x 1))\n";
+    /// A list long enough to break across lines so indentation is observable.
+    std::string src = "(define xs (list";
+    for (int i = 0; i < 30; ++i) src += " " + std::to_string(1000 + i);
+    src += "))\n";
 
     auto input = build_input(uri, src, {
         frame(request(10, "textDocument/formatting",
@@ -1213,8 +1212,88 @@ BOOST_AUTO_TEST_CASE(formatting_custom_tab_size) {
     auto new_text = edits[0].get_string("newText");
     BOOST_REQUIRE(new_text.has_value());
 
-    /// With tab size 4, inner form should be indented 4 spaces
-    BOOST_TEST(new_text->find("    (define x 1)") != std::string::npos);
+    /// With tabSize 4, the list elements nest two levels deep: 4 + 4 = 8 spaces.
+    BOOST_TEST(new_text->find("        1000") != std::string::npos);
+    /// A space-only style never emits tabs.
+    BOOST_TEST(new_text->find('\t') == std::string::npos);
+}
+
+/**
+ * 4.8b  a space-rejecting client receives no edits (canonical style is spaces)
+ */
+BOOST_AUTO_TEST_CASE(formatting_rejects_tabs) {
+    const std::string uri = "file:///test/fmt_tabs.eta";
+    const std::string src = "(module m1\n(define x 1))\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/formatting",
+            R"({"textDocument":{"uri":")" + uri + R"("},"options":{"tabSize":4,"insertSpaces":false}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& edits = resp["result"].as_array();
+    BOOST_TEST(edits.empty());
+}
+
+/**
+ * 4.8c  strict range formatting rewrites only whole units inside the range
+ */
+BOOST_AUTO_TEST_CASE(range_formatting_strict_boundary) {
+    const std::string uri = "file:///test/fmt_range.eta";
+    /// Two top-level forms; only the first is selected.
+    const std::string src =
+        "(define   a   1)\n"
+        "(define   b   2)\n";
+
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/rangeFormatting",
+            R"({"textDocument":{"uri":")" + uri + R"("},)"
+            R"("range":{"start":{"line":0,"character":0},"end":{"line":0,"character":16}},)"
+            R"("options":{"tabSize":2,"insertSpaces":true}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& edits = resp["result"].as_array();
+    BOOST_REQUIRE_EQUAL(edits.size(), 1u);
+
+    /// Only the first form is rewritten, to its own canonical spelling.
+    auto new_text = edits[0].get_string("newText");
+    BOOST_REQUIRE(new_text.has_value());
+    BOOST_TEST(*new_text == "(define a 1)");
+
+    /// The edit stays on line 0; the second form (line 1) is never touched.
+    const auto& range = edits[0]["range"];
+    BOOST_TEST(range["start"].get_int("line").value_or(-1) == 0);
+    BOOST_TEST(range["end"].get_int("line").value_or(-1) == 0);
+}
+
+/**
+ * 4.8d  a selection that only partially covers a form yields no edits
+ */
+BOOST_AUTO_TEST_CASE(range_formatting_partial_selection) {
+    const std::string uri = "file:///test/fmt_range_partial.eta";
+    const std::string src = "(define   a   1)\n";
+
+    /// The range ends before the form's closing delimiter.
+    auto input = build_input(uri, src, {
+        frame(request(10, "textDocument/rangeFormatting",
+            R"({"textDocument":{"uri":")" + uri + R"("},)"
+            R"("range":{"start":{"line":0,"character":0},"end":{"line":0,"character":10}},)"
+            R"("options":{"tabSize":2,"insertSpaces":true}})"))
+    });
+
+    auto msgs = run_server(input);
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+
+    const auto& edits = resp["result"].as_array();
+    BOOST_TEST(edits.empty());
 }
 
 /**

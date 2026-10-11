@@ -88,7 +88,35 @@ tokens/nodes and 256 MiB accounted tooling memory. It returns `formatted`,
 `passthrough`, or `refused`, resolved options and ordered coverage/diagnostics.
 No library operation writes files, executes macros or loads native sidecars.
 
-The repository corpus is tested using temporary formatted copies. No bootstrap
-formatting commit is part of Phase 1; its approval and blame-ignore entry belong
-to Phase 4.
+## Editor integration (LSP)
+
+`eta_lsp` links `eta_format_lib` directly and owns editor formatting; it never
+shells out to `eta_fmt`. The server advertises both `documentFormattingProvider`
+and `documentRangeFormattingProvider`, so VS Code's standard `editor.formatOnSave`
+and *Format Selection* route through the same library the CLI uses. There is no
+competing subprocess save hook and no silent fallback to a standalone binary.
+
+- Full formatting returns a whole-document replacement, or no edits when the
+  document is already canonical or the result is `refused`. Syntax diagnostics
+  continue to flow through the diagnostic channel.
+- Range formatting is strict (§8.2.1): it only rewrites whole top-level reader
+  units that lie entirely inside the requested range and begin at column zero.
+  Each unit is replaced by exactly its own concrete-token extent, so outside
+  indentation, inter-unit whitespace and trailing comments are byte-identical.
+  Partial selections, state-sensitive slices and anything that would disturb a
+  neighbour yield no edit for that unit.
+- Formatting options map the editor `tabSize` to the canonical indent; the
+  canonical style is space-only, so `insertSpaces=false` produces no edits.
+  `eta.format.maxWidth` and `eta.format.indent` supply the server defaults
+  through `initializationOptions`.
+
+## Bootstrap
+
+The Phase-4 formatter bootstrap is a separate formatting-only commit for the
+`stdlib` and `cookbook` corpora (the checkout has no `demo` tree). It carries no
+lint fixes or semantic changes. Its hash is recorded in `.git-blame-ignore-revs`
+and referenced here once landed. CI (`.github/workflows/lint.yml`) keeps those
+corpora formatter-clean afterwards with `eta_fmt --check stdlib cookbook`, and
+`scripts/pre-commit-eta.sh` enforces the same contract on staged index bytes.
+
 

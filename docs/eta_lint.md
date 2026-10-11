@@ -84,3 +84,30 @@ resolution, so explicit CLI rule selections still take effect.
 
 See `eta_lint_rules.md` for the reviewed catalogue.
 
+## Editor integration (LSP)
+
+`eta_lsp` links `eta_linter_lib` directly and publishes lint findings alongside
+compiler diagnostics through a single publisher; it never shells out to
+`eta_lint`. Each `publishDiagnostics` notification carries the document version
+so a client can discard results that race a newer edit. Findings use the
+`recommended` preset and the shared source map, so their ranges honour the
+negotiated position encoding (UTF-16 by default, UTF-8 when the client offers
+it). Reader- and semantic-level errors remain owned by the compiler pipeline, so
+a single syntax error is never reported twice.
+
+Set `eta.lint.enabled` to `false` to suppress lint findings in the editor while
+keeping compiler diagnostics; the setting is delivered to the server through
+`initializationOptions` and takes effect after a window reload.
+
+## CI and pre-commit
+
+- `.github/workflows/lint.yml` builds `eta_linter` and runs
+  `eta_lint --max-warnings 0 --format github stdlib cookbook` on every push and
+  pull request, next to the formatter `--check` gate.
+- `scripts/pre-commit-eta.sh` checks the staged *index bytes* of each added,
+  copied or modified `.eta` file through the `--stdin` contract (formatter first,
+  then linter). It never fixes or stages files; a non-zero exit blocks the
+  commit. Run it from Git Bash or WSL on Windows, optionally pointing `ETA_FMT`
+  and `ETA_LINT` at the built binaries.
+
+

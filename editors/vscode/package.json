@@ -134,6 +134,23 @@
                     "default": true,
                     "description": "Enable the Eta Language Server for diagnostics and IDE features."
                 },
+                "eta.lint.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable eta_lint diagnostics through the language server. The server links the linter library directly; it never shells out to a standalone executable."
+                },
+                "eta.format.maxWidth": {
+                    "type": "integer",
+                    "default": 100,
+                    "minimum": 1,
+                    "description": "Target line width used by the Eta formatter for document and range formatting."
+                },
+                "eta.format.indent": {
+                    "type": "integer",
+                    "default": 2,
+                    "minimum": 1,
+                    "description": "Number of spaces per indentation level used by the Eta formatter. The editor's tabSize takes precedence for a given format request."
+                },
                 "eta.dap.executablePath": {
                     "type": "string",
                     "default": "",
@@ -237,6 +254,26 @@
                 "editor.fontFamily": "Iosevka, 'Iosevka Term', 'Iosevka Fixed', Consolas, 'Courier New', monospace"
             }
         },
+        "problemMatchers": [
+            {
+                "name": "eta-lint",
+                "owner": "eta",
+                "source": "eta_lint",
+                "fileLocation": [
+                    "autoDetect",
+                    "${workspaceFolder}"
+                ],
+                "pattern": {
+                    "regexp": "^(.+?):(\\d+):(\\d+):\\s+(error|warning|info)\\[([^\\]]+)\\]:\\s+(.+)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "code": 5,
+                    "message": 6
+                }
+            }
+        ],
         "commands": [
             {
                 "command": "eta.runFile",

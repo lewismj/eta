@@ -296,12 +296,14 @@ add_subdirectory("${ETA_INTERPRETER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/interpr
 add_subdirectory("${ETA_COMPILER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/compiler")
 add_subdirectory("${ETA_PROF_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/prof")
 add_subdirectory("${ETA_CLI_DIR}" "${CMAKE_BINARY_DIR}/eta/cli")
-add_subdirectory("${ETA_LSP_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/lsp")
-add_subdirectory("${ETA_DAP_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/dap")
-add_subdirectory("${ETA_JUPYTER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/jupyter")
+# The shared CST, linter and formatter libraries are declared before the LSP so
+# that eta_lsp can link eta_linter_lib and eta_format_lib directly (§8.2).
 add_subdirectory("tools/shared" "${CMAKE_BINARY_DIR}/eta/tools/shared")
 add_subdirectory("${ETA_LINTER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/linter")
 add_subdirectory("tools/formatter" "${CMAKE_BINARY_DIR}/eta/tools/formatter")
+add_subdirectory("${ETA_LSP_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/lsp")
+add_subdirectory("${ETA_DAP_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/dap")
+add_subdirectory("${ETA_JUPYTER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/jupyter")
 
 # Quality and performance targets.
 add_test(NAME eta_lint_rule_schema
