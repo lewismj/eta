@@ -37,7 +37,10 @@
     "activationEvents": [
         "onLanguage:eta",
         "onDebugResolve:eta",
-        "workspaceContains:**/*.test.eta"
+        "workspaceContains:**/*.test.eta",
+        "onCommand:eta.formatDocument",
+        "onCommand:eta.lintFile",
+        "onCommand:eta.lintWorkspace"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -483,6 +486,23 @@
                 }
             ]
         },
+        "keybindings": [
+            {
+                "command": "eta.formatDocument",
+                "key": "ctrl+alt+shift+f",
+                "when": "editorTextFocus && resourceLangId == eta"
+            },
+            {
+                "command": "eta.lintFile",
+                "key": "ctrl+alt+shift+l",
+                "when": "editorTextFocus && resourceLangId == eta"
+            },
+            {
+                "command": "eta.lintWorkspace",
+                "key": "ctrl+alt+shift+w",
+                "when": "editorTextFocus"
+            }
+        ],
         "breakpoints": [
             {
                 "language": "eta"

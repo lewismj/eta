@@ -109,7 +109,7 @@ The full release bundle also ships the lower-level tools for direct use or edito
 | **`eta_jupyter`** | Jupyter kernel — interactive notebooks with rich output.             |
 | **`eta_test`**    | Test runner — TAP / JUnit output and VS Code Test Explorer.          |
 
-The VS Code extension adds a **Heap Inspector**, **Disassembly View**, and **GC Roots Tree** for inspecting the VM at runtime.
+The VS Code extension adds a **Heap Inspector**, **Disassembly View**, and **GC Roots Tree** for inspecting the VM at runtime, plus editor commands for **Eta: Format Document**, **Eta: Lint File**, and **Eta: Lint Workspace**.
 
 See [Quick Start](https://lewismj.github.io/eta/docs/quickstart/) and [Build Your First App](https://lewismj.github.io/eta/docs/app/first_app/) for the full tooling walkthrough.
 
