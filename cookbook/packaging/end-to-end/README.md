@@ -1,7 +1,7 @@
 # End-to-End Packaging Example (Library + App)
 
-This cookbook example mirrors the end-to-end flow in
-[`docs/plan/eta_packaging_plan.md`](../../../docs/plan/eta_packaging_plan.md).
+This cookbook example mirrors the end-to-end flow in the
+[Packaging System](../../../packaging/) guide.
 
 ## Layout
 
@@ -29,4 +29,4 @@ Expected `eta run` output:
 ## See also
 
 - [How to Build Your First App](/docs/app/first_app/)
-- [Packaging System](../../../docs/packaging.md)
+- [Packaging System](../../../packaging/)

@@ -1,0 +1,47 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+const base = (import.meta.env.BASE_URL ?? "/").replace(/\/?$/, "/");
+
+const sections = [
+  {
+    label: "Active plans",
+    items: [
+      { title: "Lint + Format", href: `${base}docs/plan/lint_formatter_plan/`, blurb: "The authoritative plan for eta_lint and eta_fmt." },
+      { title: "Lint Patch", href: `${base}docs/plan/lint_patch_plan.md/lint_patch_plan/`, blurb: "VS Code-facing linting and formatting behavior." },
+      { title: "XVA / WWR v2", href: `${base}docs/plan/xva_wwr2/`, blurb: "The streamlined notebook-first xVA / WWR plan." },
+      { title: "HiGHS Package", href: `${base}docs/plan/HiGHS_package_plan/`, blurb: "Packaging plan for the HiGHS linear programming solver." },
+      { title: "Std Bitset", href: `${base}docs/plan/std_bitset_plan/`, blurb: "Bitset implementation planning." },
+      { title: "Blackjack Demo", href: `${base}docs/plan/blackjack_demo/`, blurb: "Interactive demo planning notes." },
+    ],
+  },
+  {
+    label: "Completed",
+    items: [
+      { title: "Actor Scheduler", href: `${base}docs/plan/completed/actor_scheduler_plan/`, blurb: "Completed actor scheduler work." },
+      { title: "Actor Improvements", href: `${base}docs/plan/completed/actor_improvement_plan/`, blurb: "Completed actor runtime improvements." },
+      { title: "ADR 0001", href: `${base}docs/plan/completed/adr/0001-actors-vm-mailboxes-and-nng-transport/`, blurb: "Actors, VM mailboxes, and NNG transport." },
+    ],
+  },
+];
+---
+<DocsLayout title="Plans">
+  <h1>Plans</h1>
+  <p style="color: var(--muted); font-size: 1.0625rem; line-height: 1.7; margin-top: -16px;">
+    Working notes and completed planning documents for Eta's runtime, tooling, and packaging work.
+  </p>
+  {sections.map((section) => (
+    <section style="margin-top: 40px;">
+      <p class="section-label" style="margin-bottom: 14px;">{section.label}</p>
+      <div class="docs-index-grid">
+        {section.items.map((item) => (
+          <a class="docs-index-card" href={item.href}>
+            <span class="docs-index-card__title">{item.title}</span>
+            <span class="docs-index-card__blurb">{item.blurb}</span>
+          </a>
+        ))}
+      </div>
+    </section>
+  ))}
+</DocsLayout>
+
+

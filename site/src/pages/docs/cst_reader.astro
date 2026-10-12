@@ -1,0 +1,13 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import * as page from "../../../../docs/cst_reader.md";
+const { Content, getHeadings, frontmatter } = page as any;
+---
+<DocsLayout
+  title={frontmatter?.title ?? "CST Reader"}
+  sourceFile="docs/cst_reader.md"
+  headings={getHeadings()}
+>
+  <Content />
+</DocsLayout>
+

@@ -162,8 +162,8 @@ Highlights:
 
 Documentation updates:
 
-- Updated [docs/plan/native_sidecar_plan.md](plan/native_sidecar_plan.md)
-  implementation status and current-state/runtime notes.
+- Updated [Native Sidecars](../native-sidecars/) implementation status and
+  current-state/runtime notes.
 - Updated [docs/guide/packages.md](guide/packages.md) with concrete sidecar
   loading behavior for `etai`, `eta_repl`, and `etac`.
 

@@ -43,6 +43,10 @@ executable. The editor's integrated commands are the primary user path:
 - **Eta: Lint Workspace** discovers Eta files under the open workspace roots,
   runs the server-owned lint pipeline across them, clears stale results, and
   reports a summary back to the editor.
+- Convenience keybindings are included for Eta files:
+  - `Ctrl+Alt+Shift+F` — Format Document
+  - `Ctrl+Alt+Shift+L` — Lint File
+  - `Ctrl+Alt+Shift+W` — Lint Workspace
 - `editor.formatOnSave` and *Format Selection* still route through the same LSP
   formatter as the explicit command palette actions.
 - Lint findings carry the document version and clear automatically on edits.
@@ -136,6 +140,9 @@ Install Eta from a [release bundle](https://github.com/eta-lang/eta/releases) �
 | Command | Description |
 |---------|-------------|
 | `Eta: Run Eta File` | Launch the active `.eta` file in the debugger |
+| `Eta: Format Document` | Format the active `.eta` file |
+| `Eta: Lint File` | Run the Eta linter on the active `.eta` file |
+| `Eta: Lint Workspace` | Lint all Eta files in the open workspace |
 | `Eta: Show Heap Inspector` | Open the Heap Inspector panel |
 | `Eta: Show Disassembly` | Show bytecode for the current function |
 | `Eta: Show Disassembly (All Functions)` | Show bytecode for all functions |

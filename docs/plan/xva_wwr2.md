@@ -1,17 +1,15 @@
 # XVA Wrong-Way-Risk Notebook v2 — Streamlined Plan
 
-[Back to plans index](./README.md) - supersedes the ad-hoc layout in
-[`cookbook/xva-wwr/`](../../cookbook/xva-wwr) and the long-form
-[`docs/featured/xva-wwr.md`](../featured/xva-wwr.md).
+[Back to plans index](./) - supersedes the ad-hoc xVA / WWR cookbook layout
+and the long-form writeup.
 
 ---
 
 ## 1. Scope and Goals
 
-Deliver **one** xeus-eta Jupyter notebook,
-[`cookbook/notebooks/xva-wwr.ipynb`](../../cookbook/notebooks/xva-wwr.ipynb),
-that reproduces — and meaningfully upgrades — the existing xVA / WWR
-demo as an interactive narrative. The notebook must be runnable
+Deliver **one** xeus-eta Jupyter notebook that reproduces — and meaningfully
+upgrades — the existing xVA / WWR demo as an interactive narrative. The
+notebook must be runnable
 top-to-bottom on a release build with `-DETA_BUILD_TORCH=ON`, finish
 in under five minutes on commodity hardware, and render every result
 (tables, exposure curves, elasticity heatmap, hedge witness) inline
