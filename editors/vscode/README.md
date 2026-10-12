@@ -33,20 +33,22 @@ Powered by the native `eta_lsp` binary:
 
 `eta_lsp` links the formatter and linter libraries directly; it never shells out
 to `eta_fmt` or `eta_lint`, and there is no silent fallback to a standalone
-executable. Use VS Code's standard `editor.formatOnSave` and *Format Selection*:
+executable. The editor's integrated commands are the primary user path:
 
-- **Format Document** replaces the file with canonical whitespace, or makes no
-  change when it is already canonical or the input is refused.
-- **Format Selection** is strict (v1): it only rewrites whole top-level forms
-  that lie entirely inside the selection and start at column zero, leaving every
-  byte outside the edit untouched. Partial selections produce no edit.
-- The editor `tabSize` maps to the formatter indent; the canonical style is
-  space-only, so an `insertSpaces=false` request is rejected (no edits).
+- **Eta: Format Document** formats the active Eta file through the standard VS
+  Code document-formatting pipeline, while the language server remains the single
+  formatter implementation.
+- **Eta: Lint File** re-runs the same validation/lint pipeline used for live
+  diagnostics and republishes findings for the active file.
+- **Eta: Lint Workspace** discovers Eta files under the open workspace roots,
+  runs the server-owned lint pipeline across them, clears stale results, and
+  reports a summary back to the editor.
+- `editor.formatOnSave` and *Format Selection* still route through the same LSP
+  formatter as the explicit command palette actions.
 - Lint findings carry the document version and clear automatically on edits.
 
-Explicit workspace CLI tasks (configured in `tasks.json`) remain separate from
-the LSP; `Eta: Lint workspace` output is matched by the bundled `$eta-lint`
-problem matcher. CLI task paths never override editor LSP requests.
+Task/problem-matcher flows remain explicit CLI tooling workflows; they are not
+used as a fallback for editor linting or formatting requests.
 
 
 ### Debugger (DAP)
@@ -168,4 +170,3 @@ cmake --build build --target eta_editor_package
 ## License
 
 MIT
-

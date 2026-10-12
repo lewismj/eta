@@ -130,6 +130,27 @@ private:
     void handle_exit();
     Value handle_lockfile_explain(const Value& params);
 
+    /**
+     * workspace/executeCommand dispatcher. Routes the integrated lint commands
+     * to the same validation pipeline that powers live diagnostics so there is
+     * a single authoritative editor diagnostic path.
+     */
+    Value handle_execute_command(const Value& params);
+
+    /**
+     * `eta.lsp.lintFile`: force a fresh validation of one open document and
+     * republish its diagnostics. Returns a structured summary for the client.
+     */
+    Value lint_file_command(const Value& arguments);
+
+    /**
+     * `eta.lsp.lintWorkspace`: discover and validate every `*.eta` file under
+     * the supplied (or resolved) workspace roots, publishing diagnostics for
+     * each and clearing diagnostics that are no longer in scope. Returns a
+     * structured summary for the client.
+     */
+    Value lint_workspace_command(const Value& arguments);
+
     /// Text document sync
     void handle_did_open(const Value& params);
     void handle_did_change(const Value& params);
@@ -156,6 +177,14 @@ private:
     /// Diagnostics
     void validate_document(const std::string& uri);
     void publish_diagnostics(const std::string& uri, const std::vector<LspDiagnostic>& diags);
+
+    /**
+     * Run the full reader -> expand -> link -> semantic pipeline plus the shared
+     * linter over a source snapshot and return the merged diagnostics. This is
+     * the single compute path shared by live validation and the manual lint
+     * commands; it never publishes or touches the document store.
+     */
+    std::vector<LspDiagnostic> compute_document_diagnostics(const std::string& source);
 
     /**
      * Run the shared linter library (eta_linter_lib) over a document snapshot and
@@ -191,6 +220,19 @@ private:
     void publish_workspace_package_diagnostics(const std::string& uri);
     static std::optional<std::filesystem::path> uri_to_path(const std::string& uri);
     static std::optional<std::filesystem::path> find_manifest_path(std::filesystem::path start_dir);
+
+    /**
+     * Recursively collect every `*.eta` file rooted at the given workspace
+     * folders in stable sorted path order, skipping build/vendor/cache and
+     * hidden directories so manual workspace lint never descends into compiled
+     * caches or dependency output.
+     */
+    static std::vector<std::filesystem::path> discover_workspace_eta_files(
+        const std::vector<std::filesystem::path>& roots);
+
+    /// True for build/vendor/cache or hidden directory names that workspace
+    /// traversal must not descend into.
+    static bool is_ignored_directory_name(const std::string& name);
 
     /**
      * Read the source of a module (e.g. "std.core") from the search path.
@@ -232,6 +274,14 @@ private:
     std::optional<std::string> workspace_context_;
     std::optional<std::string> manifest_diagnostics_uri_;
     std::optional<std::string> lockfile_diagnostics_uri_;
+
+    /// Workspace folder roots advertised by the client at initialize time,
+    /// used as the fallback scope for `eta.lsp.lintWorkspace`.
+    std::vector<std::filesystem::path> workspace_folders_;
+
+    /// URIs that received diagnostics during the last manual workspace lint
+    /// pass, so a later run can clear stale results for files no longer in scope.
+    std::unordered_set<std::string> workspace_lint_uris_;
 
     /// Editor-configurable tooling options supplied through initializationOptions
     /// (§8.2/§8.3). The canonical formatter uses spaces, so tabs are rejected.

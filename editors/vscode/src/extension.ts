@@ -16,6 +16,7 @@ import {
     Selection,
     TextEditorRevealType,
     ConfigurationTarget,
+    ProgressLocation,
 } from 'vscode';
 import type {
     DebugAdapterDescriptor,
@@ -61,6 +62,25 @@ let client: LanguageClient | undefined;
 let outputChannel: LogOutputChannel;
 let programOutputChannel: LogOutputChannel;
 let extensionCtx: ExtensionContext;
+
+/** Structured summary returned by the `eta.lsp.lintFile` server command. */
+interface LintFileResult {
+    ok?: boolean;
+    uri?: string;
+    diagnosticsCount?: number;
+    error?: string;
+}
+
+/** Structured summary returned by the `eta.lsp.lintWorkspace` server command. */
+interface LintWorkspaceResult {
+    ok?: boolean;
+    filesVisited?: number;
+    filesWithDiagnostics?: number;
+    diagnosticsCount?: number;
+    durationMs?: number;
+    cancelled?: boolean;
+    error?: string;
+}
 
 // Shared providers (accessible from tracker)
 let environmentProvider: EnvironmentTreeProvider;
@@ -251,6 +271,89 @@ export function activate(context: ExtensionContext) {
                 return;
             }
             await runTestsForUri(target);
+        }),
+        commands.registerCommand('eta.formatDocument', async () => {
+            const editor = window.activeTextEditor;
+            if (!editor || editor.document.languageId !== 'eta') {
+                window.showWarningMessage('Open an .eta file to format it.');
+                return;
+            }
+            // Route through VS Code's standard formatting pipeline so the
+            // language server remains the single formatting implementation.
+            await commands.executeCommand('editor.action.formatDocument');
+        }),
+        commands.registerCommand('eta.lintFile', async () => {
+            const editor = window.activeTextEditor;
+            if (!editor || editor.document.languageId !== 'eta') {
+                window.showWarningMessage('Open an .eta file to lint it.');
+                return;
+            }
+            if (!client) {
+                window.showErrorMessage('Eta language server is not running.');
+                return;
+            }
+            try {
+                const result = await client.sendRequest('workspace/executeCommand', {
+                    command: 'eta.lsp.lintFile',
+                    arguments: [editor.document.uri.toString()],
+                }) as LintFileResult | null;
+                if (!result || result.ok === false) {
+                    window.showErrorMessage(
+                        `Eta: lint file failed: ${result?.error ?? 'unknown error'}`,
+                    );
+                    return;
+                }
+                const count = result.diagnosticsCount ?? 0;
+                window.setStatusBarMessage(
+                    count > 0
+                        ? `Eta: linted file — ${count} issue(s)`
+                        : 'Eta: linted file — no issues',
+                    4000,
+                );
+            } catch (err: any) {
+                window.showErrorMessage(`Eta: lint file failed: ${err?.message ?? String(err)}`);
+            }
+        }),
+        commands.registerCommand('eta.lintWorkspace', async () => {
+            if (!client) {
+                window.showErrorMessage('Eta language server is not running.');
+                return;
+            }
+            const folders = workspace.workspaceFolders;
+            if (!folders || folders.length === 0) {
+                window.showWarningMessage('Open a workspace folder to lint.');
+                return;
+            }
+            await window.withProgress(
+                {
+                    location: ProgressLocation.Notification,
+                    title: 'Eta: linting workspace',
+                    cancellable: false,
+                },
+                async () => {
+                    try {
+                        const result = await client!.sendRequest('workspace/executeCommand', {
+                            command: 'eta.lsp.lintWorkspace',
+                            arguments: folders.map(f => f.uri.toString()),
+                        }) as LintWorkspaceResult | null;
+                        if (!result || result.ok === false) {
+                            window.showErrorMessage(
+                                `Eta: lint workspace failed: ${result?.error ?? 'unknown error'}`,
+                            );
+                            return;
+                        }
+                        window.showInformationMessage(
+                            `Eta: linted ${result.filesVisited ?? 0} file(s), `
+                            + `${result.filesWithDiagnostics ?? 0} with issues `
+                            + `(${result.diagnosticsCount ?? 0} total).`,
+                        );
+                    } catch (err: any) {
+                        window.showErrorMessage(
+                            `Eta: lint workspace failed: ${err?.message ?? String(err)}`,
+                        );
+                    }
+                },
+            );
         }),
         commands.registerCommand('eta.showHeapInspector', () => {
             HeapInspectorPanel.createOrShow(extensionCtx).refresh();

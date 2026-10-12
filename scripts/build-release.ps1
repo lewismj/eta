@@ -92,6 +92,7 @@ function Get-DefaultVsGenerator {
         if (-not $cmakeHelp) { return $null }
 
         $preferred = switch ($major) {
+            18 { "Visual Studio 18 2026" }
             17 { "Visual Studio 17 2022" }
             16 { "Visual Studio 16 2019" }
             default { $null }
@@ -99,6 +100,10 @@ function Get-DefaultVsGenerator {
 
         if ($preferred -and ($cmakeHelp -match [Regex]::Escape($preferred))) {
             return $preferred
+        }
+
+        if ($preferred -and -not ($cmakeHelp -match [Regex]::Escape($preferred))) {
+            Write-Host "  [WARN] Installed Visual Studio maps to '$preferred', but this CMake does not advertise that generator; falling back." -ForegroundColor Yellow
         }
 
         # VS 2026+ installs can still build through NMake in a dev shell.
@@ -170,6 +175,12 @@ function Reset-BuildDirOnGeneratorMismatch {
 function Test-IsVisualStudioGenerator {
     param([string]$Generator)
     return ($Generator -like "Visual Studio *")
+}
+
+function Test-IsMultiConfigGenerator {
+    param([string]$Generator)
+    if (-not $Generator) { return $false }
+    return (Test-IsVisualStudioGenerator -Generator $Generator) -or ($Generator -eq "Ninja Multi-Config") -or ($Generator -eq "Xcode")
 }
 
 if (-not $PSBoundParameters.ContainsKey("IncludeHttp")) {
@@ -279,6 +290,173 @@ function Copy-VsRuntimeDllsToBin {
     Write-Host "  [WARN] No Microsoft.VC*.CRT runtime directory found under '$RedistBase'; skipping runtime DLL copy." -ForegroundColor Yellow
 }
 
+function Get-HostTargetTriple {
+    if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") {
+        return "aarch64-pc-windows-msvc"
+    }
+    return "x86_64-pc-windows-msvc"
+}
+
+function Write-Utf8NoBomLines {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [AllowEmptyCollection()]
+        [string[]]$Lines
+    )
+
+    $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllLines($Path, $Lines, $Utf8NoBom)
+}
+
+function Sync-NativeManifestHashes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath,
+        [Parameter(Mandatory = $true)]
+        [string]$HostTargetTriple
+    )
+
+    $PackageRoot = Split-Path -Parent $ManifestPath
+    $Lines = [System.IO.File]::ReadAllLines($ManifestPath)
+    $Updated = $false
+    $InTarget = $false
+    $CurrentTriple = ""
+    $ArtifactRelpath = $null
+
+    for ($i = 0; $i -lt $Lines.Length; $i++) {
+        $Line = $Lines[$i]
+
+        if ($Line -eq "[[native.targets]]") {
+            $InTarget = $true
+            $CurrentTriple = ""
+            $ArtifactRelpath = $null
+            continue
+        }
+
+        if ($Line -match '^\[.+\]$') {
+            $InTarget = $false
+            $CurrentTriple = ""
+            $ArtifactRelpath = $null
+            continue
+        }
+
+        if (-not $InTarget) { continue }
+
+        if ($Line -match '^triple = "([^"]+)"$') {
+            $CurrentTriple = $Matches[1]
+            continue
+        }
+
+        if ($Line -match '^artifact = "([^"]+)"$') {
+            $ArtifactRelpath = $Matches[1]
+            continue
+        }
+
+        if ($CurrentTriple -ne $HostTargetTriple) { continue }
+        if (-not $ArtifactRelpath) { continue }
+        if ($Line -notmatch '^sha256 = "[0-9a-fA-F]+"$') { continue }
+
+        $ArtifactPath = Join-Path $PackageRoot ($ArtifactRelpath -replace '/', '\')
+        if (-not (Test-Path $ArtifactPath -PathType Leaf)) {
+            Write-Host "  [WARN] Native package artifact missing for manifest sync: $ArtifactPath" -ForegroundColor Yellow
+            continue
+        }
+
+        $Hash = (Get-FileHash -LiteralPath $ArtifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $ExpectedLine = "sha256 = `"$Hash`""
+        if ($Lines[$i] -ne $ExpectedLine) {
+            $Lines[$i] = $ExpectedLine
+            $Updated = $true
+            Write-Host "  Refreshed manifest hash: $($ArtifactRelpath)"
+        }
+    }
+
+    if ($Updated) {
+        Write-Utf8NoBomLines -Path $ManifestPath -Lines $Lines
+    }
+}
+
+function Sync-NativeLockfileHashes {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LockfilePath,
+        [Parameter(Mandatory = $true)]
+        [string]$HostTargetTriple
+    )
+
+    $PackageRoot = Split-Path -Parent $LockfilePath
+    $Lines = [System.IO.File]::ReadAllLines($LockfilePath)
+    $Updated = $false
+    $CurrentTriple = ""
+    $ArtifactRelpath = $null
+
+    for ($i = 0; $i -lt $Lines.Length; $i++) {
+        $Line = $Lines[$i]
+
+        if ($Line -eq "[[package]]") {
+            $CurrentTriple = ""
+            $ArtifactRelpath = $null
+            continue
+        }
+
+        if ($Line -match '^native_target_triple = "([^"]+)"$') {
+            $CurrentTriple = $Matches[1]
+            continue
+        }
+
+        if ($Line -match '^native_artifact_relpath = "([^"]+)"$') {
+            $ArtifactRelpath = $Matches[1]
+            continue
+        }
+
+        if ($CurrentTriple -ne $HostTargetTriple) { continue }
+        if (-not $ArtifactRelpath) { continue }
+        if ($Line -notmatch '^native_sha256 = "[0-9a-fA-F]+"$') { continue }
+
+        $ArtifactPath = Join-Path $PackageRoot ($ArtifactRelpath -replace '/', '\')
+        if (-not (Test-Path $ArtifactPath -PathType Leaf)) {
+            Write-Host "  [WARN] Native package artifact missing for lockfile sync: $ArtifactPath" -ForegroundColor Yellow
+            continue
+        }
+
+        $Hash = (Get-FileHash -LiteralPath $ArtifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $ExpectedLine = "native_sha256 = `"$Hash`""
+        if ($Lines[$i] -ne $ExpectedLine) {
+            $Lines[$i] = $ExpectedLine
+            $Updated = $true
+            Write-Host "  Refreshed lockfile hash: $($ArtifactRelpath)"
+        }
+    }
+
+    if ($Updated) {
+        Write-Utf8NoBomLines -Path $LockfilePath -Lines $Lines
+    }
+}
+
+function Sync-BundledNativePackageMetadata {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PackagesRoot
+    )
+
+    if (-not (Test-Path $PackagesRoot -PathType Container)) { return }
+
+    $HostTargetTriple = Get-HostTargetTriple
+    Write-Host "  Refreshing bundled native package hashes for $HostTargetTriple..."
+
+    Get-ChildItem -Path $PackagesRoot -Recurse -File -Filter "eta.toml" | ForEach-Object {
+        Sync-NativeManifestHashes -ManifestPath $_.FullName -HostTargetTriple $HostTargetTriple
+
+        $LockfilePath = Join-Path $_.DirectoryName "eta.lock"
+        if (Test-Path $LockfilePath -PathType Leaf) {
+            Sync-NativeLockfileHashes -LockfilePath $LockfilePath -HostTargetTriple $HostTargetTriple
+        }
+    }
+}
+
 # ── Detect platform ──────────────────────────────────────────────────
 $Arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" }
 $PlatformTag = "win-$Arch"
@@ -350,7 +528,21 @@ Write-Host ""
 
 # -- 1. Configure --------------------------------------------------------------
 Write-Host "> [1/6] Configuring CMake..."
-& cmake @GeneratorArg -B $BuildDir -DCMAKE_INSTALL_PREFIX="$Prefix" @ToolchainArg @TorchArg $ProjectRoot
+$ConfigureArgs = @()
+$ConfigureArgs += $GeneratorArg
+$ConfigureArgs += @("-B", $BuildDir)
+$ConfigureArgs += @("-DCMAKE_INSTALL_PREFIX=$Prefix")
+
+# NMake/Ninja-style single-config generators need CMAKE_BUILD_TYPE set at configure time.
+if (-not (Test-IsMultiConfigGenerator -Generator $SelectedGenerator)) {
+    $ConfigureArgs += "-DCMAKE_BUILD_TYPE=Release"
+}
+
+$ConfigureArgs += $ToolchainArg
+$ConfigureArgs += $TorchArg
+$ConfigureArgs += $ProjectRoot
+
+& cmake @ConfigureArgs
 if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
 
 # -- 2. Build ------------------------------------------------------------------
@@ -378,6 +570,8 @@ if (Test-Path $PackagesSrc) {
     }
     $global:LASTEXITCODE = 0
 }
+
+Sync-BundledNativePackageMetadata -PackagesRoot $PackagesDest
 
 # Verify required runtime binaries are present in the bundle.
 Write-Host "  Verifying runtime binaries..."

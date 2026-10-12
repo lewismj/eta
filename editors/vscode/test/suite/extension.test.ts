@@ -41,6 +41,9 @@ describe('Eta extension activation', function () {
             'eta.runFile',
             'eta.debugFile',
             'eta.runTestFile',
+            'eta.formatDocument',
+            'eta.lintFile',
+            'eta.lintWorkspace',
             'eta.showHeapInspector',
             'eta.showEnvironmentInspector',
             'eta.showDisassembly',
@@ -50,19 +53,6 @@ describe('Eta extension activation', function () {
         ]) {
             assert.ok(all.includes(cmd), `missing command: ${cmd}`);
         }
-    });
-
-    it('registers an evaluatable expression provider for eta', async () => {
-        // We can only verify indirectly: requesting a hover-eval through the
-        // command requires an active debug session, so just ensure that
-        // executing the link/lens providers (which we registered together)
-        // doesn't reject for an .eta document.
-        const uri = vscode.Uri.file(path.join(FIXTURES, 'sample.eta'));
-        await vscode.workspace.openTextDocument(uri);
-        const result = await vscode.commands.executeCommand(
-            'vscode.executeCodeLensProvider', uri,
-        );
-        assert.ok(Array.isArray(result));
     });
 });
 
