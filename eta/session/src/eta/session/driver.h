@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <set>
 #include <string>
 #include <string_view>
@@ -374,6 +375,7 @@ private:
     void emit_sidecar_error(std::string message) override;
     bool ensure_package_sidecars_loaded(std::optional<fs::path> start_dir) override;
     [[nodiscard]] std::size_t total_primitive_count() const noexcept override;
+    [[nodiscard]] std::span<const std::string> command_line_arguments() const noexcept override;
     [[nodiscard]] runtime::BuiltinEnvironment& builtins() noexcept override;
     [[nodiscard]] runtime::ExtensionEnvironment& extensions() noexcept override;
     [[nodiscard]] RuntimePrimitiveInstaller& primitive_installer() noexcept override;

@@ -16,6 +16,9 @@
 #include "eta/reader/module_linker.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/extension_env.h"
+#include "eta/runtime/os_primitives.h"
+#include "eta/runtime/types/closure.h"
+#include "eta/runtime/types/primitive.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/semantics/emitter.h"
@@ -25,6 +28,76 @@
 #include "eta/util/path.h"
 
 namespace eta::session {
+
+namespace {
+
+std::expected<void, runtime::error::RuntimeError> invoke_module_main(
+    runtime::vm::VM& vm,
+    runtime::memory::heap::Heap& heap,
+    runtime::memory::intern::InternTable& intern_table,
+    runtime::nanbox::LispVal main_val,
+    std::span<const std::string> command_line_arguments) {
+    using runtime::error::RuntimeError;
+    using runtime::error::RuntimeErrorCode;
+    using runtime::error::VMError;
+    using runtime::memory::heap::ObjectKind;
+    using runtime::nanbox::Tag;
+    using runtime::nanbox::ops::is_boxed;
+    using runtime::nanbox::ops::payload;
+    using runtime::nanbox::ops::tag;
+
+    if (!is_boxed(main_val) || tag(main_val) != Tag::HeapObject) {
+        auto main_res = vm.call_value(main_val, {});
+        if (!main_res) return std::unexpected(main_res.error());
+        return {};
+    }
+
+    const auto object_payload = payload(main_val);
+    uint32_t arity = 0;
+    bool has_rest = false;
+    if (auto* prim = heap.try_get_as<ObjectKind::Primitive, runtime::types::Primitive>(
+            object_payload)) {
+        arity = prim->arity;
+        has_rest = prim->has_rest;
+    } else if (auto* closure = heap.try_get_as<ObjectKind::Closure, runtime::types::Closure>(
+                   object_payload)) {
+        arity = closure->func->arity;
+        has_rest = closure->func->has_rest;
+    } else {
+        auto main_res = vm.call_value(main_val, {});
+        if (!main_res) return std::unexpected(main_res.error());
+        return {};
+    }
+
+    if (has_rest) {
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InvalidArity,
+            "entrypoint main must take 0 or 1 argument(s) without rest parameters"}});
+    }
+
+    if (arity == 0u) {
+        auto main_res = vm.call_value(main_val, {});
+        if (!main_res) return std::unexpected(main_res.error());
+        return {};
+    }
+
+    if (arity == 1u) {
+        const std::vector<std::string> cli_args(
+            command_line_arguments.begin(),
+            command_line_arguments.end());
+        auto list_res = runtime::build_string_list(heap, intern_table, cli_args);
+        if (!list_res) return std::unexpected(list_res.error());
+        auto main_res = vm.call_value(main_val, {*list_res});
+        if (!main_res) return std::unexpected(main_res.error());
+        return {};
+    }
+
+    return std::unexpected(RuntimeError{VMError{
+        RuntimeErrorCode::InvalidArity,
+        "entrypoint main must take 0 or 1 argument(s), got " + std::to_string(arity)}});
+}
+
+} // namespace
 
 bool CompilationSession::has_module(const std::string& name) const noexcept {
     return executed_modules_.contains(name);
@@ -589,7 +662,12 @@ bool CompilationSession::run_source_impl(Host& host,
             if (mod.main_func_slot) {
                 auto main_val = globals[*mod.main_func_slot];
                 if (main_val != runtime::nanbox::Nil) {
-                    auto main_res = host.vm().call_value(main_val, {});
+                    auto main_res = invoke_module_main(
+                        host.vm(),
+                        host.heap(),
+                        host.intern_table(),
+                        main_val,
+                        host.command_line_arguments());
                     if (!main_res) {
                         rollback_accumulated_forms();
                         host.emit_runtime_error(main_res.error());

@@ -8,9 +8,11 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "eta/diagnostic/diagnostic.h"
 #include "eta/interpreter/all_primitives.h"
@@ -109,6 +111,11 @@ public:
 
     std::size_t total_primitive_count() const noexcept override {
         return primitive_installer_.total_primitive_count();
+    }
+
+    std::span<const std::string> command_line_arguments() const noexcept override {
+        static const std::vector<std::string> kNoArgs;
+        return std::span<const std::string>(kNoArgs);
     }
 
     std::string format_value(eta::runtime::nanbox::LispVal value,

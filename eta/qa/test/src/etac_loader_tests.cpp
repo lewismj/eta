@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -24,6 +25,8 @@
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/runtime/string_view.h"
+#include "eta/runtime/types/types.h"
 #include "eta/runtime/types/primitive.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/vm.h"
@@ -64,10 +67,11 @@ class EtacLoaderFixture final
     : public eta::session::CompilationSession::Host,
       public eta::session::EtacLoader::Host {
 public:
-    EtacLoaderFixture()
+    explicit EtacLoaderFixture(std::vector<std::string> command_line_arguments = {})
         : heap_(16ull * 1024ull * 1024ull),
           vm_(heap_, intern_table_),
           primitive_installer_(heap_, builtins_, extensions_),
+          command_line_arguments_(std::move(command_line_arguments)),
           etac_loader_(*this, compilation_, *this) {
         vm_.set_function_resolver([this](uint32_t index) {
             return registry_.get(index);
@@ -152,6 +156,10 @@ public:
 
     std::size_t total_primitive_count() const noexcept override {
         return primitive_installer_.total_primitive_count();
+    }
+
+    std::span<const std::string> command_line_arguments() const noexcept override {
+        return std::span<const std::string>(command_line_arguments_);
     }
 
     std::size_t builtin_count() const noexcept override {
@@ -304,8 +312,33 @@ private:
     eta::diagnostic::DiagnosticEngine diagnostics_;
     eta::semantics::OptimizationPipeline optimization_pipeline_;
     eta::session::CompilationSession compilation_;
+    std::vector<std::string> command_line_arguments_;
     eta::session::EtacLoader etac_loader_;
 };
+
+std::vector<std::string> decode_string_list(
+    eta::runtime::memory::heap::Heap& heap,
+    eta::runtime::memory::intern::InternTable& intern_table,
+    eta::runtime::nanbox::LispVal list) {
+    using eta::runtime::memory::heap::ObjectKind;
+    using eta::runtime::nanbox::Nil;
+    using eta::runtime::nanbox::ops::is_boxed;
+    using eta::runtime::nanbox::ops::payload;
+    using eta::runtime::nanbox::ops::tag;
+    std::vector<std::string> out;
+    auto cur = list;
+    while (cur != Nil) {
+        BOOST_REQUIRE(is_boxed(cur));
+        BOOST_REQUIRE(tag(cur) == eta::runtime::nanbox::Tag::HeapObject);
+        auto* cell = heap.try_get_as<ObjectKind::Cons, eta::runtime::types::Cons>(payload(cur));
+        BOOST_REQUIRE(cell != nullptr);
+        auto text = eta::runtime::StringView::try_from(cell->car, intern_table);
+        BOOST_REQUIRE(text.has_value());
+        out.emplace_back(text->view());
+        cur = cell->cdr;
+    }
+    return out;
+}
 
 } // namespace
 
@@ -377,6 +410,39 @@ BOOST_AUTO_TEST_CASE(run_etac_file_stale_without_source_reports_error) {
     const auto diagnostics = runner_fixture.diagnostics_text();
     BOOST_TEST(diagnostics.find("stale .etac detected") != std::string::npos);
     BOOST_TEST(diagnostics.find("no sibling source found for fallback") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(run_etac_file_invokes_single_argument_main_with_cli_args) {
+    TempDir temp;
+    const auto source_file = temp.write_file(
+        "etac/loader/main_args.eta",
+        "(module etac.loader.main-args\n"
+        "  (export seen)\n"
+        "  (define seen '())\n"
+        "  (defun main (args)\n"
+        "    (set! seen args)))\n");
+    const auto etac_file = source_file.parent_path() / "main_args.etac";
+
+    EtacLoaderFixture compiler_fixture;
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compiler_fixture.compile_source_to_etac(source_file, etac_file, &compile_error),
+        compile_error);
+
+    EtacLoaderFixture runner_fixture({"alpha", "beta"});
+    const bool ok = runner_fixture.run_etac_file(etac_file);
+    BOOST_REQUIRE(ok);
+
+    const auto seen_slot =
+        runner_fixture.runtime_export_slot("etac.loader.main-args", "seen");
+    BOOST_REQUIRE(seen_slot.has_value());
+    const auto decoded = decode_string_list(
+        runner_fixture.heap(),
+        runner_fixture.intern_table(),
+        runner_fixture.vm().globals()[*seen_slot]);
+    BOOST_REQUIRE_EQUAL(decoded.size(), 2u);
+    BOOST_TEST(decoded[0] == "alpha");
+    BOOST_TEST(decoded[1] == "beta");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

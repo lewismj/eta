@@ -213,6 +213,8 @@ The fast-load path:
 2. Merges the deserialized functions into the interpreter's live registry.
 3. Installs builtin primitives and resizes the globals vector.
 4. Executes each module's `_init` function, then invokes `(defun main …)` if present.
+   Supported signatures are `main()` and `main(args)`.
+   When `main(args)` is used, `args` is the user argument list passed after `--`.
 
 This means `.etac` files participate in the same module system as `.eta`
 files — the prelude is loaded normally, and cross-module imports resolve

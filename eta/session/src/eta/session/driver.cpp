@@ -596,6 +596,10 @@ std::size_t Driver::total_primitive_count() const noexcept {
     return primitive_installer_.total_primitive_count();
 }
 
+std::span<const std::string> Driver::command_line_arguments() const noexcept {
+    return std::span<const std::string>(command_line_arguments_);
+}
+
 runtime::BuiltinEnvironment& Driver::builtins() noexcept {
     return builtins_;
 }

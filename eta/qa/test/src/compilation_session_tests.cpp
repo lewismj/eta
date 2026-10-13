@@ -8,7 +8,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <sstream>
+#include <span>
 #include <string>
+#include <vector>
 
 #include "eta/diagnostic/diagnostic.h"
 #include "eta/runtime/builtin_env.h"
@@ -17,6 +20,8 @@
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/runtime/string_view.h"
+#include "eta/runtime/types/types.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
 #include "eta/runtime/vm/vm.h"
 #include "eta/semantics/optimization_pipeline.h"
@@ -29,10 +34,11 @@ namespace {
 
 class CompilationHostFixture final : public eta::session::CompilationSession::Host {
 public:
-    CompilationHostFixture()
+    explicit CompilationHostFixture(std::vector<std::string> command_line_arguments = {})
         : heap_(16ull * 1024ull * 1024ull),
           vm_(heap_, intern_table_),
-          primitive_installer_(heap_, builtins_, extensions_) {
+          primitive_installer_(heap_, builtins_, extensions_),
+          command_line_arguments_(std::move(command_line_arguments)) {
         vm_.set_function_resolver([this](uint32_t index) {
             return registry_.get(index);
         });
@@ -99,6 +105,19 @@ public:
         return primitive_installer_.total_primitive_count();
     }
 
+    std::span<const std::string> command_line_arguments() const noexcept override {
+        return std::span<const std::string>(command_line_arguments_);
+    }
+
+    std::string diagnostics_text() const {
+        std::ostringstream out;
+        diagnostics_.print_all(
+            out,
+            /*use_color=*/false,
+            [](uint32_t) { return std::string{}; });
+        return out.str();
+    }
+
 private:
     eta::runtime::memory::heap::Heap heap_;
     eta::runtime::memory::intern::InternTable intern_table_;
@@ -109,7 +128,32 @@ private:
     eta::session::RuntimePrimitiveInstaller primitive_installer_;
     eta::diagnostic::DiagnosticEngine diagnostics_;
     eta::semantics::OptimizationPipeline optimization_pipeline_;
+    std::vector<std::string> command_line_arguments_;
 };
+
+std::vector<std::string> decode_string_list(
+    eta::runtime::memory::heap::Heap& heap,
+    eta::runtime::memory::intern::InternTable& intern_table,
+    eta::runtime::nanbox::LispVal list) {
+    using eta::runtime::memory::heap::ObjectKind;
+    using eta::runtime::nanbox::Nil;
+    using eta::runtime::nanbox::ops::is_boxed;
+    using eta::runtime::nanbox::ops::payload;
+    using eta::runtime::nanbox::ops::tag;
+    std::vector<std::string> out;
+    auto cur = list;
+    while (cur != Nil) {
+        BOOST_REQUIRE(is_boxed(cur));
+        BOOST_REQUIRE(tag(cur) == eta::runtime::nanbox::Tag::HeapObject);
+        auto* cell = heap.try_get_as<ObjectKind::Cons, eta::runtime::types::Cons>(payload(cur));
+        BOOST_REQUIRE(cell != nullptr);
+        auto text = eta::runtime::StringView::try_from(cell->car, intern_table);
+        BOOST_REQUIRE(text.has_value());
+        out.emplace_back(text->view());
+        cur = cell->cdr;
+    }
+    return out;
+}
 
 } // namespace
 
@@ -177,6 +221,60 @@ BOOST_AUTO_TEST_CASE(clear_module_cache_drops_execution_and_link_state) {
     for (const auto& [_, name] : session.global_names()) {
         BOOST_TEST(!name.starts_with("stage6.cache"));
     }
+}
+
+BOOST_AUTO_TEST_CASE(run_source_impl_invokes_zero_arity_main) {
+    eta::session::CompilationSession session;
+    CompilationHostFixture host;
+    eta::runtime::nanbox::LispVal seen = eta::runtime::nanbox::Nil;
+
+    const bool ok = session.run_source_impl(
+        host,
+        "(module stage6.main.zero\n"
+        "  (define seen 0)\n"
+        "  (defun main ()\n"
+        "    (set! seen 7)))",
+        /*file_id=*/0u,
+        &seen,
+        "seen");
+    BOOST_REQUIRE(ok);
+    auto decoded = eta::runtime::nanbox::ops::decode<std::int64_t>(seen);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_TEST(*decoded == 7);
+}
+
+BOOST_AUTO_TEST_CASE(run_source_impl_invokes_single_argument_main_with_cli_args) {
+    eta::session::CompilationSession session;
+    CompilationHostFixture host({"foo", "bar"});
+    eta::runtime::nanbox::LispVal seen = eta::runtime::nanbox::Nil;
+
+    const bool ok = session.run_source_impl(
+        host,
+        "(module stage6.main.args\n"
+        "  (define seen '())\n"
+        "  (defun main (args)\n"
+        "    (set! seen args)))",
+        /*file_id=*/0u,
+        &seen,
+        "seen");
+    BOOST_REQUIRE(ok);
+    const auto decoded = decode_string_list(host.heap(), host.intern_table(), seen);
+    BOOST_REQUIRE_EQUAL(decoded.size(), 2u);
+    BOOST_TEST(decoded[0] == "foo");
+    BOOST_TEST(decoded[1] == "bar");
+}
+
+BOOST_AUTO_TEST_CASE(run_source_impl_reports_invalid_entrypoint_arity) {
+    eta::session::CompilationSession session;
+    CompilationHostFixture host;
+
+    const bool ok = session.run_source_impl(
+        host,
+        "(module stage6.main.bad\n"
+        "  (defun main (a b)\n"
+        "    (+ a b)))",
+        /*file_id=*/0u);
+    BOOST_TEST(!ok);
 }
 
 BOOST_AUTO_TEST_CASE(etac_reservations_are_released_by_owner_module) {

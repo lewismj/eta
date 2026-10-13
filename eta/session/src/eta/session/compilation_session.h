@@ -149,6 +149,7 @@ public:
         [[nodiscard]] virtual runtime::ExtensionEnvironment& extensions() noexcept = 0;
         [[nodiscard]] virtual RuntimePrimitiveInstaller& primitive_installer() noexcept = 0;
         [[nodiscard]] virtual semantics::OptimizationPipeline& optimization_pipeline() noexcept = 0;
+        [[nodiscard]] virtual std::span<const std::string> command_line_arguments() const noexcept = 0;
         [[nodiscard]] virtual std::size_t total_primitive_count() const noexcept = 0;
     };
 

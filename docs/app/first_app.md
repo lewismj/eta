@@ -40,6 +40,18 @@ eta build
 eta run
 ```
 
+Entrypoint signatures:
+
+- `main()` works for apps that do not need CLI arguments.
+- `main(args)` receives a list of user arguments (strings) passed after `--`.
+- `args` does not include the script path or executable name.
+
+Example with CLI args:
+
+```console
+eta run -- --name lewis --verbose
+```
+
 Expected output:
 
 ```text
@@ -103,6 +115,12 @@ cd ..
 eta test --workspace
 eta build --workspace
 eta run -p myapp
+```
+
+To pass app arguments in workspace mode, keep `-p` before `--`:
+
+```console
+eta run -p myapp -- --level 3 input.csv
 ```
 
 Expected output:
