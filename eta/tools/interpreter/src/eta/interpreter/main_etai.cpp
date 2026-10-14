@@ -29,6 +29,7 @@ static void print_usage(const char* prog) {
     std::cerr << "colon";
 #endif
     std::cerr << "-separated).\n"
+              << "                      Current working directory is searched first.\n"
               << "                      Falls back to ETA_MODULE_PATH environment variable.\n"
               << "  --strict-shadows    Fail when a module resolves to multiple files.\n"
               << "  --mailbox <url>     nng endpoint to dial on startup (spawned child mode).\n"
@@ -217,17 +218,11 @@ int main(int argc, char* argv[]) {
     /// Build module path resolver
     auto resolver =
         eta::interpreter::ModulePathResolver::from_args_or_env(cli_path, strict_shadows);
-
-    /**
-     * Also add the directory containing the input file so sibling
-     * modules can be found without an explicit --path.
-     */
     const char* env_module_path = std::getenv("ETA_MODULE_PATH");
     const bool explicit_module_path =
         !cli_path.empty() || (env_module_path != nullptr && env_module_path[0] != '\0');
     if (!explicit_module_path) {
-        auto parent_dir = fs::absolute(file_path).parent_path();
-        resolver.add_dir(parent_dir);
+        resolver.add_dir(fs::absolute(file_path).parent_path());
     }
 
     /// Create driver (pass argv[0] as the etai path)
@@ -385,5 +380,4 @@ int main(int argc, char* argv[]) {
     if (!emit_profile_report()) return 1;
     return 0;
 }
-
 

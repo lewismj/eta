@@ -31,6 +31,7 @@ static void print_usage(const char* prog) {
     std::cerr << "colon";
 #endif
     std::cerr << "-separated).\n"
+              << "                  Current working directory is searched first.\n"
               << "                  Falls back to ETA_MODULE_PATH environment variable.\n"
               << "  --strict-shadows Fail when a module resolves to multiple files.\n"
               << "  --help          Show this help message.\n";

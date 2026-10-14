@@ -152,7 +152,7 @@ Usage: etac [options] <file.eta> [-o <file.etac>]
 | `-O0` | Disable optimization (default). |
 | `--disasm` | Print disassembly to stdout instead of writing a `.etac` file. |
 | `--no-debug` | Strip debug info (source maps) from the output, producing a smaller file. |
-| `--path <dirs>` | Module search path (`;`-separated on Windows, `:`-separated on Linux). Falls back to `ETA_MODULE_PATH`. Supports `dir+`, `pkg+`, `pkgs+`, and auto mode entries. |
+| `--path <dirs>` | Module search path (`;`-separated on Windows, `:`-separated on Linux). The current working directory is always searched first, then `--path` entries; without `--path`, falls back to `ETA_MODULE_PATH`. Supports `dir+`, `pkg+`, `pkgs+`, and auto mode entries. |
 | `--help` | Show the help message. |
 
 **Examples:**
@@ -228,8 +228,8 @@ eta> :prof trace --format pretty
 eta> (my-workload)
 ```
 
-You can import user-defined modules too. Use `--path` to tell the REPL
-where to find your `.eta` files:
+You can import user-defined modules too. The current working directory is
+always searched first. Use `--path` for additional roots:
 
 ```bash
 eta_repl --path ./mylibs
@@ -281,8 +281,9 @@ Create **`app.eta`** in the same directory:
     (say-hello "world")))
 ```
 
-`etai` auto-adds the input file's directory to the module search path,
-so sibling modules are found automatically:
+`etai` always searches the current working directory first. When neither
+`--path` nor `ETA_MODULE_PATH` is set, it also searches the input file's
+directory, so sibling modules are found even when run from another directory:
 
 ```bash
 etai app.eta          # prints: Hello, world!

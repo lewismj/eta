@@ -335,9 +335,12 @@ BOOST_AUTO_TEST_CASE(explicit_dirs_constructor) {
 /// from_args_or_env
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_cli_path_overrides_env) {
+    CurrentPathGuard cwd_guard;
+    TempDir cwd_dir;
     TempDir cli_dir;
     TempDir env_dir;
     EnvVarGuard guard("ETA_MODULE_PATH");
+    fs::current_path(cwd_dir.path);
 
 #ifdef _WIN32
     _putenv_s("ETA_MODULE_PATH", env_dir.path.string().c_str());
@@ -346,30 +349,36 @@ BOOST_AUTO_TEST_CASE(from_args_or_env_cli_path_overrides_env) {
 #endif
 
     auto r = ModulePathResolver::from_args_or_env(cli_dir.path.string());
-    /// First dir should come from cli
     BOOST_REQUIRE(!r.empty());
-    BOOST_REQUIRE_EQUAL(r.dirs().size(), 1u);
-    BOOST_TEST(r.dirs()[0] == cli_dir.path);
+    BOOST_REQUIRE_EQUAL(r.dirs().size(), 2u);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(cwd_dir.path));
+    BOOST_TEST(r.dirs()[1] == fs::weakly_canonical(cli_dir.path));
 }
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_empty_cli_uses_env) {
-    TempDir d;
+    CurrentPathGuard cwd_guard;
+    TempDir cwd_dir;
+    TempDir env_dir;
     EnvVarGuard guard("ETA_MODULE_PATH");
+    fs::current_path(cwd_dir.path);
 
 #ifdef _WIN32
-    _putenv_s("ETA_MODULE_PATH", d.path.string().c_str());
+    _putenv_s("ETA_MODULE_PATH", env_dir.path.string().c_str());
 #else
-    setenv("ETA_MODULE_PATH", d.path.string().c_str(), 1);
+    setenv("ETA_MODULE_PATH", env_dir.path.string().c_str(), 1);
 #endif
 
     auto r = ModulePathResolver::from_args_or_env("");
     BOOST_REQUIRE(!r.empty());
-    BOOST_REQUIRE_EQUAL(r.dirs().size(), 1u);
-    BOOST_TEST(r.dirs()[0] == d.path);
+    BOOST_REQUIRE_EQUAL(r.dirs().size(), 2u);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(cwd_dir.path));
+    BOOST_TEST(r.dirs()[1] == fs::weakly_canonical(env_dir.path));
 }
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_pkg_entry_expands_release_and_src_roots) {
     TempDir d;
+    CurrentPathGuard cwd_guard;
+    fs::current_path(d.path);
     const auto package_root = d.path / "demo";
     fs::create_directories(package_root / "target" / "release");
     fs::create_directories(package_root / "src");
@@ -393,9 +402,71 @@ eta = ">=0.6, <0.8"
 #endif
 
     auto r = ModulePathResolver::from_args_or_env_at("", d.path);
-    BOOST_REQUIRE_GE(r.dirs().size(), 2u);
-    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(package_root / "target" / "release"));
-    BOOST_TEST(r.dirs()[1] == fs::weakly_canonical(package_root / "src"));
+    BOOST_REQUIRE_GE(r.dirs().size(), 3u);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(d.path));
+    BOOST_TEST(r.dirs()[1] == fs::weakly_canonical(package_root / "target" / "release"));
+    BOOST_TEST(r.dirs()[2] == fs::weakly_canonical(package_root / "src"));
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_at_prefixes_cwd_not_discovery_dir) {
+    TempDir cwd_dir;
+    TempDir discovery_dir;
+    TempDir env_dir;
+    CurrentPathGuard cwd_guard;
+    EnvVarGuard env_guard("ETA_MODULE_PATH");
+    fs::current_path(cwd_dir.path);
+    const auto local_module = cwd_dir.create_file("local.eta", "(module local)\n");
+    env_dir.create_file("local.eta", "(module local)\n");
+    discovery_dir.create_file("local.eta", "(module local)\n");
+#ifdef _WIN32
+    _putenv_s("ETA_MODULE_PATH", env_dir.path.string().c_str());
+#else
+    setenv("ETA_MODULE_PATH", env_dir.path.string().c_str(), 1);
+#endif
+
+    auto r = ModulePathResolver::from_args_or_env_at("", discovery_dir.path);
+    BOOST_REQUIRE_EQUAL(r.dirs().size(), 2u);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(cwd_dir.path));
+    BOOST_TEST(r.dirs()[1] == fs::weakly_canonical(env_dir.path));
+    auto resolved = r.resolve("local");
+    BOOST_REQUIRE(resolved.has_value());
+    BOOST_TEST(*resolved == fs::weakly_canonical(local_module));
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_deduplicates_cwd_in_explicit_paths) {
+    TempDir cwd_dir;
+    CurrentPathGuard cwd_guard;
+    fs::current_path(cwd_dir.path);
+    const auto local_module = cwd_dir.create_file("local.eta", "(module local)\n");
+    auto r = ModulePathResolver::from_args_or_env(
+        cwd_dir.path.string() + kPathSep + (cwd_dir.path / ".").string(), true);
+    BOOST_REQUIRE_EQUAL(r.dirs().size(), 1u);
+    BOOST_TEST(r.strict_shadow_scan());
+    auto matches = r.resolve_all("local");
+    BOOST_REQUIRE_EQUAL(matches.size(), 1u);
+    BOOST_TEST(matches[0] == fs::weakly_canonical(local_module));
+    r.add_dir(cwd_dir.path / ".");
+    BOOST_REQUIRE_EQUAL(r.dirs().size(), 1u);
+    BOOST_REQUIRE_EQUAL(r.resolve_all("local").size(), 1u);
+}
+
+BOOST_AUTO_TEST_CASE(from_args_or_env_without_explicit_paths_resolves_cwd_modules) {
+    TempDir cwd_dir;
+    CurrentPathGuard cwd_guard;
+    EnvVarGuard env_guard("ETA_MODULE_PATH");
+    fs::current_path(cwd_dir.path);
+#ifdef _WIN32
+    _putenv_s("ETA_MODULE_PATH", "");
+#else
+    unsetenv("ETA_MODULE_PATH");
+#endif
+    const auto local_module = cwd_dir.create_file("local.eta", "(module local)\n");
+    auto r = ModulePathResolver::from_args_or_env("");
+    BOOST_REQUIRE(!r.empty());
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(cwd_dir.path));
+    auto resolved = r.resolve("local");
+    BOOST_REQUIRE(resolved.has_value());
+    BOOST_TEST(*resolved == fs::weakly_canonical(local_module));
 }
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_auto_entry_expands_top_level_package_collection) {
@@ -606,7 +677,7 @@ dependencies = []
     fs::current_path(project_root / "nested" / "path");
 
     auto r = ModulePathResolver::from_args_or_env("");
-    BOOST_REQUIRE_GE(r.dirs().size(), 5u);
+    BOOST_REQUIRE_GE(r.dirs().size(), 6u);
 
     const auto expected_root_src = fs::weakly_canonical(project_root / "src");
     const auto expected_beta_release =
@@ -618,11 +689,12 @@ dependencies = []
     const auto expected_alpha_src =
         fs::weakly_canonical(project_root / ".eta" / "modules" / "alpha-0.1.0" / "src");
 
-    BOOST_TEST(r.dirs()[0] == expected_root_src);
-    BOOST_TEST(r.dirs()[1] == expected_beta_release);
-    BOOST_TEST(r.dirs()[2] == expected_beta_src);
-    BOOST_TEST(r.dirs()[3] == expected_alpha_release);
-    BOOST_TEST(r.dirs()[4] == expected_alpha_src);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(fs::current_path()));
+    BOOST_TEST(r.dirs()[1] == expected_root_src);
+    BOOST_TEST(r.dirs()[2] == expected_beta_release);
+    BOOST_TEST(r.dirs()[3] == expected_beta_src);
+    BOOST_TEST(r.dirs()[4] == expected_alpha_release);
+    BOOST_TEST(r.dirs()[5] == expected_alpha_src);
 }
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_at_discovers_project_from_explicit_start_dir) {
@@ -667,7 +739,7 @@ dependencies = []
     fs::current_path(d.path);
 
     auto r = ModulePathResolver::from_args_or_env_at("", nested_dir);
-    BOOST_REQUIRE_GE(r.dirs().size(), 3u);
+    BOOST_REQUIRE_GE(r.dirs().size(), 4u);
 
     const auto expected_root_src = fs::weakly_canonical(project_root / "src");
     const auto expected_dep_release =
@@ -675,9 +747,10 @@ dependencies = []
     const auto expected_dep_src =
         fs::weakly_canonical(project_root / ".eta" / "modules" / "dep-0.1.0" / "src");
 
-    BOOST_TEST(r.dirs()[0] == expected_root_src);
-    BOOST_TEST(r.dirs()[1] == expected_dep_release);
-    BOOST_TEST(r.dirs()[2] == expected_dep_src);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(d.path));
+    BOOST_TEST(r.dirs()[1] == expected_root_src);
+    BOOST_TEST(r.dirs()[2] == expected_dep_release);
+    BOOST_TEST(r.dirs()[3] == expected_dep_src);
 }
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_at_workspace_member_includes_workspace_member_roots) {
@@ -744,7 +817,7 @@ dependencies = []
     fs::current_path(d.path);
 
     auto r = ModulePathResolver::from_args_or_env_at("", app_root / "src" / "nested");
-    BOOST_REQUIRE_GE(r.dirs().size(), 4u);
+    BOOST_REQUIRE_GE(r.dirs().size(), 5u);
 
     const auto expected_app_src = fs::weakly_canonical(app_root / "src");
     const auto expected_lib_src = fs::weakly_canonical(lib_root / "src");
@@ -753,10 +826,11 @@ dependencies = []
     const auto expected_dep_src =
         fs::weakly_canonical(workspace_root / ".eta" / "modules" / "dep-0.2.0" / "src");
 
-    BOOST_TEST(r.dirs()[0] == expected_app_src);
-    BOOST_TEST(r.dirs()[1] == expected_lib_src);
-    BOOST_TEST(r.dirs()[2] == expected_dep_release);
-    BOOST_TEST(r.dirs()[3] == expected_dep_src);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(d.path));
+    BOOST_TEST(r.dirs()[1] == expected_app_src);
+    BOOST_TEST(r.dirs()[2] == expected_lib_src);
+    BOOST_TEST(r.dirs()[3] == expected_dep_release);
+    BOOST_TEST(r.dirs()[4] == expected_dep_src);
 }
 
 BOOST_AUTO_TEST_CASE(
@@ -835,7 +909,7 @@ dependencies = []
     fs::current_path(d.path);
 
     auto r = ModulePathResolver::from_args_or_env_at("", app_root / "src" / "nested");
-    BOOST_REQUIRE_GE(r.dirs().size(), 4u);
+    BOOST_REQUIRE_GE(r.dirs().size(), 5u);
 
     const auto expected_app_src = fs::weakly_canonical(app_root / "src");
     const auto expected_lib_src = fs::weakly_canonical(lib_root / "src");
@@ -844,10 +918,11 @@ dependencies = []
     const auto expected_dep_src =
         fs::weakly_canonical(workspace_root / ".eta" / "modules" / "dep-0.2.0" / "src");
 
-    BOOST_TEST(r.dirs()[0] == expected_app_src);
-    BOOST_TEST(r.dirs()[1] == expected_lib_src);
-    BOOST_TEST(r.dirs()[2] == expected_dep_release);
-    BOOST_TEST(r.dirs()[3] == expected_dep_src);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(d.path));
+    BOOST_TEST(r.dirs()[1] == expected_app_src);
+    BOOST_TEST(r.dirs()[2] == expected_lib_src);
+    BOOST_TEST(r.dirs()[3] == expected_dep_release);
+    BOOST_TEST(r.dirs()[4] == expected_dep_src);
 }
 
 BOOST_AUTO_TEST_CASE(from_args_or_env_at_virtual_workspace_root_includes_member_sources_without_lockfile) {
@@ -888,14 +963,14 @@ eta = ">=0.6, <0.8"
     fs::current_path(d.path);
 
     auto r = ModulePathResolver::from_args_or_env_at("", workspace_root);
-    BOOST_REQUIRE_GE(r.dirs().size(), 2u);
+    BOOST_REQUIRE_GE(r.dirs().size(), 3u);
 
     const auto expected_app_src = fs::weakly_canonical(workspace_root / "packages" / "app" / "src");
     const auto expected_lib_src = fs::weakly_canonical(workspace_root / "packages" / "lib" / "src");
 
-    BOOST_TEST(r.dirs()[0] == expected_app_src);
-    BOOST_TEST(r.dirs()[1] == expected_lib_src);
+    BOOST_TEST(r.dirs()[0] == fs::weakly_canonical(d.path));
+    BOOST_TEST(r.dirs()[1] == expected_app_src);
+    BOOST_TEST(r.dirs()[2] == expected_lib_src);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
-

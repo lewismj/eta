@@ -592,7 +592,10 @@ export function activate(context: ExtensionContext) {
     log(`[Starting LSP]`);
     log(`  Command: ${serverPath}`);
 
-    const exec: Executable = { command: serverPath, options: { env: serverEnv } };
+    const exec: Executable = {
+        command: serverPath,
+        options: { env: serverEnv, cwd: workspace.workspaceFolders?.[0]?.uri.fsPath },
+    };
     const serverOptions: ServerOptions = { run: exec, debug: exec };
 
     // Formatter/linter defaults are handed to the server through

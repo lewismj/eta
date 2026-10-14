@@ -28,7 +28,6 @@
  */
 
 #include <algorithm>
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -224,7 +223,7 @@ static void print_usage(const char* prog) {
 #else
     std::cerr << "colon";
 #endif
-    std::cerr << "-separated).  Falls back to ETA_MODULE_PATH.\n"
+    std::cerr << "-separated).  Current working directory is searched first; falls back to ETA_MODULE_PATH.\n"
               << "  --format tap      Output TAP 13 (default).\n"
               << "  --format junit    Output JUnit XML.\n"
               << "  --help            Show this message.\n\n"
@@ -288,17 +287,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    /// When --path / ETA_MODULE_PATH is explicitly provided, keep it authoritative.
-    std::string effective_module_path = cli_path;
-    if (effective_module_path.empty()) {
-        if (const char* env_path = std::getenv("ETA_MODULE_PATH");
-            env_path && env_path[0] != '\0') {
-            effective_module_path = env_path;
-        }
-    }
-    auto base_resolver = effective_module_path.empty()
-        ? eta::interpreter::ModulePathResolver::from_args_or_env("")
-        : eta::interpreter::ModulePathResolver::from_path_string(effective_module_path);
+    auto base_resolver = eta::interpreter::ModulePathResolver::from_args_or_env(cli_path);
 
     /// Per-file results
     struct FileResult {

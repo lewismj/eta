@@ -627,11 +627,9 @@ void DapServer::start_vm_from_current_launch() {
      * Debugging a compiled script keeps the default .etac-first behavior.
      */
     resolver.set_prefer_source(!script_is_etac);
-    /// Also search the directory containing the script being debugged.
     const char* env_module_path = std::getenv("ETA_MODULE_PATH");
-    const bool explicit_module_path =
-        env_module_path != nullptr && env_module_path[0] != '\0';
-    if (!explicit_module_path && !script_dir.empty()) {
+    if ((env_module_path == nullptr || env_module_path[0] == '\0')
+        && !script_dir.empty()) {
         resolver.add_dir(script_dir);
     }
 
@@ -3755,6 +3753,5 @@ Value DapServer::source_json_for(session::Driver& drv, uint32_t file_id) {
 }
 
 } ///< namespace eta::dap
-
 
 

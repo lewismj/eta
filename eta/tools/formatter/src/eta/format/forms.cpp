@@ -81,7 +81,6 @@ namespace eta::format {
         if (found->alias == FormAlias::Module) return node.children.size() >= 3 ? FormAlias::Module : FormAlias::None;
         if (found->alias == FormAlias::Conditional) return node.children.size() >= 3 ? FormAlias::Conditional : FormAlias::None;
         if (found->alias == FormAlias::ClauseList) return node.children.size() >= 3 ? FormAlias::ClauseList : FormAlias::None;
-        if (found->alias == FormAlias::Branching) return node.children.size() >= 3 ? FormAlias::Branching : FormAlias::None;
         if (found->alias == FormAlias::ImportExport) return node.children.size() >= 2 ? FormAlias::ImportExport : FormAlias::None;
         if (found->alias == FormAlias::RecordType) return node.children.size() >= 2 ? FormAlias::RecordType : FormAlias::None;
         if (found->alias == FormAlias::Loop) return node.children.size() >= 3 ? FormAlias::Loop : FormAlias::None;

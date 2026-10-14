@@ -25,7 +25,7 @@ static void print_usage(const char* prog) {
               << "  -O0             Disable optimization (default).\n"
               << "  --disasm        Print disassembly to stdout instead of writing .etac.\n"
               << "  --no-debug      Strip debug info (source maps) from output.\n"
-              << "  --path <dirs>   Module search path.\n"
+              << "  --path <dirs>   Module search path (cwd is searched first).\n"
               << "  --help          Show this help message.\n";
 }
 

@@ -589,6 +589,53 @@ BOOST_AUTO_TEST_CASE(launch_uses_program_workspace_for_dependency_resolution) {
     BOOST_REQUIRE(!harness.wait_response("disconnect").is_null());
 }
 
+BOOST_AUTO_TEST_CASE(launch_resolves_imports_from_cwd_outside_program_directory) {
+    ScopedTempDir temp;
+    const auto cwd = temp.path / "cwd";
+    const auto script_dir = temp.path / "scripts";
+    fs::create_directories(cwd);
+    fs::create_directories(script_dir);
+    {
+        std::ofstream out(cwd / "cwdhelper.eta");
+        BOOST_REQUIRE(out.is_open());
+        out << "(module cwdhelper (export local-value)"
+               " (begin (define local-value 42)))\n";
+    }
+    const auto program = script_dir / "main.eta";
+    {
+        std::ofstream out(program);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module main (import cwdhelper)"
+               " (begin (display local-value)))\n";
+    }
+    CurrentPathGuard cwd_guard;
+    fs::current_path(cwd);
+
+    AsyncDapHarness harness;
+    harness.send(request(1, "initialize", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("initialize").is_null());
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(program) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    BOOST_REQUIRE(!harness.wait_response("launch").is_null());
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+    harness.send(request(3, "configurationDone", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("configurationDone").is_null());
+
+    auto output = harness.wait_message(
+        [](const json::Value& m) {
+            const auto event = m.get_string("event");
+            return event && (*event == "eta-output" || *event == "terminated");
+        }, std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!output.is_null());
+    BOOST_TEST(output.get_string("event").value_or("") == "eta-output");
+    BOOST_TEST(output["body"].get_string("stream").value_or("") == "stdout");
+    BOOST_TEST(output["body"].get_string("text").value_or("") == "42");
+    BOOST_REQUIRE(!harness.wait_event("terminated").is_null());
+    harness.send(request(4, "disconnect", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("disconnect").is_null());
+}
+
 BOOST_AUTO_TEST_CASE(launch_uses_workspace_member_context_with_mock_native_metadata) {
     ScopedTempDir temp;
     const auto workspace_root = temp.path / "ws";
@@ -3266,5 +3313,4 @@ BOOST_AUTO_TEST_CASE(large_vector_advertises_paging_and_honours_start_count) {
 }
 
 BOOST_AUTO_TEST_SUITE_END() ///< dap_variable_paging
-
 

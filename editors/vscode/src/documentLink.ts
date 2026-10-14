@@ -13,24 +13,27 @@ function moduleSearchPaths(): string[] {
     const cfg = vscode.workspace.getConfiguration('eta').get<string>('modulePath', '')
         || process.env['ETA_MODULE_PATH']
         || '';
-    const sep = process.platform === 'win32' ? /[;:]/ : /:/;
+    const sep = process.platform === 'win32' ? ';' : ':';
     const parts = cfg.split(sep).map(s => s.trim()).filter(Boolean);
 
-    // Augment with workspace folder + workspace/stdlib as a friendly default.
-    for (const ws of vscode.workspace.workspaceFolders ?? []) {
-        parts.push(ws.uri.fsPath);
-        parts.push(path.join(ws.uri.fsPath, 'stdlib'));
+    const roots = (vscode.workspace.workspaceFolders ?? []).map(ws => ws.uri.fsPath);
+    if (roots.length === 0) roots.push(process.cwd());
+    roots.push(...parts);
+    if (!cfg) {
+        for (const ws of vscode.workspace.workspaceFolders ?? []) {
+            roots.push(path.join(ws.uri.fsPath, 'stdlib'));
+        }
     }
-    return parts;
+    return roots;
 }
 
 function resolveModule(name: string, anchorDir: string): vscode.Uri | undefined {
     const rel = name.split('.').join(path.sep) + '.eta';
     const candidates: string[] = [];
-    candidates.push(path.resolve(anchorDir, rel));
     for (const root of moduleSearchPaths()) {
         candidates.push(path.resolve(root, rel));
     }
+    candidates.push(path.resolve(anchorDir, rel));
     for (const c of candidates) {
         try {
             if (fs.statSync(c).isFile()) return vscode.Uri.file(c);
@@ -81,4 +84,3 @@ export class EtaDocumentLinkProvider implements vscode.DocumentLinkProvider {
         return links;
     }
 }
-

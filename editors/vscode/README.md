@@ -111,7 +111,7 @@ Install Eta from a [release bundle](https://github.com/eta-lang/eta/releases) â€
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `eta.modulePath` | `string` | `""` | Colon/semicolon-separated directories to search for Eta modules (`ETA_MODULE_PATH`). Used by both LSP and DAP servers. Falls back to the environment variable. |
+| `eta.modulePath` | `string` | `""` | Colon/semicolon-separated module roots (`ETA_MODULE_PATH`). Used by LSP and DAP; falls back to the environment variable. The server's working directory is always searched first. |
 | `eta.lsp.serverPath` | `string` | `""` | Path to the `eta_lsp` executable. If empty, searches bundled binary, workspace build output, then `PATH`. |
 | `eta.lsp.enabled` | `boolean` | `true` | Enable the Eta Language Server for diagnostics and IDE features. |
 | `eta.lint.enabled` | `boolean` | `true` | Publish `eta_lint` findings through the language server (linked directly, no subprocess). |
@@ -126,6 +126,12 @@ Install Eta from a [release bundle](https://github.com/eta-lang/eta/releases) â€
 ---
 
 ## Quick Start
+
+The LSP and test runner use the first workspace folder as their working
+directory. DAP uses the launch configuration's `cwd` (default:
+`${workspaceFolder}`). Local modules there take precedence over configured
+module roots. Without an explicit module path, the debugger also searches
+the program's directory for sibling imports.
 
 1. Install Eta from a release bundle (or build from source).
 2. Open a `.eta` file in VS Code â€” syntax highlighting and diagnostics activate automatically.

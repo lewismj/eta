@@ -58,8 +58,9 @@ public:
 
     /**
      * Construct from CLI --path argument, falling back to ETA_MODULE_PATH env var.
-     * When either source provides an explicit path list, that list is treated
-     * as authoritative. Otherwise, project-local package roots are discovered
+     * The current working directory is always searched first. When either
+     * source provides an explicit path list, only that list is appended.
+     * Otherwise, project-local package roots are discovered
      * from the current working directory (or one of its ancestors containing
      * `eta.toml`) and compile-time / bundled stdlib fallbacks are appended.
      */
@@ -73,8 +74,8 @@ public:
 
     /**
      * Construct from CLI --path argument, falling back to ETA_MODULE_PATH env var.
-     * Project-root discovery starts at @p discovery_start and walks parent
-     * directories for `eta.toml`.
+     * The current working directory is always searched first, independently of
+     * @p discovery_start, which controls project-root discovery for `eta.toml`.
      */
     static ModulePathResolver from_args_or_env_at(const std::string& cli_path,
                                                   fs::path discovery_start,
@@ -321,19 +322,18 @@ public:
             }
         }
 
-        /**
-         * Explicit --path / ETA_MODULE_PATH is authoritative. Do not inject
-         * workspace/manifest/bundled defaults in that mode.
-         */
-        if (!explicit_path_list.empty()) {
-            apply_path_list(explicit_path_list);
-            return resolver;
-        }
-
         if (discovery_start.empty()) {
             std::error_code ec;
             discovery_start = fs::current_path(ec);
             if (ec) discovery_start.clear();
+        }
+
+        add_unique_dir(fs::current_path());
+
+        /// Explicit paths replace discovered defaults, but never the CWD prefix.
+        if (!explicit_path_list.empty()) {
+            apply_path_list(explicit_path_list);
+            return resolver;
         }
 
         if (!discovery_start.empty()) {
@@ -463,7 +463,13 @@ public:
     [[nodiscard]] bool strict_shadow_scan() const noexcept { return strict_shadow_scan_; }
     [[nodiscard]] bool prefer_source() const noexcept { return prefer_source_; }
 
-    void add_dir(fs::path dir) { dirs_.push_back(std::move(dir)); }
+    void add_dir(fs::path dir) {
+        const auto key = util::canonical_path_key(dir);
+        for (const auto& existing : dirs_) {
+            if (util::canonical_path_key(existing) == key) return;
+        }
+        dirs_.push_back(std::move(dir));
+    }
     void set_strict_shadow_scan(bool enabled) noexcept { strict_shadow_scan_ = enabled; }
     void set_prefer_source(bool enabled) noexcept { prefer_source_ = enabled; }
 
@@ -560,4 +566,3 @@ private:
 };
 
 } ///< namespace eta::interpreter
-
