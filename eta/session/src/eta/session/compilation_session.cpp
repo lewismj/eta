@@ -354,7 +354,8 @@ bool CompilationSession::module_declared(
 
 bool CompilationSession::auto_load_imports(
     Host& host,
-    std::span<const reader::parser::SExprPtr> new_forms) {
+    std::span<const reader::parser::SExprPtr> new_forms,
+    const std::filesystem::path& source_path) {
     auto needed = collect_imported_modules(new_forms);
     for (const auto& mod_name : needed) {
         const bool already_accumulated = module_declared(mod_name, new_forms);
@@ -380,7 +381,8 @@ bool CompilationSession::auto_load_imports(
         }
 
         bool shadow_conflict = false;
-        auto path = host.resolve_import_path(mod_name, &shadow_conflict);
+        auto path = host.resolve_import_path(
+            mod_name, source_path.parent_path(), &shadow_conflict);
         if (!path) {
             if (shadow_conflict) return false;
             continue;
@@ -405,7 +407,8 @@ bool CompilationSession::run_source_impl(Host& host,
                                          runtime::nanbox::LispVal* result,
                                          const std::string& result_binding,
                                          bool execute,
-                                         CompileResult* out_cr) {
+                                         CompileResult* out_cr,
+                                         const std::filesystem::path& source_path) {
     host.diagnostics().clear();
 
     reader::lexer::Lexer lex(file_id, source);
@@ -454,7 +457,7 @@ bool CompilationSession::run_source_impl(Host& host,
     std::span<const reader::parser::SExprPtr> new_span(
         new_expanded.data(),
         new_expanded.size());
-    if (!auto_load_imports(host, new_span)) {
+    if (!auto_load_imports(host, new_span, source_path)) {
         return false;
     }
 
@@ -776,7 +779,7 @@ bool CompilationSession::hydrate_executed_module_source(
     Host& host,
     const std::string& module_name) {
     bool shadow_conflict = false;
-    auto resolved = host.resolve_import_path(module_name, &shadow_conflict);
+    auto resolved = host.resolve_import_path(module_name, {}, &shadow_conflict);
     if (!resolved) return !shadow_conflict;
 
     std::filesystem::path source_path = *resolved;

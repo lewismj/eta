@@ -157,6 +157,35 @@ struct CurrentPathGuard {
     }
 };
 
+struct EnvVarGuard {
+    std::string name;
+    std::optional<std::string> original;
+
+    explicit EnvVarGuard(std::string env_name)
+        : name(std::move(env_name)) {
+        if (const char* value = std::getenv(name.c_str()); value != nullptr) {
+            original = value;
+        }
+    }
+
+    ~EnvVarGuard() {
+#ifdef _WIN32
+        _putenv_s(name.c_str(), original ? original->c_str() : "");
+#else
+        if (original) setenv(name.c_str(), original->c_str(), 1);
+        else unsetenv(name.c_str());
+#endif
+    }
+
+    void set(const std::string& value) const {
+#ifdef _WIN32
+        _putenv_s(name.c_str(), value.c_str());
+#else
+        setenv(name.c_str(), value.c_str(), 1);
+#endif
+    }
+};
+
 struct ScopedTempDir {
     fs::path path;
 
@@ -631,6 +660,58 @@ BOOST_AUTO_TEST_CASE(launch_resolves_imports_from_cwd_outside_program_directory)
     BOOST_TEST(output.get_string("event").value_or("") == "eta-output");
     BOOST_TEST(output["body"].get_string("stream").value_or("") == "stdout");
     BOOST_TEST(output["body"].get_string("text").value_or("") == "42");
+    BOOST_REQUIRE(!harness.wait_event("terminated").is_null());
+    harness.send(request(4, "disconnect", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("disconnect").is_null());
+}
+
+BOOST_AUTO_TEST_CASE(launch_resolves_script_sibling_with_explicit_module_path) {
+    ScopedTempDir temp;
+    const auto cwd = temp.path / "cwd";
+    const auto configured_stdlib = temp.path / "stdlib";
+    const auto script_dir = temp.path / "scripts";
+    fs::create_directories(cwd);
+    fs::create_directories(configured_stdlib);
+    fs::create_directories(script_dir);
+    CurrentPathGuard cwd_guard;
+    EnvVarGuard module_path_guard("ETA_MODULE_PATH");
+    fs::current_path(cwd);
+    module_path_guard.set(configured_stdlib.string());
+
+    const auto program = script_dir / "main.eta";
+    {
+        std::ofstream out(script_dir / "dep.eta");
+        BOOST_REQUIRE(out.is_open());
+        out << "(module dep (export local-value)"
+               " (begin (define local-value 7)))\n";
+    }
+    {
+        std::ofstream out(program);
+        BOOST_REQUIRE(out.is_open());
+        out << "(module main (import dep)"
+               " (begin (display local-value)))\n";
+    }
+
+    AsyncDapHarness harness;
+    harness.send(request(1, "initialize", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("initialize").is_null());
+    const std::string launch_args =
+        std::string(R"({"program":")") + json_path(program) + R"(","stopOnEntry":false})";
+    harness.send(request(2, "launch", launch_args));
+    BOOST_REQUIRE(!harness.wait_response("launch").is_null());
+    BOOST_REQUIRE(!harness.wait_event("initialized").is_null());
+    harness.send(request(3, "configurationDone", "{}"));
+    BOOST_REQUIRE(!harness.wait_response("configurationDone").is_null());
+
+    const auto output = harness.wait_message(
+        [](const json::Value& m) {
+            const auto event = m.get_string("event");
+            return event && (*event == "eta-output" || *event == "terminated");
+        }, std::chrono::milliseconds(10000));
+    BOOST_REQUIRE(!output.is_null());
+    BOOST_TEST(output.get_string("event").value_or("") == "eta-output");
+    BOOST_TEST(output["body"].get_string("stream").value_or("") == "stdout");
+    BOOST_TEST(output["body"].get_string("text").value_or("") == "7");
     BOOST_REQUIRE(!harness.wait_event("terminated").is_null());
     harness.send(request(4, "disconnect", "{}"));
     BOOST_REQUIRE(!harness.wait_response("disconnect").is_null());
@@ -3313,4 +3394,3 @@ BOOST_AUTO_TEST_CASE(large_vector_advertises_paging_and_honours_start_count) {
 }
 
 BOOST_AUTO_TEST_SUITE_END() ///< dap_variable_paging
-

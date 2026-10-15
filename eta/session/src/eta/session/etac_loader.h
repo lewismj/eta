@@ -61,6 +61,7 @@ public:
             std::optional<std::filesystem::path> start_dir) = 0;
         [[nodiscard]] virtual std::optional<std::filesystem::path> resolve_import_path(
             const std::string& module_name,
+            const std::filesystem::path& importing_dir,
             bool* shadow_conflict = nullptr) = 0;
         virtual bool run_module_file(const std::filesystem::path& path) = 0;
         virtual bool run_source_file(const std::filesystem::path& path) = 0;

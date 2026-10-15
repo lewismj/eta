@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "eta/diagnostic/diagnostic.h"
+#include "eta/interpreter/module_path.h"
 #include "eta/reader/module_linker.h"
 #include "eta/runtime/builtin_env.h"
 #include "eta/runtime/error.h"
@@ -67,8 +68,11 @@ class EtacLoaderFixture final
     : public eta::session::CompilationSession::Host,
       public eta::session::EtacLoader::Host {
 public:
-    explicit EtacLoaderFixture(std::vector<std::string> command_line_arguments = {})
-        : heap_(16ull * 1024ull * 1024ull),
+    explicit EtacLoaderFixture(
+        std::vector<std::string> command_line_arguments = {},
+        eta::interpreter::ModulePathResolver resolver = eta::interpreter::ModulePathResolver{})
+        : resolver_(std::move(resolver)),
+          heap_(16ull * 1024ull * 1024ull),
           vm_(heap_, intern_table_),
           primitive_installer_(heap_, builtins_, extensions_),
           command_line_arguments_(std::move(command_line_arguments)),
@@ -83,10 +87,11 @@ public:
     }
 
     std::optional<fs::path> resolve_import_path(
-        const std::string&,
+        const std::string& module_name,
+        const fs::path& importing_dir,
         bool* shadow_conflict) override {
         if (shadow_conflict) *shadow_conflict = false;
-        return std::nullopt;
+        return resolver_.resolve(module_name, importing_dir);
     }
 
     bool run_module_file(const fs::path& path) override {
@@ -105,7 +110,8 @@ public:
 
         std::ostringstream buf;
         buf << in.rdbuf();
-        return compilation_.run_source_impl(*this, buf.str(), /*file_id=*/0u);
+        return compilation_.run_source_impl(
+            *this, buf.str(), /*file_id=*/0u, nullptr, {}, true, nullptr, path);
     }
 
     void emit_link_error(const eta::reader::LinkError& error) override {
@@ -222,7 +228,8 @@ public:
                 /*result=*/nullptr,
                 /*result_binding=*/{},
                 /*execute=*/false,
-                &compile_result)) {
+                &compile_result,
+                source_file)) {
             if (error_message) *error_message = diagnostics_text();
             return false;
         }
@@ -302,6 +309,7 @@ public:
     }
 
 private:
+    eta::interpreter::ModulePathResolver resolver_;
     eta::runtime::memory::heap::Heap heap_;
     eta::runtime::memory::intern::InternTable intern_table_;
     eta::runtime::vm::VM vm_;
@@ -410,6 +418,43 @@ BOOST_AUTO_TEST_CASE(run_etac_file_stale_without_source_reports_error) {
     const auto diagnostics = runner_fixture.diagnostics_text();
     BOOST_TEST(diagnostics.find("stale .etac detected") != std::string::npos);
     BOOST_TEST(diagnostics.find("no sibling source found for fallback") != std::string::npos);
+}
+
+BOOST_AUTO_TEST_CASE(run_etac_file_resolves_import_from_artifact_directory) {
+    TempDir temp;
+    const auto source_file = temp.write_file(
+        "app/main.eta",
+        "(module etac.loader.local-import\n"
+        "  (import dep)\n"
+        "  (export answer)\n"
+        "  (define answer dep-value))\n");
+    temp.write_file(
+        "app/dep.eta",
+        "(module dep (export dep-value) (define dep-value 17))\n");
+    const auto etac_file = source_file.parent_path() / "main.etac";
+    const auto configured_root = temp.path / "configured";
+    fs::create_directories(configured_root);
+    const auto resolver =
+        eta::interpreter::ModulePathResolver({configured_root});
+
+    EtacLoaderFixture compiler_fixture({}, resolver);
+    std::string compile_error;
+    BOOST_REQUIRE_MESSAGE(
+        compiler_fixture.compile_source_to_etac(source_file, etac_file, &compile_error),
+        compile_error);
+
+    EtacLoaderFixture runner_fixture({}, resolver);
+    BOOST_REQUIRE_MESSAGE(
+        runner_fixture.run_etac_file(etac_file),
+        runner_fixture.diagnostics_text());
+    const auto answer_slot =
+        runner_fixture.runtime_export_slot("etac.loader.local-import", "answer");
+    BOOST_REQUIRE(answer_slot.has_value());
+    const auto decoded =
+        eta::runtime::nanbox::ops::decode<int64_t>(
+            runner_fixture.vm().globals()[*answer_slot]);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_TEST(*decoded == 17);
 }
 
 BOOST_AUTO_TEST_CASE(run_etac_file_invokes_single_argument_main_with_cli_args) {

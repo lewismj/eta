@@ -135,6 +135,7 @@ public:
 
         [[nodiscard]] virtual std::optional<std::filesystem::path> resolve_import_path(
             const std::string& module_name,
+            const std::filesystem::path& importing_dir,
             bool* shadow_conflict = nullptr) = 0;
         virtual bool run_module_file(const std::filesystem::path& path) = 0;
         virtual void emit_link_error(const reader::LinkError& error) = 0;
@@ -178,7 +179,8 @@ public:
                          runtime::nanbox::LispVal* result = nullptr,
                          const std::string& result_binding = {},
                          bool execute = true,
-                         CompileResult* out_cr = nullptr);
+                         CompileResult* out_cr = nullptr,
+                         const std::filesystem::path& source_path = {});
 
     bool append_etac_global_reservation(Host& host,
                                         uint32_t slots_to_reserve,
@@ -208,7 +210,9 @@ private:
     [[nodiscard]] bool module_declared(
         const std::string& module_name,
         std::span<const reader::parser::SExprPtr> new_forms) const;
-    bool auto_load_imports(Host& host, std::span<const reader::parser::SExprPtr> new_forms);
+    bool auto_load_imports(Host& host,
+                           std::span<const reader::parser::SExprPtr> new_forms,
+                           const std::filesystem::path& source_path);
     void drop_etac_reservation_modules(const std::vector<std::string>& reserve_modules);
     void unmark_executed_modules(const std::vector<std::string>& module_names);
 

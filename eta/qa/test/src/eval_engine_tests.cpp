@@ -54,6 +54,7 @@ public:
 
     std::optional<fs::path> resolve_import_path(
         const std::string&,
+        const fs::path&,
         bool* shadow_conflict) override {
         if (shadow_conflict) *shadow_conflict = false;
         return std::nullopt;

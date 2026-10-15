@@ -1,8 +1,8 @@
 /**
  * documentLink.ts — Make `(import std.foo std.bar)` clickable.
  *
- * Resolves dotted module names to files using ETA_MODULE_PATH and the
- * workspace's stdlib/<...> if present. A module `a.b.c` maps to `a/b/c.eta`.
+ * Resolves dotted module names to files using workspace/configured roots,
+ * then the importing document's directory. A module `a.b.c` maps to `a/b/c.eta`.
  */
 
 import * as vscode from 'vscode';

@@ -289,7 +289,8 @@ bool Driver::run_file(const fs::path& path) {
     buf << in.rdbuf();
 
     const auto file_id = allocate_file_id(path.string());
-    return compilation_.run_source_impl(*this, buf.str(), file_id);
+    return compilation_.run_source_impl(*this, buf.str(), file_id,
+                                        nullptr, {}, true, nullptr, path);
 }
 
 std::optional<Driver::CompileResult> Driver::compile_file(const fs::path& path) {
@@ -318,7 +319,8 @@ std::optional<Driver::CompileResult> Driver::compile_file(const fs::path& path) 
             /*result=*/nullptr,
             /*result_binding=*/{},
             /*execute=*/false,
-            &cr)) {
+            &cr,
+            path)) {
         return std::nullopt;
     }
     return cr;
@@ -624,8 +626,9 @@ bool Driver::run_source_file(const fs::path& path) {
 }
 
 std::optional<fs::path> Driver::resolve_import_path(const std::string& module_name,
+                                                    const fs::path& importing_dir,
                                                     bool* shadow_conflict) {
-    auto candidates = resolver_.resolve_all(module_name);
+    auto candidates = resolver_.resolve_all(module_name, importing_dir);
     if (candidates.empty()) {
         if (shadow_conflict) {
             *shadow_conflict = false;

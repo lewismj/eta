@@ -13,6 +13,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #include "eta/interpreter/module_path.h"
@@ -205,6 +206,66 @@ BOOST_AUTO_TEST_CASE(run_file_actor_primitives_work_when_executed_on_non_constru
         std::ostringstream diagnostics;
         driver.diagnostics().print_all(diagnostics, /*use_color=*/false, driver.file_resolver());
         BOOST_FAIL("run_file failed on worker thread:\n" + diagnostics.str());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(file_imports_use_cwd_and_configured_roots_before_importer_siblings) {
+    TempDir temp;
+    const auto cwd = temp.path / "cwd";
+    const auto configured = temp.path / "configured";
+    fs::create_directories(cwd);
+    fs::create_directories(configured);
+
+    temp.write_file("cwd/preferred.eta",
+                    "(module preferred (export preferred-value)"
+                    " (define preferred-value 1))\n");
+    temp.write_file("configured/preferred.eta",
+                    "(module preferred (export preferred-value)"
+                    " (define preferred-value 2))\n");
+    temp.write_file("configured/configured-only.eta",
+                    "(module configured-only (export configured-value)"
+                    " (define configured-value 3))\n");
+    temp.write_file("scripts/configured-only.eta",
+                    "(module configured-only (export configured-value)"
+                    " (define configured-value 30))\n");
+    temp.write_file("scripts/sibling-only.eta",
+                    "(module sibling-only (export sibling-value)"
+                    " (define sibling-value 4))\n");
+    temp.write_file("scripts/nested/bridge.eta",
+                    "(module nested.bridge (import leaf) (export nested-value)"
+                    " (define nested-value leaf-value))\n");
+    temp.write_file("scripts/nested/leaf.eta",
+                    "(module leaf (export leaf-value) (define leaf-value 5))\n");
+    const auto main = temp.write_file(
+        "scripts/main.eta",
+        "(module main"
+        " (import preferred configured-only sibling-only nested.bridge)"
+        " (begin (display (+ preferred-value configured-value"
+        " sibling-value nested-value))))\n");
+
+    eta::session::Driver driver(
+        eta::interpreter::ModulePathResolver({cwd, configured}),
+        8u * 1024u * 1024u);
+    std::string output;
+    driver.set_stream_sinks(
+        [&](std::string_view text) { output.append(text); }, {});
+    if (!driver.run_file(main)) {
+        std::ostringstream diagnostics;
+        driver.diagnostics().print_all(
+            diagnostics, /*use_color=*/false, driver.file_resolver());
+        BOOST_FAIL("run_file failed:\n" + diagnostics.str());
+    }
+    BOOST_TEST(output == "13");
+
+    eta::session::Driver compiler(
+        eta::interpreter::ModulePathResolver({cwd, configured}),
+        8u * 1024u * 1024u);
+    const auto compiled = compiler.compile_file(main);
+    if (!compiled) {
+        std::ostringstream diagnostics;
+        compiler.diagnostics().print_all(
+            diagnostics, /*use_color=*/false, compiler.file_resolver());
+        BOOST_FAIL("compile_file failed:\n" + diagnostics.str());
     }
 }
 

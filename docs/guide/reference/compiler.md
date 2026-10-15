@@ -64,6 +64,12 @@ Usage: etac [options] <file.eta> [-o <file.etac>]
 | `--path <dirs>` | Module search path (semicolon-separated on Windows, colon-separated on Linux). Falls back to `ETA_MODULE_PATH`. |
 | `--help` | Show the help message. |
 
+Imports are searched in the current working directory and configured module
+paths first (or discovered project/stdlib roots when no explicit path is set),
+followed by the directory of the source file containing each import. This
+fallback also applies when `--path` or `ETA_MODULE_PATH` is set and follows
+transitive imports.
+
 ---
 
 ## Compilation Pipeline
@@ -233,4 +239,3 @@ as expected.
 | [`constant_folding.h`](../../../eta/core/src/eta/semantics/passes/constant_folding.h) | Constant folding pass. |
 | [`dead_code_elimination.h`](../../../eta/core/src/eta/semantics/passes/dead_code_elimination.h) | Dead code elimination pass. |
 | [`driver.h`](../../../eta/session/src/eta/session/driver.h) | `Driver::run_etac_file` — fast-load path in the interpreter. |
-

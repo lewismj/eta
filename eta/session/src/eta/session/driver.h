@@ -383,6 +383,7 @@ private:
     bool run_source_file(const fs::path& path) override;
     [[nodiscard]] std::optional<fs::path> resolve_import_path(
         const std::string& module_name,
+        const fs::path& importing_dir,
         bool* shadow_conflict = nullptr) override;
     [[nodiscard]] std::string diagnostics_to_string() const override;
     [[nodiscard]] std::vector<std::string> discover_module_names() const override;

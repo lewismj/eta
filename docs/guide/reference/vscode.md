@@ -64,6 +64,11 @@ Open Settings and search for `Eta`.
 | `eta.test.runnerPath` | `string` | `""` | Path to `eta_test` (file or containing directory). |
 | `eta.binaries.searchPaths` | `string[]` | `[]` | Extra binary search roots or executable paths. Supports `${workspaceFolder}`. |
 
+LSP and DAP import resolution keeps the current working directory and configured
+module paths ahead of the importing source file's directory. The file-directory
+fallback also applies to transitive imports and does not carry over between
+documents.
+
 ### Debug automation settings
 
 | Setting | Type | Default | Notes |

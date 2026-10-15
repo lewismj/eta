@@ -218,13 +218,6 @@ int main(int argc, char* argv[]) {
     /// Build module path resolver
     auto resolver =
         eta::interpreter::ModulePathResolver::from_args_or_env(cli_path, strict_shadows);
-    const char* env_module_path = std::getenv("ETA_MODULE_PATH");
-    const bool explicit_module_path =
-        !cli_path.empty() || (env_module_path != nullptr && env_module_path[0] != '\0');
-    if (!explicit_module_path) {
-        resolver.add_dir(fs::absolute(file_path).parent_path());
-    }
-
     /// Create driver (pass argv[0] as the etai path)
     std::string self_path = argv[0];
 #if defined(__linux__)
@@ -380,4 +373,3 @@ int main(int argc, char* argv[]) {
     if (!emit_profile_report()) return 1;
     return 0;
 }
-

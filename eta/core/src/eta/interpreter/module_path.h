@@ -435,11 +435,35 @@ public:
     }
 
     /**
+     * @brief Resolve modules in the configured search order, then from one
+     * importer-specific fallback directory.
+     *
+     * The fallback is not added to this resolver, so resolving one import
+     * cannot affect a later import from another source file.
+     */
+    [[nodiscard]] std::vector<fs::path> resolve_all(
+        const std::string& module_name,
+        const fs::path& fallback_dir) const {
+        if (fallback_dir.empty()) return resolve_all(module_name);
+        auto resolver = *this;
+        resolver.add_dir(fallback_dir);
+        return resolver.resolve_all(module_name);
+    }
+
+    /**
      * @brief Resolve a module name to an absolute file path.
      * Returns nullopt if the file is not found in any search directory.
      */
     [[nodiscard]] std::optional<fs::path> resolve(const std::string& module_name) const {
         auto matches = resolve_all(module_name);
+        if (matches.empty()) return std::nullopt;
+        return matches.front();
+    }
+
+    [[nodiscard]] std::optional<fs::path> resolve(
+        const std::string& module_name,
+        const fs::path& fallback_dir) const {
+        auto matches = resolve_all(module_name, fallback_dir);
         if (matches.empty()) return std::nullopt;
         return matches.front();
     }

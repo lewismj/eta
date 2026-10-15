@@ -289,11 +289,12 @@ ellipsis (`...`) for variadic patterns.
 ## 9. Modules & Imports
 
 Every source file declares one or more `(module name … )` forms with
-explicit `(import …)` and `(export …)` clauses. Module resolution always
-starts from the current working directory, then applies `--path`
-arguments (or `ETA_MODULE_PATH` when `--path` is omitted).
-Without an explicit path list, project and stdlib roots are discovered;
-the compiler, interpreter, and debugger also search the input file's directory.
+explicit `(import …)` and `(export …)` clauses. Module resolution searches
+the current working directory, then configured `--path` arguments (or
+`ETA_MODULE_PATH` when `--path` is omitted), followed by the directory of the
+source file containing each import. When no explicit path list is provided,
+project and stdlib roots are discovered before that importer-directory
+fallback. The fallback applies to transitive imports too.
 
 | Clause                                | Effect                                  |
 | :------------------------------------ | :-------------------------------------- |

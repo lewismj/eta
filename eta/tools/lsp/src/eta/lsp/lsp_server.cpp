@@ -226,6 +226,8 @@ void LspServer::ensure_workspace_for_uri(const std::string& uri) {
         start_dir = std::filesystem::current_path(ec);
         if (ec) start_dir.clear();
     }
+    const auto resolver_discovery_start =
+        start_dir.empty() ? std::filesystem::path{} : canonicalize_path(start_dir);
 
     std::optional<std::filesystem::path> next_active_manifest_path;
     std::optional<std::filesystem::path> next_package_manifest_path;
@@ -258,7 +260,8 @@ void LspServer::ensure_workspace_for_uri(const std::string& uri) {
         && package_manifest_path_ == next_package_manifest_path
         && workspace_manifest_path_ == next_workspace_manifest_path
         && workspace_root_path_ == next_root_path
-        && workspace_context_ == next_context) {
+        && workspace_context_ == next_context
+        && resolver_discovery_start_ == resolver_discovery_start) {
         return;
     }
 
@@ -272,6 +275,7 @@ void LspServer::ensure_workspace_for_uri(const std::string& uri) {
     workspace_manifest_path_ = std::move(next_workspace_manifest_path);
     workspace_root_path_ = std::move(next_root_path);
     workspace_context_ = std::move(next_context);
+    resolver_discovery_start_ = resolver_discovery_start;
 
     completion_cache_loaded_ = false;
     prelude_symbols_.clear();
@@ -373,8 +377,11 @@ void LspServer::publish_workspace_package_diagnostics(const std::string& /*uri*/
     }
 }
 
-std::optional<std::string> LspServer::resolve_module_source(const std::string& module_name) {
-    auto path = resolver_.resolve(module_name);
+std::optional<std::string> LspServer::resolve_module_source(
+    const std::string& module_name,
+    const std::filesystem::path& importer_dir,
+    std::filesystem::path* resolved_source_path) {
+    auto path = resolver_.resolve(module_name, importer_dir);
     if (!path) return std::nullopt;
 
     auto source_path = *path;
@@ -383,11 +390,13 @@ std::optional<std::string> LspServer::resolve_module_source(const std::string& m
         sibling.replace_extension(".eta");
         std::error_code ec;
         if (!std::filesystem::is_regular_file(sibling, ec) || ec) {
+            if (resolved_source_path) *resolved_source_path = source_path;
             return std::nullopt;
         }
         source_path = std::move(sibling);
     }
     if (source_path.extension() != ".eta") return std::nullopt;
+    if (resolved_source_path) *resolved_source_path = source_path;
 
     std::ifstream f(source_path);
     if (!f.is_open()) return std::nullopt;
@@ -398,12 +407,19 @@ std::optional<std::string> LspServer::resolve_module_source(const std::string& m
 void LspServer::preload_module_deps(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules,
-        std::unordered_map<std::string, std::vector<std::string>>& compiled_module_exports) {
+        std::unordered_map<std::string, std::vector<std::string>>& compiled_module_exports,
+        const std::filesystem::path& importer_dir) {
     using namespace reader::utils;
+
+    struct PendingImport {
+        std::string name;
+        std::filesystem::path importer_dir;
+    };
 
     /// Collect imported module names from a form list
     auto collect_imports = [&](const std::vector<eta::reader::parser::SExprPtr>& forms,
-                                std::vector<std::string>& out) {
+                                const std::filesystem::path& source_dir,
+                                std::vector<PendingImport>& out) {
         for (const auto& f : forms) {
             const auto* mod = as_list(f);
             if (!mod || mod->elems.size() < 2) continue;
@@ -425,33 +441,36 @@ void LspServer::preload_module_deps(
                             if (const auto* mod_sym = as_symbol(lst->elems[1])) mod_name = mod_sym->name;
                         }
                     }
-                    if (!mod_name.empty() && !seen_modules.count(mod_name))
-                        out.push_back(mod_name);
+                    if (!mod_name.empty() && !seen_modules.count(mod_name)) {
+                        out.push_back(PendingImport{mod_name, source_dir});
+                    }
                 }
             }
         }
     };
 
-    std::vector<std::string> to_load;
-    collect_imports(all_forms, to_load);
+    std::vector<PendingImport> to_load;
+    collect_imports(all_forms, importer_dir, to_load);
 
     while (!to_load.empty()) {
-        std::vector<std::string> next_load;
-        for (const auto& mod_name : to_load) {
-            if (seen_modules.count(mod_name)) continue;
-            seen_modules.insert(mod_name);
+        std::vector<PendingImport> next_load;
+        for (const auto& pending : to_load) {
+            if (seen_modules.count(pending.name)) continue;
+            seen_modules.insert(pending.name);
 
-            auto src = resolve_module_source(mod_name);
+            std::filesystem::path resolved_path;
+            auto src = resolve_module_source(
+                pending.name, pending.importer_dir, &resolved_path);
             if (!src) {
-                auto resolved = resolver_.resolve(mod_name);
+                auto resolved = resolver_.resolve(pending.name, pending.importer_dir);
                 if (resolved && resolved->extension() == ".etac") {
                     auto sibling = *resolved;
                     sibling.replace_extension(".eta");
                     std::error_code ec;
                     if (!std::filesystem::is_regular_file(sibling, ec) || ec) {
-                        auto exports = load_etac_exports_for_module(*resolved, mod_name);
+                        auto exports = load_etac_exports_for_module(*resolved, pending.name);
                         if (exports) {
-                            compiled_module_exports[mod_name] = std::move(*exports);
+                            compiled_module_exports[pending.name] = std::move(*exports);
                         }
                     }
                 }
@@ -468,7 +487,7 @@ void LspServer::preload_module_deps(
             if (!expanded) continue;
 
             /// Collect transitive imports before moving forms
-            collect_imports(*expanded, next_load);
+            collect_imports(*expanded, resolved_path.parent_path(), next_load);
 
             for (auto& f : *expanded) all_forms.push_back(std::move(f));
         }
@@ -975,11 +994,15 @@ void LspServer::validate_document(const std::string& uri) {
     if (cached == source) return;
     cached = source;
 
-    auto diags = compute_document_diagnostics(source);
+    const auto document_path = uri_to_path(uri);
+    auto diags = compute_document_diagnostics(
+        source, document_path ? document_path->parent_path() : std::filesystem::path{});
     publish_diagnostics(uri, diags);
 }
 
-std::vector<LspDiagnostic> LspServer::compute_document_diagnostics(const std::string& source) {
+std::vector<LspDiagnostic> LspServer::compute_document_diagnostics(
+    const std::string& source,
+    const std::filesystem::path& importer_dir) {
     std::vector<LspDiagnostic> diags;
 
     /// Shared linter findings (§5.1) are merged with compiler diagnostics by the
@@ -1053,7 +1076,8 @@ std::vector<LspDiagnostic> LspServer::compute_document_diagnostics(const std::st
             if (const auto* name_sym = as_symbol(mod->elems[1]))
                 seen_modules.insert(name_sym->name);
         }
-        preload_module_deps(all_forms, seen_modules, compiled_module_exports);
+        preload_module_deps(
+            all_forms, seen_modules, compiled_module_exports, importer_dir);
     }
 
     reader::ModuleLinker linker;
@@ -1227,7 +1251,9 @@ Value LspServer::lint_file_command(const Value& arguments) {
     ensure_workspace_for_uri(uri);
     publish_workspace_package_diagnostics(uri);
     const auto& source = it->second.content;
-    auto diags = compute_document_diagnostics(source);
+    const auto document_path = uri_to_path(uri);
+    auto diags = compute_document_diagnostics(
+        source, document_path ? document_path->parent_path() : std::filesystem::path{});
     last_validated_content_[uri] = source;
     publish_diagnostics(uri, diags);
 
@@ -1292,7 +1318,7 @@ Value LspServer::lint_workspace_command(const Value& arguments) {
         }
 
         ensure_workspace_for_uri(uri);
-        auto diags = compute_document_diagnostics(source);
+        auto diags = compute_document_diagnostics(source, file.parent_path());
         last_validated_content_[uri] = source;
         publish_diagnostics(uri, diags);
         visited.insert(uri);

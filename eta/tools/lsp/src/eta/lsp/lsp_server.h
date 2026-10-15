@@ -184,7 +184,9 @@ private:
      * the single compute path shared by live validation and the manual lint
      * commands; it never publishes or touches the document store.
      */
-    std::vector<LspDiagnostic> compute_document_diagnostics(const std::string& source);
+    std::vector<LspDiagnostic> compute_document_diagnostics(
+        const std::string& source,
+        const std::filesystem::path& importer_dir);
 
     /**
      * Run the shared linter library (eta_linter_lib) over a document snapshot and
@@ -238,7 +240,10 @@ private:
      * Read the source of a module (e.g. "std.core") from the search path.
      * Returns nullopt if the module file cannot be found or opened.
      */
-    std::optional<std::string> resolve_module_source(const std::string& module_name);
+    std::optional<std::string> resolve_module_source(
+        const std::string& module_name,
+        const std::filesystem::path& importer_dir,
+        std::filesystem::path* source_path);
 
     /**
      * Recursively load all imported module files into all_forms so the linker
@@ -250,7 +255,8 @@ private:
     void preload_module_deps(
         std::vector<eta::reader::parser::SExprPtr>& all_forms,
         std::unordered_set<std::string>& seen_modules,
-        std::unordered_map<std::string, std::vector<std::string>>& compiled_module_exports);
+        std::unordered_map<std::string, std::vector<std::string>>& compiled_module_exports,
+        const std::filesystem::path& importer_dir);
 
     /**
      * Completion caches
@@ -272,6 +278,7 @@ private:
     std::optional<std::filesystem::path> workspace_manifest_path_;
     std::optional<std::filesystem::path> workspace_root_path_;
     std::optional<std::string> workspace_context_;
+    std::filesystem::path resolver_discovery_start_;
     std::optional<std::string> manifest_diagnostics_uri_;
     std::optional<std::string> lockfile_diagnostics_uri_;
 
@@ -293,4 +300,3 @@ private:
 };
 
 } ///< namespace eta::lsp
-

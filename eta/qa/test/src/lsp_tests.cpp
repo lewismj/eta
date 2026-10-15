@@ -15,8 +15,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -59,6 +61,35 @@ struct LspCurrentPathGuard {
     ~LspCurrentPathGuard() {
         std::error_code ec;
         fs::current_path(original, ec);
+    }
+};
+
+struct LspEnvVarGuard {
+    std::string name;
+    std::optional<std::string> original;
+
+    explicit LspEnvVarGuard(std::string env_name)
+        : name(std::move(env_name)) {
+        if (const char* value = std::getenv(name.c_str()); value != nullptr) {
+            original = value;
+        }
+    }
+
+    ~LspEnvVarGuard() {
+#ifdef _WIN32
+        _putenv_s(name.c_str(), original ? original->c_str() : "");
+#else
+        if (original) setenv(name.c_str(), original->c_str(), 1);
+        else unsetenv(name.c_str());
+#endif
+    }
+
+    void set(const std::string& value) const {
+#ifdef _WIN32
+        _putenv_s(name.c_str(), value.c_str());
+#else
+        setenv(name.c_str(), value.c_str(), 1);
+#endif
     }
 };
 
@@ -2125,6 +2156,70 @@ eta = ">=0.6, <0.8"
     BOOST_TEST(!found_unknown_module);
 }
 
+BOOST_AUTO_TEST_CASE(import_resolution_uses_each_document_and_transitive_source_directory) {
+    TempDir tmp;
+    LspCurrentPathGuard cwd_guard;
+    LspEnvVarGuard env_guard("ETA_MODULE_PATH");
+    const auto cwd = tmp.path / "cwd";
+    const auto configured = tmp.path / "stdlib";
+    fs::create_directories(cwd);
+    fs::create_directories(configured);
+    fs::current_path(cwd);
+    env_guard.set(configured.string());
+
+    const auto first_source = tmp.create_file(
+        "first/main.eta",
+        "(module first (import shared nested.bridge) (begin 1))\n");
+    tmp.create_file("first/shared.eta",
+                    "(module shared (export shared-value) (define shared-value 1))\n");
+    tmp.create_file("first/nested/bridge.eta",
+                    "(module nested.bridge (import leaf) (begin leaf-value))\n");
+    tmp.create_file("first/nested/leaf.eta",
+                    "(module leaf (export leaf-value) (define leaf-value 2))\n");
+    const auto second_source = tmp.create_file(
+        "second/main.eta",
+        "(module second (import shared) (begin 2))\n");
+    const auto first_uri = eta::lsp::LspServer::path_to_uri(first_source.string());
+    const auto second_uri = eta::lsp::LspServer::path_to_uri(second_source.string());
+    const auto second_open = frame(notification(
+        "textDocument/didOpen",
+        R"({"textDocument":{"uri":")" + second_uri
+        + R"(","languageId":"eta","version":1,"text":"(module second (import shared) (begin 2))\n"}})"));
+    const auto msgs = run_server(build_input(
+        first_uri,
+        "(module first (import shared nested.bridge) (begin 1))\n",
+        {second_open}));
+
+    const auto first_batches = find_diagnostics_for_uri(msgs, first_uri);
+    const auto second_batches = find_diagnostics_for_uri(msgs, second_uri);
+    BOOST_REQUIRE(!first_batches.empty());
+    BOOST_REQUIRE(!second_batches.empty());
+
+    bool first_has_unknown_import = false;
+    for (const auto& batch : first_batches) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            const auto message = diag.get_string("message").value_or("");
+            if (message.find("unknown module in import:") != std::string::npos) {
+                first_has_unknown_import = true;
+            }
+        }
+    }
+    BOOST_TEST(!first_has_unknown_import);
+
+    bool second_reports_missing_import = false;
+    for (const auto& batch : second_batches) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            const auto message = diag.get_string("message").value_or("");
+            if (message.find("unknown module in import: shared") != std::string::npos) {
+                second_reports_missing_import = true;
+            }
+        }
+    }
+    BOOST_TEST(second_reports_missing_import);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 
@@ -2169,5 +2264,3 @@ BOOST_AUTO_TEST_CASE(malformed_then_valid_no_throw) {
 }
 
 BOOST_AUTO_TEST_SUITE_END() ///< lsp_framing_robustness
-
-

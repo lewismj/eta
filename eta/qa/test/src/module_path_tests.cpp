@@ -973,4 +973,23 @@ eta = ">=0.6, <0.8"
     BOOST_TEST(r.dirs()[2] == expected_lib_src);
 }
 
+BOOST_AUTO_TEST_CASE(importer_fallback_follows_search_roots_without_mutating_them) {
+    TempDir cwd_dir;
+    TempDir configured_dir;
+    TempDir importer_dir;
+    const auto cwd_module = cwd_dir.create_file("precedence.eta");
+    const auto configured_module = configured_dir.create_file("precedence.eta");
+    const auto sibling_module = importer_dir.create_file("precedence.eta");
+    importer_dir.create_file("sibling-only.eta");
+
+    ModulePathResolver resolver({cwd_dir.path, configured_dir.path});
+    const auto matches = resolver.resolve_all("precedence", importer_dir.path);
+    BOOST_REQUIRE_EQUAL(matches.size(), 3u);
+    BOOST_TEST(matches[0] == fs::weakly_canonical(cwd_module));
+    BOOST_TEST(matches[1] == fs::weakly_canonical(configured_module));
+    BOOST_TEST(matches[2] == fs::weakly_canonical(sibling_module));
+    BOOST_TEST(!resolver.resolve("sibling-only"));
+    BOOST_TEST(!resolver.resolve("missing", importer_dir.path));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

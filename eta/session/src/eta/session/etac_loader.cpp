@@ -186,7 +186,8 @@ bool EtacLoader::execute_deserialized_etac(runtime::vm::EtacFile& etac,
     for (const auto& imp : etac.imports) {
         if (compilation_.has_module(imp)) continue;
         bool shadow_conflict = false;
-        auto imp_path = host_.resolve_import_path(imp, &shadow_conflict);
+        auto imp_path = host_.resolve_import_path(
+            imp, artifact_path.parent_path(), &shadow_conflict);
         if (!imp_path) {
             if (!shadow_conflict) {
                 host_.diagnostics().emit_error(

@@ -281,9 +281,12 @@ Create **`app.eta`** in the same directory:
     (say-hello "world")))
 ```
 
-`etai` always searches the current working directory first. When neither
-`--path` nor `ETA_MODULE_PATH` is set, it also searches the input file's
-directory, so sibling modules are found even when run from another directory:
+`etai` searches the current working directory and configured `--path` /
+`ETA_MODULE_PATH` roots first (or discovered project/stdlib roots when no
+explicit path is set), then searches the directory of the source file that
+contains each import. This sibling fallback applies even when an explicit
+module path is configured and follows transitive imports into each imported
+file's directory:
 
 ```bash
 etai app.eta          # prints: Hello, world!

@@ -90,8 +90,26 @@ function tokenize(doc: vscode.TextDocument, startLine: number, endLine: number):
             if (ch === ')' || ch === ']') { sawAnythingInList = true; col++; continue; }
             if (ch === ' ' || ch === '\t') { col++; continue; }
 
+            if (ch === '#') {
+                col++;
+                if (nx === '\\') {
+                    // Character literals can contain an identifier delimiter.
+                    col = Math.min(col + 2, text.length);
+                }
+                while (col < text.length && isIdentChar(text.charAt(col))) col++;
+                sawAnythingInList = true;
+                continue;
+            }
+
             // Start of a token.
             const start = col;
+            // Retain quote prefixes so quoted symbols are filtered below.
+            while (col < text.length && (text.charAt(col) === "'" || text.charAt(col) === '`')) col++;
+            if (col === start && !isIdentChar(ch)) {
+                // Unhandled delimiters must not leave the scanner at the same position.
+                col++;
+                continue;
+            }
             while (col < text.length && isIdentChar(text.charAt(col))) col++;
             const tokText = text.substring(start, col);
             if (tokText.length > 0) {
@@ -149,4 +167,3 @@ export class EtaInlineValuesProvider implements vscode.InlineValuesProvider {
         return out;
     }
 }
-
