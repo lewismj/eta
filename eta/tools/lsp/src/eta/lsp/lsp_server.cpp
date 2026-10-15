@@ -1873,32 +1873,20 @@ void LspServer::load_completion_cache() {
 }
 
 void LspServer::scan_module_path_symbols() {
-    namespace fs = std::filesystem;
-    std::unordered_set<std::string> scanned_files;
+    for (const auto& path : discover_workspace_eta_files(resolver_.dirs())) {
+        std::ifstream f(path);
+        if (!f.is_open()) continue;
+        std::string src(std::istreambuf_iterator<char>(f),
+                        std::istreambuf_iterator<char>{});
 
-    for (const auto& dir : resolver_.dirs()) {
-        std::error_code ec;
-        for (auto& entry : fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec)) {
-            if (!entry.is_regular_file()) continue;
-            if (entry.path().extension() != ".eta") continue;
-
-            auto canonical = entry.path().string();
-            if (!scanned_files.insert(canonical).second) continue;
-
-            std::ifstream f(entry.path());
-            if (!f.is_open()) continue;
-            std::string src(std::istreambuf_iterator<char>(f),
-                            std::istreambuf_iterator<char>{});
-
-            auto syms = collect_symbols(src, /*capture_signature=*/true);
-            auto stem = entry.path().stem().string();
-            auto file_str = entry.path().string();
-            for (auto& sym : syms) {
-                if (sym.kind == "module") continue;
-                if (sym.module_name.empty()) sym.module_name = stem;
-                sym.file_path = file_str;
-                module_path_symbols_.push_back(std::move(sym));
-            }
+        auto syms = collect_symbols(src, /*capture_signature=*/true);
+        auto stem = path.stem().string();
+        auto file_str = path.string();
+        for (auto& sym : syms) {
+            if (sym.kind == "module") continue;
+            if (sym.module_name.empty()) sym.module_name = stem;
+            sym.file_path = file_str;
+            module_path_symbols_.push_back(std::move(sym));
         }
     }
 }
@@ -3293,4 +3281,3 @@ Value LspServer::handle_inlay_hint(const Value& params) {
 }
 
 } ///< namespace eta::lsp
-

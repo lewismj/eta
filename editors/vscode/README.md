@@ -123,6 +123,10 @@ Install Eta from a [release bundle](https://github.com/eta-lang/eta/releases) â€
 | `eta.binaries.searchPaths` | `string[]` | `[]` | Additional directories or explicit executable paths searched for Eta binaries. Supports `${workspaceFolder}`. |
 | `eta.debug.autoShowHeap` | `boolean` | `true` | Automatically open the Heap Inspector when a debug session starts. |
 
+LSP module-symbol indexing uses the same directory exclusions as workspace linting:
+hidden directories and build/dependency output directories are not recursively indexed.
+This does not change module import lookup.
+
 ---
 
 ## Quick Start

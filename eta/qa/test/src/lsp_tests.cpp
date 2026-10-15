@@ -53,6 +53,15 @@ struct TempDir {
     }
 };
 
+struct LspCurrentPathGuard {
+    fs::path original = fs::current_path();
+
+    ~LspCurrentPathGuard() {
+        std::error_code ec;
+        fs::current_path(original, ec);
+    }
+};
+
 /**
  * Helpers
  */
@@ -960,6 +969,63 @@ BOOST_AUTO_TEST_CASE(workspace_symbol_empty_query) {
     const auto& symbols = resp["result"].as_array();
     BOOST_TEST(!symbols.empty());
 }
+
+BOOST_AUTO_TEST_CASE(module_path_symbols_exclude_ignored_cwd_directories) {
+    TempDir tmp;
+    const auto source = tmp.create_file(
+        "src/visible.eta", "(module visible (define scanregression-visible 1))\n");
+    const std::vector<std::string> ignored_dirs = {
+        ".git", ".eta", ".cache", "build", "build-release", "out",
+        "node_modules", "target", "_deps", "dist",
+        "cmake-build-debug", "cmake-build-release",
+    };
+    for (const auto& dir : ignored_dirs) {
+        tmp.create_file(
+            dir + "/nested/hidden.eta",
+            "(module hidden (define scanregression-hidden 2))\n");
+    }
+    LspCurrentPathGuard cwd_guard;
+    fs::current_path(tmp.path);
+
+    auto msgs = run_server(
+        frame(request(1, "initialize", R"({"capabilities":{}})")) +
+        frame(request(10, "workspace/symbol", R"({"query":"scanregression-"})")) +
+        frame(request(2, "shutdown")) +
+        frame(notification("exit")));
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+    const auto& symbols = resp["result"].as_array();
+    BOOST_REQUIRE_EQUAL(symbols.size(), 1u);
+    BOOST_TEST(symbols[0].get_string("name").value_or("") == "scanregression-visible");
+    BOOST_TEST(symbols[0]["location"].get_string("uri").value_or("") ==
+               eta::lsp::LspServer::path_to_uri(source.string()));
+}
+
+#ifndef _WIN32
+BOOST_AUTO_TEST_CASE(module_path_symbols_survive_unreadable_symlink_status) {
+    TempDir tmp;
+    tmp.create_file("visible.eta", "(module visible (define scanregression-visible 1))\n");
+    const auto link = tmp.path / "loop.eta";
+    fs::create_symlink(link.filename(), link);
+    std::error_code ec;
+    fs::is_regular_file(link, ec);
+    BOOST_REQUIRE(ec);
+    LspCurrentPathGuard cwd_guard;
+    fs::current_path(tmp.path);
+
+    auto msgs = run_server(
+        frame(request(1, "initialize", R"({"capabilities":{}})")) +
+        frame(request(10, "workspace/symbol", R"({"query":"scanregression-"})")) +
+        frame(request(2, "shutdown")) +
+        frame(notification("exit")));
+    auto resp = find_response(msgs, 10);
+    BOOST_REQUIRE(!resp.is_null());
+    const auto& symbols = resp["result"].as_array();
+    BOOST_REQUIRE_EQUAL(symbols.size(), 1u);
+    BOOST_TEST(symbols[0].get_string("name").value_or("") == "scanregression-visible");
+    BOOST_REQUIRE(!find_response(msgs, 2).is_null());
+}
+#endif
 
 /**
  * 3.8  selectionRange returns nested S-expression ranges
@@ -2103,6 +2169,5 @@ BOOST_AUTO_TEST_CASE(malformed_then_valid_no_throw) {
 }
 
 BOOST_AUTO_TEST_SUITE_END() ///< lsp_framing_robustness
-
 
 
