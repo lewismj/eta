@@ -162,14 +162,6 @@ std::optional<std::filesystem::path> LspServer::uri_to_path(const std::string& u
     if (uri.rfind(kFilePrefix, 0) != 0) return std::nullopt;
 
     std::string_view encoded = std::string_view(uri).substr(kFilePrefix.size());
-#if defined(_WIN32)
-    if (encoded.size() >= 3u
-        && encoded[0] == '/'
-        && std::isalpha(static_cast<unsigned char>(encoded[1]))
-        && encoded[2] == ':') {
-        encoded.remove_prefix(1u);
-    }
-#endif
 
     std::string decoded;
     decoded.reserve(encoded.size());
@@ -189,6 +181,14 @@ std::optional<std::filesystem::path> LspServer::uri_to_path(const std::string& u
     if (decoded.empty()) return std::nullopt;
 
 #if defined(_WIN32)
+    /// Strip the slash before the drive letter only after decoding, because
+    /// VS Code encodes the drive colon (file:///c%3A/...).
+    if (decoded.size() >= 3u
+        && decoded[0] == '/'
+        && std::isalpha(static_cast<unsigned char>(decoded[1]))
+        && decoded[2] == ':') {
+        decoded.erase(0, 1);
+    }
     std::replace(decoded.begin(), decoded.end(), '/', '\\');
 #endif
     return std::filesystem::path(decoded);

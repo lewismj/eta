@@ -14,6 +14,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -2218,6 +2219,49 @@ BOOST_AUTO_TEST_CASE(import_resolution_uses_each_document_and_transitive_source_
         }
     }
     BOOST_TEST(second_reports_missing_import);
+}
+
+/// VS Code sends Windows URIs as file:///c%3A/...; sibling imports must
+/// still resolve against the decoded document directory.
+BOOST_AUTO_TEST_CASE(import_resolution_accepts_vscode_encoded_drive_uri) {
+    TempDir tmp;
+    LspCurrentPathGuard cwd_guard;
+    LspEnvVarGuard env_guard("ETA_MODULE_PATH");
+    const auto cwd = tmp.path / "cwd";
+    const auto configured = tmp.path / "stdlib";
+    fs::create_directories(cwd);
+    fs::create_directories(configured);
+    fs::current_path(cwd);
+    env_guard.set(configured.string());
+
+    const std::string text = "(module xva (import market) (begin market-value))\n";
+    const auto source = tmp.create_file("cookbook/xva-wwr/xva.eta", text);
+    tmp.create_file("cookbook/xva-wwr/market.eta",
+                    "(module market (export market-value) (define market-value 1))\n");
+
+    std::string uri = eta::lsp::LspServer::path_to_uri(source.string());
+    constexpr std::string_view kPrefix = "file:///";
+    if (uri.size() > kPrefix.size() + 1u && uri[kPrefix.size() + 1u] == ':') {
+        uri[kPrefix.size()] = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(uri[kPrefix.size()])));
+        uri.replace(kPrefix.size() + 1u, 1u, "%3A");
+    }
+
+    const auto msgs = run_server(build_input(uri, text, {}));
+    const auto batches = find_diagnostics_for_uri(msgs, uri);
+    BOOST_REQUIRE(!batches.empty());
+
+    bool has_unknown_import = false;
+    for (const auto& batch : batches) {
+        if (!batch.is_array()) continue;
+        for (const auto& diag : batch.as_array()) {
+            const auto message = diag.get_string("message").value_or("");
+            if (message.find("unknown module in import:") != std::string::npos) {
+                has_unknown_import = true;
+            }
+        }
+    }
+    BOOST_TEST(!has_unknown_import);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
