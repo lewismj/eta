@@ -5,6 +5,7 @@
  * @brief Serialization format for spawn-thread closure/module captures.
  */
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -79,6 +80,9 @@ using SpawnResolveFuncFn = std::function<const runtime::vm::BytecodeFunction*(ui
 using SpawnResolveGlobalFn = std::function<std::optional<LispVal>(uint32_t)>;
 
 namespace detail {
+
+/// Cap on up-front reservations sized by counts read from a payload; containers grow as values arrive.
+constexpr std::size_t kMaxCaptureReserve = 1024;
 
 struct SpawnCaptureWriter {
     struct ClosureNode {
@@ -407,8 +411,10 @@ struct SpawnCaptureReader {
             case SCT_HeapVec: {
                 uint32_t len = 0;
                 if (!read_u32(len)) return err("truncated vector length");
+                /// Every element needs at least its tag byte; cap the up-front reservation.
+                if (len > data.size() - pos) return err("vector length exceeds remaining payload");
                 std::vector<LispVal> elems;
-                elems.reserve(len);
+                elems.reserve(std::min<std::size_t>(len, kMaxCaptureReserve));
                 for (uint32_t i = 0; i < len; ++i) {
                     auto elem = read_value(roots);
                     if (!elem) return elem;
@@ -618,7 +624,7 @@ deserialize_spawn_capture(
     if (!reader.read_u32(upval_count)) {
         return detail::SpawnCaptureReader::err("truncated upvalue count");
     }
-    payload.upvals.reserve(upval_count);
+    payload.upvals.reserve(std::min<std::size_t>(upval_count, detail::kMaxCaptureReserve));
     for (uint32_t i = 0; i < upval_count; ++i) {
         auto uv = reader.read_value(roots);
         if (!uv) return std::unexpected(uv.error());
@@ -630,7 +636,7 @@ deserialize_spawn_capture(
     if (!reader.read_u32(global_count)) {
         return detail::SpawnCaptureReader::err("truncated captured-global count");
     }
-    payload.globals.reserve(global_count);
+    payload.globals.reserve(std::min<std::size_t>(global_count, detail::kMaxCaptureReserve));
     for (uint32_t i = 0; i < global_count; ++i) {
         uint32_t slot = 0;
         if (!reader.read_u32(slot)) {

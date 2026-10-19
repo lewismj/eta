@@ -73,7 +73,9 @@ VM::VM(Heap& heap, InternTable& intern_table)
     if (error_result) current_error_ = *error_result;
 }
 
-VM::~VM() = default;
+VM::~VM() {
+    alive_->store(false, std::memory_order_release);
+}
 
 VM::ExecutionScope::ExecutionScope(VM& vm)
     : vm_(vm) {
@@ -246,6 +248,8 @@ void VM::collect_garbage() {
         for (auto v : globals_) visit(v);
         /// Mark external roots registered by non-VM heap reconstruction helpers
         for (auto v : heap_.external_roots()) visit(v);
+        /// Mark long-lived roots pinned by host-side holders
+        heap_.for_each_pinned_root([&](LispVal v) { visit(v); });
         /// Mark current ports
         visit(current_input_);
         visit(current_output_);

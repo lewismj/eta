@@ -20,6 +20,7 @@
  *   - clp_get_domain_*:       %clp-get-domain conses its result with unrooted tails.
  *   - os_string_list_*:       build_string_list/alist cons with unrooted tails.
  *   - regex_*, time_parts_*:  regex match values and time-parts alists built in C++.
+ *   - pinned_roots_*, alive_tokens_*: host-side pins and heap/VM liveness tokens.
  *   - make_closure_*:         OpCode::MakeClosure pops upvalues before allocating.
  *   - copy_term_*:            VM::copy_term holds partial copies and fresh vars in C++ locals.
  *   - json_read_*:            json_to_lisp keeps children in a local vector while recursing.
@@ -498,6 +499,52 @@ BOOST_AUTO_TEST_CASE(time_parts_alist_is_not_aliased) {
         BOOST_REQUIRE_MESSAGE(pair != nullptr, "entry " << i << " is not a live pair");
         BOOST_CHECK(ops::is_boxed(pair->car) && ops::tag(pair->car) == Tag::Symbol);
     }
+}
+
+/**
+ * @test pinned_roots_are_reference_counted
+ *
+ * Heap::pin roots a value for host-side holders; it stays alive until every
+ * pin has a matching unpin.
+ */
+BOOST_AUTO_TEST_CASE(pinned_roots_are_reference_counted) {
+    Heap heap(1ull << 20);
+    InternTable intern_table;
+    vm::VM machine(heap, intern_table);
+
+    auto vec = make_vector(heap, {});
+    BOOST_REQUIRE(vec.has_value());
+
+    heap.pin(*vec);
+    heap.pin(*vec);
+    machine.collect_garbage();
+    BOOST_TEST(as_vector(heap, *vec) != nullptr);
+
+    heap.unpin(*vec);
+    machine.collect_garbage();
+    BOOST_TEST(as_vector(heap, *vec) != nullptr);
+
+    heap.unpin(*vec);
+    machine.collect_garbage();
+    BOOST_TEST(as_vector(heap, *vec) == nullptr);
+}
+
+/// Liveness tokens flip to false when their heap or VM is destroyed.
+BOOST_AUTO_TEST_CASE(alive_tokens_track_heap_and_vm_lifetime) {
+    auto heap = std::make_unique<Heap>(1ull << 20);
+    InternTable intern_table;
+    auto machine = std::make_unique<vm::VM>(*heap, intern_table);
+    auto heap_token = heap->alive_token();
+    auto vm_token = machine->alive_token();
+    BOOST_TEST(heap_token->load());
+    BOOST_TEST(vm_token->load());
+
+    machine.reset();
+    BOOST_TEST(!vm_token->load());
+    BOOST_TEST(heap_token->load());
+
+    heap.reset();
+    BOOST_TEST(!heap_token->load());
 }
 
 /**

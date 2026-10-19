@@ -9,6 +9,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <eta/log/log_port_sink.h>
 #include <eta/log/log_primitives.h>
 #include <eta/log/log_state.h>
 #include <eta/runtime/builtin_env.h>
@@ -113,6 +114,8 @@ struct LogFixture {
         : heap(1ull << 22),
           intern_table(),
           vm(heap, intern_table) {
+        /// Tests hold sinks, loggers and ports in unrooted C++ locals between builtin calls; not torture-safe.
+        heap.set_gc_torture(false);
         eta::log::register_log_primitives(env, heap, intern_table, &vm);
     }
 
@@ -287,6 +290,42 @@ BOOST_AUTO_TEST_CASE(default_logger_is_vm_scoped_and_resolves_error_port_at_emit
     BOOST_REQUIRE(level_2.has_value());
     BOOST_TEST(decode_symbol(intern_table, *level_1) == "debug");
     BOOST_TEST(decode_symbol(intern2, *level_2) == "info");
+}
+
+/// The sink pins its port: the port survives GC even when Eta code holds no reference.
+BOOST_AUTO_TEST_CASE(port_sink_keeps_its_port_alive_across_gc) {
+    const LispVal port = *make_port(heap, std::make_shared<StringPort>(StringPort::Mode::Output));
+    auto sink = std::make_shared<eta::log::EtaPortSink>(heap, &vm, port, false);
+    spdlog::logger logger("port-sink-pin-test", sink);
+    logger.set_pattern("%v");
+
+    vm.collect_garbage();
+    logger.info("still-here");
+    logger.flush();
+
+    BOOST_TEST(output_string_from_port(heap, port).find("still-here") != std::string::npos);
+}
+
+/// A sink that outlives its heap and VM (as in spdlog's global registry) is inert, not a crash.
+BOOST_AUTO_TEST_CASE(port_sink_outliving_heap_and_vm_is_safe) {
+    auto own_heap = std::make_unique<Heap>(1ull << 20);
+    InternTable own_intern;
+    auto own_vm = std::make_unique<vm::VM>(*own_heap, own_intern);
+
+    const LispVal port = *make_port(*own_heap, std::make_shared<StringPort>(StringPort::Mode::Output));
+    auto fixed_sink = std::make_shared<eta::log::EtaPortSink>(*own_heap, own_vm.get(), port, false);
+    auto error_sink = std::make_shared<eta::log::EtaPortSink>(*own_heap, own_vm.get(), Nil, true);
+    auto logger = std::make_shared<spdlog::logger>(
+        "port-sink-lifetime-test", spdlog::sinks_init_list{fixed_sink, error_sink});
+
+    own_vm.reset();
+    own_heap.reset();
+
+    BOOST_CHECK_NO_THROW(logger->info("after teardown"));
+    BOOST_CHECK_NO_THROW(logger->flush());
+    fixed_sink.reset();
+    error_sink.reset();
+    BOOST_CHECK_NO_THROW(logger.reset());
 }
 
 BOOST_AUTO_TEST_CASE(shutdown_is_idempotent) {

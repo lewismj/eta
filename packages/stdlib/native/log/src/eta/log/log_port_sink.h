@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -17,6 +19,10 @@ namespace eta::log {
  *
  * This sink preserves Eta's port-redirection semantics. When configured as a
  * current-error sink it resolves `vm.current_error_port()` at emit-time.
+ *
+ * Named loggers live in spdlog's process-wide registry, so a sink can outlive
+ * its heap and VM.  It pins its fixed port (the GC cannot see it otherwise)
+ * and checks the heap and VM liveness tokens before touching either.
  */
 class EtaPortSink final : public spdlog::sinks::base_sink<std::mutex> {
 public:
@@ -25,9 +31,20 @@ public:
                 runtime::nanbox::LispVal fixed_port,
                 bool current_error_sink)
         : heap_(heap),
+          heap_alive_(heap.alive_token()),
           vm_(vm),
+          vm_alive_(vm ? vm->alive_token() : nullptr),
           fixed_port_(fixed_port),
-          current_error_sink_(current_error_sink) {}
+          current_error_sink_(current_error_sink) {
+        heap_.pin(fixed_port_);
+    }
+
+    ~EtaPortSink() override {
+        if (heap_is_alive()) heap_.unpin(fixed_port_);
+    }
+
+    EtaPortSink(const EtaPortSink&) = delete;
+    EtaPortSink& operator=(const EtaPortSink&) = delete;
 
 protected:
     void sink_it_(const spdlog::details::log_msg& msg) override {
@@ -48,11 +65,14 @@ protected:
     }
 
 private:
+    bool heap_is_alive() const { return heap_alive_->load(std::memory_order_acquire); }
+
     runtime::types::PortObject* resolve_output_port() {
         using namespace runtime::nanbox;
+        if (!heap_is_alive()) return nullptr;
         LispVal port_val = fixed_port_;
         if (current_error_sink_) {
-            if (!vm_) return nullptr;
+            if (!vm_ || !vm_alive_ || !vm_alive_->load(std::memory_order_acquire)) return nullptr;
             port_val = vm_->current_error_port();
         }
 
@@ -65,7 +85,9 @@ private:
     }
 
     runtime::memory::heap::Heap& heap_;
+    std::shared_ptr<const std::atomic<bool>> heap_alive_;
     runtime::vm::VM* vm_{nullptr};
+    std::shared_ptr<const std::atomic<bool>> vm_alive_;
     runtime::nanbox::LispVal fixed_port_{runtime::nanbox::Nil};
     bool current_error_sink_{false};
 };

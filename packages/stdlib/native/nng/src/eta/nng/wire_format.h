@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -88,6 +89,12 @@ inline std::vector<uint8_t> make_heartbeat_pong() {
  * so 0xEA (outside ASCII printable range) is unambiguous.
  */
 constexpr uint8_t BINARY_VERSION_BYTE = 0xEA;
+
+/// Longest symbol name accepted by the decoder; decoded symbols are interned permanently.
+constexpr std::size_t MAX_WIRE_SYMBOL_BYTES = 4096;
+
+/// Cap on the up-front reservation for a decoded vector; it grows as elements arrive.
+constexpr std::size_t MAX_WIRE_VECTOR_RESERVE = 1024;
 
 /**
  * Tag bytes used in the binary format.
@@ -451,6 +458,7 @@ struct BinaryReader {
                 case BT_Symbol: {
                     std::string s;
                     if (!read_str(s)) return err("truncated symbol");
+                    if (s.size() > MAX_WIRE_SYMBOL_BYTES) return err("symbol name too long");
                     auto res = make_symbol(intern, s);
                     if (!res) return std::unexpected(res.error());
                     current = *res;
@@ -469,10 +477,16 @@ struct BinaryReader {
                         current = *vec;
                         continue;
                     }
+                    /**
+                     * Every element needs at least its tag byte, so a longer count is
+                     * corrupt or hostile.  The reservation is capped too: nested vectors
+                     * could otherwise each reserve up to the remaining payload.
+                     */
+                    if (len > data.size() - pos) return err("vector length exceeds remaining payload");
                     PendingFrame frame;
                     frame.kind = PendingFrame::Kind::Vector;
                     frame.expected_len = len;
-                    frame.elems.reserve(len);
+                    frame.elems.reserve(std::min<std::size_t>(len, MAX_WIRE_VECTOR_RESERVE));
                     frames.push_back(std::move(frame));
                     continue;
                 }

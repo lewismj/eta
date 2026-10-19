@@ -2123,6 +2123,52 @@ BOOST_AUTO_TEST_CASE(binary_round_trip_over_socket_all_types) {
     e.call("nng-close", {client});
 }
 
+/// Binary decoder limits on untrusted input
+
+/// A tiny frame claiming a 4-billion-element vector is rejected before any reservation.
+BOOST_AUTO_TEST_CASE(binary_vector_length_beyond_payload_is_rejected) {
+    Heap heap(1ull << 20); InternTable intern;
+    const std::vector<uint8_t> bin{eta::nng::BINARY_VERSION_BYTE, 9, 0xFF, 0xFF, 0xFF, 0xFF};
+    auto result = deserialize_binary(std::span<const uint8_t>(bin), heap, intern);
+    BOOST_TEST(!result.has_value());
+}
+
+/// A vector longer than the reservation cap still decodes; it grows as elements arrive.
+BOOST_AUTO_TEST_CASE(binary_vector_larger_than_reserve_cap_round_trips) {
+    Heap heap(1ull << 22); InternTable intern;
+    constexpr std::size_t count = eta::nng::MAX_WIRE_VECTOR_RESERVE * 3 + 7;
+    std::vector<LispVal> elems;
+    for (std::size_t i = 0; i < count; ++i) {
+        elems.push_back(require_ok(make_fixnum(heap, static_cast<int64_t>(i))));
+    }
+    auto vec = require_ok(make_vector(heap, std::move(elems)));
+
+    auto bin = serialize_binary(vec, heap, intern);
+    auto result = deserialize_binary(std::span<const uint8_t>(bin), heap, intern);
+    BOOST_REQUIRE(result.has_value());
+    auto* decoded = heap.try_get_as<ObjectKind::Vector, eta::runtime::types::Vector>(ops::payload(*result));
+    BOOST_REQUIRE(decoded != nullptr);
+    BOOST_TEST(decoded->elements.size() == count);
+}
+
+/// Symbols are interned permanently, so over-long names from the wire are rejected.
+BOOST_AUTO_TEST_CASE(binary_symbol_length_is_bounded) {
+    Heap heap(1ull << 20); InternTable intern;
+    auto symbol_frame = [](std::size_t len) {
+        std::vector<uint8_t> bin{eta::nng::BINARY_VERSION_BYTE, 6,
+            static_cast<uint8_t>(len), static_cast<uint8_t>(len >> 8),
+            static_cast<uint8_t>(len >> 16), static_cast<uint8_t>(len >> 24)};
+        bin.insert(bin.end(), len, static_cast<uint8_t>('s'));
+        return bin;
+    };
+
+    const auto at_limit = symbol_frame(eta::nng::MAX_WIRE_SYMBOL_BYTES);
+    BOOST_TEST(deserialize_binary(std::span<const uint8_t>(at_limit), heap, intern).has_value());
+
+    const auto over_limit = symbol_frame(eta::nng::MAX_WIRE_SYMBOL_BYTES + 1);
+    BOOST_TEST(!deserialize_binary(std::span<const uint8_t>(over_limit), heap, intern).has_value());
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 /// Process Spawning & Actor Model

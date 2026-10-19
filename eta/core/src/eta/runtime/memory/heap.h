@@ -391,6 +391,25 @@ namespace eta::runtime::memory::heap {
         const std::vector<LispVal>& external_roots() const { return external_roots_; }
 
         /**
+         * Long-lived roots held by host-side C++ objects (e.g. a log sink's port).
+         * Reference-counted: each pin needs a matching unpin.  Thread-safe.
+         */
+        void pin(LispVal v);
+        void unpin(LispVal v);
+        template<typename Visit>
+        void for_each_pinned_root(Visit&& visit) const {
+            std::lock_guard lock(pinned_mutex_);
+            for (const auto& [v, count] : pinned_roots_) visit(v);
+        }
+
+        /**
+         * Set to false when this heap starts destruction.  Host objects that can
+         * outlive the heap (e.g. sinks in spdlog's global registry) check it
+         * before touching the heap.
+         */
+        std::shared_ptr<const std::atomic<bool>> alive_token() const { return alive_; }
+
+        /**
          * Register or replace a finalizer procedure for an object id.
          * Cons-pool objects are rejected to avoid ObjectId reuse hazards.
          */
@@ -484,6 +503,9 @@ namespace eta::runtime::memory::heap {
         std::atomic<ObjectId> next_id{ 1 };
         std::unique_ptr<ConsPool> cons_pool_;
         std::vector<LispVal> external_roots_;
+        mutable std::mutex pinned_mutex_;
+        std::unordered_map<LispVal, std::size_t> pinned_roots_;
+        std::shared_ptr<std::atomic<bool>> alive_{std::make_shared<std::atomic<bool>>(true)};
         mutable std::mutex finalizer_mutex_;
         std::unordered_map<ObjectId, LispVal> finalizer_table_;
         std::deque<PendingFinalizer> pending_finalizers_;

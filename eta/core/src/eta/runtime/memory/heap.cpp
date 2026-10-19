@@ -21,6 +21,9 @@ namespace eta::runtime::memory::heap {
     }
 
     Heap::~Heap() {
+        /// Signal host-side holders first: object destructors below may release them.
+        alive_->store(false, std::memory_order_release);
+
         /// The unique_ptr<ConsPool> destructor frees slab memory automatically.
 
         /// General-heap entries may have non-trivial destructors.
@@ -50,6 +53,22 @@ namespace eta::runtime::memory::heap {
     size_t Heap::select_shard(ObjectId id) noexcept {
         const uint64_t x = split_mix_64(id);
         return x & (NUM_SHARDS - 1);
+    }
+
+    /// pinned host roots
+
+    void Heap::pin(LispVal v) {
+        if (!nanbox::ops::is_boxed(v) || nanbox::ops::tag(v) != nanbox::Tag::HeapObject) return;
+        std::lock_guard lock(pinned_mutex_);
+        ++pinned_roots_[v];
+    }
+
+    void Heap::unpin(LispVal v) {
+        if (!nanbox::ops::is_boxed(v) || nanbox::ops::tag(v) != nanbox::Tag::HeapObject) return;
+        std::lock_guard lock(pinned_mutex_);
+        auto it = pinned_roots_.find(v);
+        if (it == pinned_roots_.end()) return;
+        if (--it->second == 0) pinned_roots_.erase(it);
     }
 
     /// pool-accelerated cons allocation

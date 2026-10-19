@@ -569,6 +569,12 @@ public:
      * not depend on this gate to be safe  -  but anything that ever reuses
      * `vm.execute()` against a paused VM must set it.
      */
+    /**
+     * Set to false when this VM is destroyed.  Host objects that can outlive
+     * the VM (e.g. sinks in spdlog's global registry) check it before use.
+     */
+    std::shared_ptr<const std::atomic<bool>> alive_token() const { return alive_; }
+
     void set_sandbox_mode(bool on) noexcept { sandbox_mode_ = on; }
     [[nodiscard]] bool is_sandbox_mode() const noexcept { return sandbox_mode_; }
 
@@ -676,6 +682,7 @@ private:
      * refuse to execute and instead surface a SandboxViolation error.
      */
     bool sandbox_mode_{false};
+    std::shared_ptr<std::atomic<bool>> alive_{std::make_shared<std::atomic<bool>>(true)};
     std::uint64_t reductions_{0};
     ExecuteSliceOptions execute_slice_options_{};
     const BytecodeFunction* active_slice_entry_{nullptr};
