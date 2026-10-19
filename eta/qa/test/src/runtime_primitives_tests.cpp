@@ -248,6 +248,8 @@ BOOST_AUTO_TEST_CASE(
     using eta::runtime::nanbox::LispVal;
 
     eta::runtime::memory::heap::Heap heap(1ull << 20);
+    /// Holds intermediate values in unrooted C++ locals across allocations; not torture-safe.
+    heap.set_gc_torture(false);
     eta::runtime::memory::intern::InternTable intern_table;
     eta::runtime::vm::VM vm(heap, intern_table);
 
@@ -515,6 +517,8 @@ BOOST_AUTO_TEST_CASE(
     using eta::runtime::nanbox::LispVal;
 
     eta::runtime::memory::heap::Heap heap(1ull << 20);
+    /// Holds intermediate values in unrooted C++ locals across allocations; not torture-safe.
+    heap.set_gc_torture(false);
     eta::runtime::memory::intern::InternTable intern_table;
     eta::runtime::vm::VM vm(heap, intern_table);
 
@@ -1054,6 +1058,8 @@ BOOST_AUTO_TEST_CASE(
     using eta::runtime::memory::heap::ObjectKind;
 
     eta::runtime::memory::heap::Heap heap(1ull << 20);
+    /// Builds its input lists with unrooted C++ cons chains; not torture-safe.
+    heap.set_gc_torture(false);
     eta::runtime::memory::intern::InternTable intern_table;
     eta::runtime::vm::VM vm(heap, intern_table);
 

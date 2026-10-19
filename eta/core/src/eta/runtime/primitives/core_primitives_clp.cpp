@@ -246,14 +246,20 @@ void PrimReg::register_clp() {
             if (!dom) return False;
 
             using namespace memory::factory;
+            /// Each partial tail (and any boxed fixnum) is held only in a local while the next cell allocates.
+            auto roots = heap.make_external_root_frame();
             if (const auto* z = std::get_if<clp::ZDomain>(dom)) {
                 /// Build (z lo hi)
                 auto sym = make_symbol(intern_table, "z");
                 auto lo  = make_fixnum(heap, z->lo);
+                if (lo) roots.push(*lo);
                 auto hi  = make_fixnum(heap, z->hi);
                 if (!sym || !lo || !hi) return False;
+                roots.push(*hi);
                 auto hi_c  = make_cons(heap, *hi,  Nil);
+                if (hi_c) roots.push(*hi_c);
                 auto lo_c  = make_cons(heap, *lo,  hi_c ? *hi_c  : Nil);
+                if (lo_c) roots.push(*lo_c);
                 auto result= make_cons(heap, *sym, lo_c ? *lo_c  : Nil);
                 if (!hi_c || !lo_c || !result) return False;
                 return *result;
@@ -269,9 +275,13 @@ void PrimReg::register_clp() {
                 LispVal lo_open = r->lo_open ? True : False;
                 LispVal hi_open = r->hi_open ? True : False;
                 auto c4 = make_cons(heap, hi_open, Nil);
+                if (c4) roots.push(*c4);
                 auto c3 = make_cons(heap, lo_open, c4 ? *c4 : Nil);
+                if (c3) roots.push(*c3);
                 auto c2 = make_cons(heap, *hi_e,   c3 ? *c3 : Nil);
+                if (c2) roots.push(*c2);
                 auto c1 = make_cons(heap, *lo_e,   c2 ? *c2 : Nil);
+                if (c1) roots.push(*c1);
                 auto rs = make_cons(heap, *sym,    c1 ? *c1 : Nil);
                 if (!c4 || !c3 || !c2 || !c1 || !rs) return False;
                 return *rs;
@@ -285,9 +295,11 @@ void PrimReg::register_clp() {
                 for (int i = static_cast<int>(vs.size()) - 1; i >= 0; --i) {
                     auto v = make_fixnum(heap, vs[static_cast<std::size_t>(i)]);
                     if (!v) return False;
+                    roots.push(*v);
                     auto c = make_cons(heap, *v, lst);
                     if (!c) return False;
                     lst = *c;
+                    roots.push(lst);
                 }
                 auto result = make_cons(heap, *sym, lst);
                 if (!result) return False;

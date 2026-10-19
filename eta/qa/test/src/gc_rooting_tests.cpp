@@ -17,6 +17,7 @@
  *   - emitter_*:              constants are unrooted until their function reaches the registry.
  *   - rest_args_*:            VM::pack_rest_args builds the rest list in a C++ local.
  *   - call_value_*:           VM::call_value holds the caller's closure in a C++ local.
+ *   - clp_get_domain_*:       %clp-get-domain conses its result with unrooted tails.
  *   - make_closure_*:         OpCode::MakeClosure pops upvalues before allocating.
  *   - copy_term_*:            VM::copy_term holds partial copies and fresh vars in C++ locals.
  *   - json_read_*:            json_to_lisp keeps children in a local vector while recursing.
@@ -401,6 +402,28 @@ BOOST_AUTO_TEST_CASE(call_value_keeps_caller_closure_alive) {
   (define result ((make-counter 100) '(5 6 7))))
 )eta");
     BOOST_TEST(as_int(result) == 105);
+}
+
+/**
+ * @test clp_get_domain_list_is_not_aliased
+ *
+ * %clp-get-domain builds (z lo hi) one cell at a time with each partial tail
+ * held only in a C++ local.
+ */
+BOOST_AUTO_TEST_CASE(clp_get_domain_list_is_not_aliased) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.clp_domain
+  (define v (logic-var))
+  (%clp-domain-z! v 1 3)
+  (define result (%clp-get-domain v)))
+)eta");
+
+    auto items = list_items(h.driver.heap(), result);
+    BOOST_REQUIRE_EQUAL(items.size(), 3u);
+    BOOST_CHECK(ops::is_boxed(items[0]) && ops::tag(items[0]) == Tag::Symbol);
+    BOOST_CHECK_EQUAL(as_int(items[1]), 1);
+    BOOST_CHECK_EQUAL(as_int(items[2]), 3);
 }
 
 /**
