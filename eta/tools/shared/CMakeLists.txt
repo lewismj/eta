@@ -7,3 +7,8 @@ if(WIN32)
     target_link_libraries(eta_tooling_files PRIVATE advapi32)
 endif()
 
+# Content-Length message framing shared by the LSP and DAP servers.
+add_library(eta_tooling_framing STATIC src/eta/tooling/framing.cpp)
+target_include_directories(eta_tooling_framing PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_features(eta_tooling_framing PUBLIC cxx_std_23)
+set_target_properties(eta_tooling_framing PROPERTIES CXX_SCAN_FOR_MODULES OFF)

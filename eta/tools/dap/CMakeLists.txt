@@ -15,7 +15,7 @@ target_include_directories(eta_dap
     PRIVATE ${ETA_INTERPRETER_SRC_DIR}
 )
 
-target_link_libraries(eta_dap PRIVATE eta_core)
+target_link_libraries(eta_dap PRIVATE eta_core eta_tooling_framing)
 eta_link_sidecar_builtin_runtime(eta_dap)
 target_compile_definitions(eta_dap PRIVATE
     ETA_HAS_TORCH=1

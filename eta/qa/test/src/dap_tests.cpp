@@ -29,6 +29,7 @@
 #include "eta/dap/dap_io.h"
 #include "eta/dap/dap_server.h"
 #include "eta/session/driver.h"
+#include "eta/tooling/framing.h"
 #include "eta/util/json.h"
 
 namespace fs   = std::filesystem;
@@ -3047,6 +3048,49 @@ BOOST_AUTO_TEST_CASE(valid_message_after_skipped_zero_length) {
     auto result = eta::dap::read_message(in);
     BOOST_REQUIRE(result.has_value());
     BOOST_CHECK_EQUAL(*result, body);
+}
+
+/**
+ * An over-limit frame's body must be consumed before skipping it; otherwise
+ * the body bytes are parsed as headers and the stream desyncs.  The shared
+ * reader takes the limit as a parameter so this can be tested with a small body.
+ */
+BOOST_AUTO_TEST_CASE(oversized_body_is_consumed_before_next_frame) {
+    const std::string valid = R"({"seq":2,"type":"request","command":"threads"})";
+    /// The oversized body looks like a header block, which the old code would have parsed.
+    const std::string oversized_body = "Content-Length: 2\r\n\r\nXX" + std::string(200, 'p');
+    /// The limit sits between the valid message and the oversized body.
+    constexpr std::size_t max_bytes = 128;
+    BOOST_REQUIRE(valid.size() <= max_bytes);
+    BOOST_REQUIRE(oversized_body.size() > max_bytes);
+    std::istringstream in(
+        "Content-Length: " + std::to_string(oversized_body.size()) + "\r\n\r\n"
+      + oversized_body
+      + frame(valid));
+    auto result = eta::tooling::read_framed_message(in, "test", max_bytes);
+    BOOST_REQUIRE(result.has_value());
+    BOOST_CHECK_EQUAL(*result, valid);
+}
+
+/// An over-limit frame whose body is cut short ends the stream cleanly.
+BOOST_AUTO_TEST_CASE(oversized_truncated_body_returns_nullopt) {
+    std::istringstream in("Content-Length: 100\r\n\r\nshort");
+    auto result = eta::tooling::read_framed_message(in, "test", /*max_bytes=*/8);
+    BOOST_CHECK(!result.has_value());
+}
+
+/// write_framed_message output round-trips through read_framed_message.
+BOOST_AUTO_TEST_CASE(framed_write_round_trips) {
+    std::ostringstream out;
+    eta::tooling::write_framed_message(out, R"({"a":1})");
+    eta::tooling::write_framed_message(out, R"({"b":2})");
+    std::istringstream in(out.str());
+    auto first = eta::tooling::read_framed_message(in, "test");
+    auto second = eta::tooling::read_framed_message(in, "test");
+    BOOST_REQUIRE(first.has_value());
+    BOOST_REQUIRE(second.has_value());
+    BOOST_CHECK_EQUAL(*first, R"({"a":1})");
+    BOOST_CHECK_EQUAL(*second, R"({"b":2})");
 }
 
 BOOST_AUTO_TEST_SUITE_END() ///< dap_framing_robustness

@@ -572,6 +572,27 @@ public:
     void set_sandbox_mode(bool on) noexcept { sandbox_mode_ = on; }
     [[nodiscard]] bool is_sandbox_mode() const noexcept { return sandbox_mode_; }
 
+    /**
+     * RAII guard for sandbox mode: enables it on construction and restores the
+     * previous setting on scope exit, including on exceptions and early returns.
+     * Restoring (rather than clearing) keeps nested sandboxed evaluations correct.
+     */
+    class SandboxScope {
+    public:
+        explicit SandboxScope(VM& vm) noexcept
+            : vm_(vm), previous_(vm.is_sandbox_mode()) {
+            vm_.set_sandbox_mode(true);
+        }
+        ~SandboxScope() { vm_.set_sandbox_mode(previous_); }
+
+        SandboxScope(const SandboxScope&) = delete;
+        SandboxScope& operator=(const SandboxScope&) = delete;
+
+    private:
+        VM& vm_;
+        bool previous_;
+    };
+
 private:
     struct ExecuteDepthScope {
         VM& vm;

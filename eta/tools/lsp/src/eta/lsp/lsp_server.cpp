@@ -47,6 +47,7 @@
 #include "eta/linter/core/registry.h"
 #include "eta/linter/lint.h"
 #include "eta/linter/rules/rules.h"
+#include "eta/tooling/framing.h"
 
 namespace eta::lsp {
 
@@ -500,50 +501,11 @@ void LspServer::preload_module_deps(
  */
 
 std::optional<std::string> LspServer::read_message() {
-    static constexpr std::size_t MAX_MESSAGE_SIZE = 64u * 1024u * 1024u;
-
-    std::size_t content_length = 0;
-    bool got_content_length = false;
-    std::string header_line;
-    while (std::getline(in_, header_line)) {
-        if (!header_line.empty() && header_line.back() == '\r')
-            header_line.pop_back();
-        if (header_line.empty()) break;
-
-        const std::string prefix = "Content-Length: ";
-        if (header_line.substr(0, prefix.size()) == prefix) {
-            try {
-                content_length = std::stoull(header_line.substr(prefix.size()));
-                got_content_length = true;
-            } catch (const std::exception&) {
-                std::cerr << "[eta-lsp] warning: malformed Content-Length header: "
-                          << header_line << "\n";
-            }
-        }
-        /// Ignore other headers (Content-Type, etc.)
-    }
-
-    if (in_.eof() || in_.fail()) return std::nullopt;
-    if (!got_content_length || content_length == 0) return std::nullopt;
-
-    /// Guard against unbounded allocation from a crafted Content-Length value.
-    if (content_length > MAX_MESSAGE_SIZE) {
-        std::cerr << "[eta-lsp] warning: Content-Length " << content_length
-                  << " exceeds maximum (" << MAX_MESSAGE_SIZE << " bytes); dropping message\n";
-        return std::nullopt;
-    }
-
-    std::string body(content_length, '\0');
-    in_.read(body.data(), static_cast<std::streamsize>(content_length));
-    if (in_.fail()) return std::nullopt;
-
-    return body;
+    return tooling::read_framed_message(in_, "eta-lsp");
 }
 
 void LspServer::send_message(const Value& msg) {
-    std::string body = json::to_string(msg);
-    out_ << "Content-Length: " << body.size() << "\r\n\r\n" << body;
-    out_.flush();
+    tooling::write_framed_message(out_, json::to_string(msg));
 }
 
 void LspServer::send_response(const Value& id, const Value& result) {

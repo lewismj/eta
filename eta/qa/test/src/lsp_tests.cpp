@@ -2297,14 +2297,16 @@ BOOST_AUTO_TEST_CASE(zero_content_length_no_throw) {
 }
 
 /**
- * A valid message following a malformed one is NOT processed (server stops after
- * the first nullopt from read_message), but no exception must escape.
+ * A frame with a malformed Content-Length is skipped and the server keeps
+ * reading, so a valid message after it is still answered.
  */
-BOOST_AUTO_TEST_CASE(malformed_then_valid_no_throw) {
+BOOST_AUTO_TEST_CASE(malformed_then_valid_is_answered) {
     std::string body = R"({"jsonrpc":"2.0","id":1,"method":"shutdown","params":{}})";
     std::string input = "Content-Length: bad\r\n\r\n"
                       + frame(body);
-    BOOST_CHECK_NO_THROW(run_server(input));
+    std::vector<json::Value> msgs;
+    BOOST_CHECK_NO_THROW(msgs = run_server(input));
+    BOOST_TEST(find_response(msgs, 1).has("result"));
 }
 
 BOOST_AUTO_TEST_SUITE_END() ///< lsp_framing_robustness

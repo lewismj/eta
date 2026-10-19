@@ -163,7 +163,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 # Always link all runtime libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE eta_core)
 target_link_libraries(${PROJECT_NAME} PRIVATE eta_cst)
-target_link_libraries(${PROJECT_NAME} PRIVATE eta_format_lib eta_tooling_files)
+target_link_libraries(${PROJECT_NAME} PRIVATE eta_format_lib eta_tooling_files eta_tooling_framing)
 target_link_libraries(${PROJECT_NAME} PRIVATE eta_linter_lib)
 eta_link_sidecar_builtin_runtime(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PRIVATE Boost::unit_test_framework)

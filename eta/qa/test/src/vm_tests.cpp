@@ -3683,4 +3683,29 @@ BOOST_FIXTURE_TEST_CASE(storelocal_oob_returns_error, BoundsCheckFixture) {
 
 BOOST_AUTO_TEST_SUITE_END() ///< vm_bounds_check_tests
 
+/// SandboxScope enables sandbox mode and restores the previous setting, even on exceptions.
+BOOST_AUTO_TEST_CASE(sandbox_scope_restores_previous_mode) {
+    VM vm(heap, intern_table);
+    BOOST_REQUIRE(!vm.is_sandbox_mode());
+
+    {
+        VM::SandboxScope outer(vm);
+        BOOST_TEST(vm.is_sandbox_mode());
+        {
+            VM::SandboxScope inner(vm);
+            BOOST_TEST(vm.is_sandbox_mode());
+        }
+        /// The inner scope restores the outer setting rather than clearing it.
+        BOOST_TEST(vm.is_sandbox_mode());
+    }
+    BOOST_TEST(!vm.is_sandbox_mode());
+
+    try {
+        VM::SandboxScope scope(vm);
+        throw std::runtime_error("sandboxed evaluation failed");
+    } catch (const std::runtime_error&) {
+    }
+    BOOST_TEST(!vm.is_sandbox_mode());
+}
+
 BOOST_AUTO_TEST_SUITE_END() ///< vm_tests

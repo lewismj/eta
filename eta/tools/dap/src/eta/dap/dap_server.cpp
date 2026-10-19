@@ -1589,10 +1589,10 @@ bool DapServer::eval_in_paused_frame(session::Driver& drv,
             return try_lookup_paused_name(drv, name, v);
         });
 
-    auto& vm = drv.vm();
-    vm.set_sandbox_mode(true);
-    auto sandbox_result = sandbox.eval(expr);
-    vm.set_sandbox_mode(false);
+    auto sandbox_result = [&] {
+        runtime::vm::VM::SandboxScope sandbox_scope(drv.vm());
+        return sandbox.eval(expr);
+    }();
 
     if (!sandbox_result.ok()) {
         if (out_error)     *out_error     = sandbox_result.error;
