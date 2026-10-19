@@ -78,6 +78,8 @@ require_path_arg(InternTable& intern_table, LispVal value, const char* who) {
 
 inline std::expected<LispVal, RuntimeError>
 build_string_list(Heap& heap, InternTable& intern_table, const std::vector<std::string>& values) {
+    /// The list built so far is held only in `list` while the next cell allocates.
+    auto roots = heap.make_external_root_frame();
     LispVal list = Nil;
     for (auto it = values.rbegin(); it != values.rend(); ++it) {
         auto text = make_string(heap, intern_table, *it);
@@ -85,6 +87,7 @@ build_string_list(Heap& heap, InternTable& intern_table, const std::vector<std::
         auto cell = make_cons(heap, *text, list);
         if (!cell) return std::unexpected(cell.error());
         list = *cell;
+        roots.push(list);
     }
     return list;
 }
@@ -95,6 +98,8 @@ build_string_alist(
     InternTable& intern_table,
     const std::vector<std::pair<std::string, std::string>>& entries)
 {
+    /// The list so far and each new pair are held only in locals while the next cell allocates.
+    auto roots = heap.make_external_root_frame();
     LispVal list = Nil;
     for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
         auto key = make_string(heap, intern_table, it->first);
@@ -103,9 +108,11 @@ build_string_alist(
         if (!value) return std::unexpected(value.error());
         auto pair = make_cons(heap, *key, *value);
         if (!pair) return std::unexpected(pair.error());
+        roots.push(*pair);
         auto cell = make_cons(heap, *pair, list);
         if (!cell) return std::unexpected(cell.error());
         list = *cell;
+        roots.push(list);
     }
     return list;
 }

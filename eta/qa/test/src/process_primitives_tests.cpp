@@ -264,6 +264,8 @@ struct ProcessFixture {
         : heap(1ull << 22),
           intern_table(),
           vm(heap, intern_table) {
+        /// make_list/make_alist build inputs with unrooted C++ cons chains; not torture-safe.
+        heap.set_gc_torture(false);
         register_port_primitives(env, heap, intern_table, vm);
         register_process_primitives(env, heap, intern_table, vm);
     }

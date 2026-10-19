@@ -18,6 +18,8 @@
  *   - rest_args_*:            VM::pack_rest_args builds the rest list in a C++ local.
  *   - call_value_*:           VM::call_value holds the caller's closure in a C++ local.
  *   - clp_get_domain_*:       %clp-get-domain conses its result with unrooted tails.
+ *   - os_string_list_*:       build_string_list/alist cons with unrooted tails.
+ *   - regex_*, time_parts_*:  regex match values and time-parts alists built in C++.
  *   - make_closure_*:         OpCode::MakeClosure pops upvalues before allocating.
  *   - copy_term_*:            VM::copy_term holds partial copies and fresh vars in C++ locals.
  *   - json_read_*:            json_to_lisp keeps children in a local vector while recursing.
@@ -424,6 +426,78 @@ BOOST_AUTO_TEST_CASE(clp_get_domain_list_is_not_aliased) {
     BOOST_CHECK(ops::is_boxed(items[0]) && ops::tag(items[0]) == Tag::Symbol);
     BOOST_CHECK_EQUAL(as_int(items[1]), 1);
     BOOST_CHECK_EQUAL(as_int(items[2]), 3);
+}
+
+/**
+ * @test os_string_list_is_not_aliased
+ *
+ * build_string_list (path-split, list-directory, command-line-arguments)
+ * conses with the list so far held only in a C++ local.
+ */
+BOOST_AUTO_TEST_CASE(os_string_list_is_not_aliased) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.path_split
+  (define result (path-split "alpha/beta/gamma/delta")))
+)eta");
+
+    auto items = list_items(h.driver.heap(), result);
+    BOOST_REQUIRE_EQUAL(items.size(), 4u);
+}
+
+/**
+ * @test regex_match_value_keeps_spans_alive
+ *
+ * make_match_value collects each group's span (a heap pair) in a C++ vector
+ * while later spans, the groups vector and the payload allocate.
+ */
+BOOST_AUTO_TEST_CASE(regex_match_value_keeps_spans_alive) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.regex
+  (define rx (%regex-compile "(a)(b)(c)" '()))
+  (define result (%regex-search rx "xxabc" 0)))
+)eta");
+
+    auto& heap = h.driver.heap();
+    const auto* payload = as_vector(heap, result);
+    BOOST_REQUIRE_MESSAGE(payload != nullptr, "match value is not a live vector");
+    BOOST_REQUIRE_EQUAL(payload->elements.size(), 5u);
+    BOOST_CHECK_EQUAL(as_int(payload->elements[0]), 2);
+    BOOST_CHECK_EQUAL(as_int(payload->elements[1]), 5);
+
+    const auto* groups = as_vector(heap, payload->elements[2]);
+    BOOST_REQUIRE_MESSAGE(groups != nullptr, "groups is not a live vector");
+    BOOST_REQUIRE_EQUAL(groups->elements.size(), 4u);
+    for (std::size_t i = 0; i < groups->elements.size(); ++i) {
+        const auto* span = as_cons(heap, groups->elements[i]);
+        BOOST_REQUIRE_MESSAGE(span != nullptr, "group " << i << " span is not a live pair");
+        const int64_t expected_start = (i == 0) ? 2 : static_cast<int64_t>(i + 1);
+        BOOST_CHECK_EQUAL(as_int(span->car), expected_start);
+    }
+}
+
+/**
+ * @test time_parts_alist_is_not_aliased
+ *
+ * build_parts_alist prepends ten (key . value) pairs with the list so far
+ * held only in a C++ local.
+ */
+BOOST_AUTO_TEST_CASE(time_parts_alist_is_not_aliased) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.time_parts
+  (define result (%time-utc-parts 0)))
+)eta");
+
+    auto& heap = h.driver.heap();
+    auto items = list_items(heap, result);
+    BOOST_REQUIRE_EQUAL(items.size(), 10u);
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        const auto* pair = as_cons(heap, items[i]);
+        BOOST_REQUIRE_MESSAGE(pair != nullptr, "entry " << i << " is not a live pair");
+        BOOST_CHECK(ops::is_boxed(pair->car) && ops::tag(pair->car) == Tag::Symbol);
+    }
 }
 
 /**

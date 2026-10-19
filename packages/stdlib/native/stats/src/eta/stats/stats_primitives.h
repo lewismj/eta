@@ -93,6 +93,8 @@ column_to_eigen(types::FactTable& ft, std::size_t col, Heap& heap, const char* w
 /// Convert an Eigen::VectorXd to an Eta list of flonums (built in reverse).
 inline std::expected<LispVal, RuntimeError>
 eigen_to_list(const Eigen::VectorXd& v, Heap& heap) {
+    /// The list built so far is held only in `result` while the next cell allocates.
+    auto roots = heap.make_external_root_frame();
     LispVal result = Nil;
     for (Eigen::Index i = v.size() - 1; i >= 0; --i) {
         auto enc = ops::encode(v(i));
@@ -101,6 +103,7 @@ eigen_to_list(const Eigen::VectorXd& v, Heap& heap) {
         auto cell = make_cons(heap, *enc, result);
         if (!cell) return std::unexpected(cell.error());
         result = *cell;
+        roots.push(result);
     }
     return result;
 }
@@ -108,6 +111,8 @@ eigen_to_list(const Eigen::VectorXd& v, Heap& heap) {
 /// Convert an Eigen::MatrixXd to a nested Eta list (list of row-lists).
 inline std::expected<LispVal, RuntimeError>
 matrix_to_list(const Eigen::MatrixXd& m, Heap& heap) {
+    /// Both the current row and the outer list are held only in locals while cells allocate.
+    auto roots = heap.make_external_root_frame();
     LispVal result = Nil;
     for (Eigen::Index i = m.rows() - 1; i >= 0; --i) {
         LispVal row = Nil;
@@ -117,10 +122,12 @@ matrix_to_list(const Eigen::MatrixXd& m, Heap& heap) {
             auto cell = make_cons(heap, *enc, row);
             if (!cell) return std::unexpected(cell.error());
             row = *cell;
+            roots.push(row);
         }
         auto cell = make_cons(heap, row, result);
         if (!cell) return std::unexpected(cell.error());
         result = *cell;
+        roots.push(result);
     }
     return result;
 }
@@ -417,15 +424,20 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
             p_values(i) = (se_beta(i) > 0.0) ? stats::t_pvalue_two_tailed(t_stats(i), df_resid) : 1.0;
         }
 
-        /// Build the result alist
+        /// Build the result alist; every list, pair and partial chain is held only in a local.
+        auto roots = heap.make_external_root_frame();
         auto coeff_list = eigen_to_list(beta, heap);
         if (!coeff_list) return std::unexpected(coeff_list.error());
+        roots.push(*coeff_list);
         auto se_list = eigen_to_list(se_beta, heap);
         if (!se_list) return std::unexpected(se_list.error());
+        roots.push(*se_list);
         auto t_list = eigen_to_list(t_stats, heap);
         if (!t_list) return std::unexpected(t_list.error());
+        roots.push(*t_list);
         auto p_list = eigen_to_list(p_values, heap);
         if (!p_list) return std::unexpected(p_list.error());
+        roots.push(*p_list);
 
         auto r2_enc = ops::encode(r_squared);
         if (!r2_enc) return std::unexpected(stats_error("%stats-ols-multi: encoding error"));
@@ -437,26 +449,33 @@ inline void register_stats_primitives(BuiltinEnvironment& env, Heap& heap,
         /// Build alist pairs
         auto p7 = make_alist_pair(heap, intern_table, "residual-se",   *rse_enc);
         if (!p7) return std::unexpected(p7.error());
+        roots.push(*p7);
         auto p6 = make_alist_pair(heap, intern_table, "adj-r-squared", *ar2_enc);
         if (!p6) return std::unexpected(p6.error());
+        roots.push(*p6);
         auto p5 = make_alist_pair(heap, intern_table, "r-squared",     *r2_enc);
         if (!p5) return std::unexpected(p5.error());
+        roots.push(*p5);
         auto p4 = make_alist_pair(heap, intern_table, "p-values",      *p_list);
         if (!p4) return std::unexpected(p4.error());
+        roots.push(*p4);
         auto p3 = make_alist_pair(heap, intern_table, "t-stats",       *t_list);
         if (!p3) return std::unexpected(p3.error());
+        roots.push(*p3);
         auto p2 = make_alist_pair(heap, intern_table, "std-errors",    *se_list);
         if (!p2) return std::unexpected(p2.error());
+        roots.push(*p2);
         auto p1 = make_alist_pair(heap, intern_table, "coefficients",  *coeff_list);
         if (!p1) return std::unexpected(p1.error());
+        roots.push(*p1);
 
         /// Chain into alist
-        auto l7 = make_cons(heap, *p7, Nil);    if (!l7) return std::unexpected(l7.error());
-        auto l6 = make_cons(heap, *p6, *l7);    if (!l6) return std::unexpected(l6.error());
-        auto l5 = make_cons(heap, *p5, *l6);    if (!l5) return std::unexpected(l5.error());
-        auto l4 = make_cons(heap, *p4, *l5);    if (!l4) return std::unexpected(l4.error());
-        auto l3 = make_cons(heap, *p3, *l4);    if (!l3) return std::unexpected(l3.error());
-        auto l2 = make_cons(heap, *p2, *l3);    if (!l2) return std::unexpected(l2.error());
+        auto l7 = make_cons(heap, *p7, Nil);    if (!l7) return std::unexpected(l7.error()); roots.push(*l7);
+        auto l6 = make_cons(heap, *p6, *l7);    if (!l6) return std::unexpected(l6.error()); roots.push(*l6);
+        auto l5 = make_cons(heap, *p5, *l6);    if (!l5) return std::unexpected(l5.error()); roots.push(*l5);
+        auto l4 = make_cons(heap, *p4, *l5);    if (!l4) return std::unexpected(l4.error()); roots.push(*l4);
+        auto l3 = make_cons(heap, *p3, *l4);    if (!l3) return std::unexpected(l3.error()); roots.push(*l3);
+        auto l2 = make_cons(heap, *p2, *l3);    if (!l2) return std::unexpected(l2.error()); roots.push(*l2);
         auto l1 = make_cons(heap, *p1, *l2);    if (!l1) return std::unexpected(l1.error());
         return *l1;
     });

@@ -1102,11 +1102,14 @@ void register_csv_builtins(BuiltinEnvironment& env,
             csv::CSVRow row;
             if (!read_next_row(**reader, **backend, row)) return False;
 
+            /// Large integers are heap-boxed and held only in `values` until make_vector.
+            auto roots = heap.make_external_root_frame();
             std::vector<LispVal> values;
             values.reserve(row.size());
             for (std::size_t i = 0; i < row.size(); ++i) {
                 auto typed = parse_typed_value(heap, intern_table, **reader, row[i].get<csv::string_view>(), "%csv-read-typed-row");
                 if (!typed) return std::unexpected(typed.error());
+                roots.push(*typed);
                 values.push_back(*typed);
             }
 
@@ -1300,6 +1303,13 @@ void register_csv_builtins(BuiltinEnvironment& env,
             auto table_val = make_fact_table(heap, columns);
             if (!table_val) return std::unexpected(table_val.error());
 
+            /**
+             * The table is held only in this local (and written through a raw
+             * pointer) for the whole load, and boxed cells allocate; keep it rooted.
+             */
+            auto table_roots = heap.make_external_root_frame();
+            table_roots.push(*table_val);
+
             auto* table = heap.try_get_as<ObjectKind::FactTable, types::FactTable>(ops::payload(*table_val));
             if (!table) {
                 return std::unexpected(RuntimeError{
@@ -1314,6 +1324,7 @@ void register_csv_builtins(BuiltinEnvironment& env,
                     return type_error("%fact-table-load-csv: row width does not match column count");
                 }
 
+                auto row_roots = heap.make_external_root_frame();
                 std::vector<LispVal> values;
                 values.reserve(columns.size());
                 for (std::size_t i = 0; i < columns.size(); ++i) {
@@ -1325,6 +1336,7 @@ void register_csv_builtins(BuiltinEnvironment& env,
                         options->reader.null_tokens,
                         "%fact-table-load-csv");
                     if (!cell) return std::unexpected(cell.error());
+                    row_roots.push(*cell);
                     values.push_back(*cell);
                 }
 

@@ -1342,9 +1342,13 @@ inline void register_nng_primitives(
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::InternalError, "monitor: heap allocation failed"}});
             }
+            /// Each partial tail is held only in a local while the next cell allocates.
+            auto down_roots = heap.make_external_root_frame();
             auto tail2 = make_cons(heap, *str_reason, nanbox::Nil);
-            auto tail1 = make_cons(heap, *str_ep,     *tail2);
-            auto down_list = make_cons(heap, *sym_down, *tail1);
+            if (tail2) down_roots.push(*tail2);
+            auto tail1 = make_cons(heap, *str_ep,     tail2 ? *tail2 : nanbox::Nil);
+            if (tail1) down_roots.push(*tail1);
+            auto down_list = make_cons(heap, *sym_down, tail1 ? *tail1 : nanbox::Nil);
             if (!tail2 || !tail1 || !down_list) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::InternalError, "monitor: cons allocation failed"}});
@@ -1442,9 +1446,13 @@ inline void register_nng_primitives(
                     RuntimeErrorCode::InternalError,
                     "enable-heartbeat: heap allocation failed"}});
             }
+            /// Each partial tail is held only in a local while the next cell allocates.
+            auto down_roots = heap.make_external_root_frame();
             auto tail2 = make_cons(heap, *str_reason, nanbox::Nil);
-            auto tail1 = make_cons(heap, *str_ep,     *tail2);
-            auto down_list = make_cons(heap, *sym_down, *tail1);
+            if (tail2) down_roots.push(*tail2);
+            auto tail1 = make_cons(heap, *str_ep,     tail2 ? *tail2 : nanbox::Nil);
+            if (tail1) down_roots.push(*tail1);
+            auto down_list = make_cons(heap, *sym_down, tail1 ? *tail1 : nanbox::Nil);
             if (!tail2 || !tail1 || !down_list) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::InternalError,

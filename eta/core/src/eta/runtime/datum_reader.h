@@ -81,29 +81,37 @@ sexpr_to_value(const dr::SExpr& expr, Heap& heap, InternTable& intern) {
              * Build the list from back to front.
              * Start with the tail (Nil for proper lists, converted tail for dotted).
              */
+            /// The tail built so far is held only in a local while later elements allocate.
+            auto roots = heap.make_external_root_frame();
             LispVal tail = nanbox::Nil;
             if (node.dotted && node.tail) {
                 auto tail_res = sexpr_to_value(*node.tail, heap, intern);
                 if (!tail_res.has_value()) return std::unexpected(tail_res.error());
                 tail = *tail_res;
+                roots.push(tail);
             }
 
             /// Walk elements in reverse, consing each onto the tail.
             for (auto it = node.elems.rbegin(); it != node.elems.rend(); ++it) {
                 auto elem_res = sexpr_to_value(**it, heap, intern);
                 if (!elem_res.has_value()) return std::unexpected(elem_res.error());
+                roots.push(*elem_res);
                 auto cons_res = make_cons(heap, *elem_res, tail);
                 if (!cons_res.has_value()) return std::unexpected(cons_res.error());
                 tail = *cons_res;
+                roots.push(tail);
             }
             return tail;
         }
         else if constexpr (std::is_same_v<T, dr::Vector>) {
+            /// Decoded elements are held only in `elems` until make_vector.
+            auto roots = heap.make_external_root_frame();
             std::vector<LispVal> elems;
             elems.reserve(node.elems.size());
             for (const auto& e : node.elems) {
                 auto res = sexpr_to_value(*e, heap, intern);
                 if (!res.has_value()) return std::unexpected(res.error());
+                roots.push(*res);
                 elems.push_back(*res);
             }
             return make_vector(heap, std::move(elems));
@@ -129,8 +137,11 @@ sexpr_to_value(const dr::SExpr& expr, Heap& heap, InternTable& intern) {
             if (!inner_res.has_value()) return std::unexpected(inner_res.error());
 
             /// Build (keyword inner) as two-element list
+            auto roots = heap.make_external_root_frame();
+            roots.push(*inner_res);
             auto inner_cons = make_cons(heap, *inner_res, nanbox::Nil);
             if (!inner_cons.has_value()) return std::unexpected(inner_cons.error());
+            roots.push(*inner_cons);
             return make_cons(heap, *sym_res, *inner_cons);
         }
         else if constexpr (std::is_same_v<T, dr::ModuleForm>) {

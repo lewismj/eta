@@ -710,14 +710,18 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
     env.register_builtin("nn/parameters", 1, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
         auto* m = get_nn_module(heap, args[0]);
         if (!m) return std::unexpected(torch_error("nn/parameters: nn-module required"));
+        /// Each new tensor and the list so far are held only in locals while the next object allocates.
+        auto roots = heap.make_external_root_frame();
         LispVal result = Nil;
         auto params = m->module->parameters();
         for (int64_t i = static_cast<int64_t>(params.size()) - 1; i >= 0; --i) {
             auto tv = factory::make_tensor(heap, params[i]);
             if (!tv) return std::unexpected(torch_error("nn/parameters: allocation failed"));
+            roots.push(*tv);
             auto cell = memory::factory::make_cons(heap, *tv, result);
             if (!cell) return std::unexpected(torch_error("nn/parameters: allocation failed"));
             result = *cell;
+            roots.push(result);
         }
         return result;
     });

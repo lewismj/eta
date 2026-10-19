@@ -534,11 +534,14 @@ std::expected<std::size_t, RuntimeError> decode_non_negative_index(
 }
 
 std::expected<LispVal, RuntimeError> vector_to_list(Heap& heap, const std::vector<LispVal>& items) {
+    /// The list built so far is held only in `out` while the next cell allocates.
+    auto roots = heap.make_external_root_frame();
     LispVal out = Nil;
     for (auto it = items.rbegin(); it != items.rend(); ++it) {
         auto cell = make_cons(heap, *it, out);
         if (!cell) return std::unexpected(cell.error());
         out = *cell;
+        roots.push(out);
     }
     return out;
 }
@@ -562,10 +565,18 @@ std::expected<LispVal, RuntimeError> make_match_value(
     const std::size_t start = absolute_base + static_cast<std::size_t>(match.position(0));
     const std::size_t end = start + static_cast<std::size_t>(match.length(0));
 
+    /**
+     * Spans, the groups vector and the named rows are all held in C++ locals
+     * until the final payload vector is built; root each as it is created.
+     */
+    auto roots = heap.make_external_root_frame();
+
     auto start_val = index_to_lisp(heap, start, who);
     if (!start_val) return std::unexpected(start_val.error());
+    roots.push(*start_val);
     auto end_val = index_to_lisp(heap, end, who);
     if (!end_val) return std::unexpected(end_val.error());
+    roots.push(*end_val);
 
     std::vector<LispVal> groups;
     groups.reserve(match.size());
@@ -578,10 +589,12 @@ std::expected<LispVal, RuntimeError> make_match_value(
         const std::size_t g_end = g_start + static_cast<std::size_t>(match.length(i));
         auto span = make_span(heap, g_start, g_end, who);
         if (!span) return std::unexpected(span.error());
+        roots.push(*span);
         groups.push_back(*span);
     }
     auto groups_vec = make_vector(heap, std::move(groups));
     if (!groups_vec) return std::unexpected(groups_vec.error());
+    roots.push(*groups_vec);
 
     std::vector<LispVal> named_rows;
     named_rows.reserve(regex_obj.named_group_indices.size());
@@ -596,14 +609,17 @@ std::expected<LispVal, RuntimeError> make_match_value(
             auto span = make_span(heap, g_start, g_end, who);
             if (!span) return std::unexpected(span.error());
             span_or_false = *span;
+            roots.push(span_or_false);
         }
 
         auto row = make_cons(heap, *sym, span_or_false);
         if (!row) return std::unexpected(row.error());
+        roots.push(*row);
         named_rows.push_back(*row);
     }
     auto named_list = vector_to_list(heap, named_rows);
     if (!named_list) return std::unexpected(named_list.error());
+    roots.push(*named_list);
 
     std::vector<LispVal> payload{
         *start_val, *end_val, *groups_vec, *named_list, input_value
@@ -800,6 +816,8 @@ void register_regex_builtins(BuiltinEnvironment& env,
             auto input = require_string(intern_table, args[1], "%regex-find-all", "second argument");
             if (!input) return std::unexpected(input.error());
 
+            /// Earlier match values are held only in `matches` while later ones allocate.
+            auto match_roots = heap.make_external_root_frame();
             std::vector<LispVal> matches;
             auto search_begin = input->cbegin();
             while (search_begin <= input->cend()) {
@@ -812,6 +830,7 @@ void register_regex_builtins(BuiltinEnvironment& env,
                 auto match_value =
                     make_match_value(heap, intern_table, *(*regex_obj), match, base, args[1], "%regex-find-all");
                 if (!match_value) return std::unexpected(match_value.error());
+                match_roots.push(*match_value);
                 matches.push_back(*match_value);
 
                 auto match_begin = search_begin + match.position(0);
@@ -987,6 +1006,8 @@ void register_regex_builtins(BuiltinEnvironment& env,
             auto input = require_string(intern_table, args[1], "%regex-find-all-str", "second argument");
             if (!input) return std::unexpected(input.error());
 
+            /// Earlier match values are held only in `matches` while later ones allocate.
+            auto match_roots = heap.make_external_root_frame();
             std::vector<LispVal> matches;
             auto search_begin = input->cbegin();
             while (search_begin <= input->cend()) {
@@ -999,6 +1020,7 @@ void register_regex_builtins(BuiltinEnvironment& env,
                 auto match_value =
                     make_match_value(heap, intern_table, *regex_obj, match, base, args[1], "%regex-find-all-str");
                 if (!match_value) return std::unexpected(match_value.error());
+                match_roots.push(*match_value);
                 matches.push_back(*match_value);
 
                 auto match_begin = search_begin + match.position(0);

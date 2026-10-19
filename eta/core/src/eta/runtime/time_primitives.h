@@ -172,8 +172,13 @@ inline std::expected<void, RuntimeError>
 prepend_alist_pair(
     Heap& heap, InternTable& intern_table, const char* key, LispVal value, LispVal& list_out)
 {
+    /// The list so far and the new pair are held only in locals while the cell allocates.
+    auto roots = heap.make_external_root_frame();
+    roots.push(list_out);
+    roots.push(value);
     auto pair = make_alist_pair(heap, intern_table, key, value);
     if (!pair) return std::unexpected(pair.error());
+    roots.push(*pair);
     auto cell = make_cons(heap, *pair, list_out);
     if (!cell) return std::unexpected(cell.error());
     list_out = *cell;
@@ -200,15 +205,20 @@ build_parts_alist(
     const std::tm& tm_parts,
     std::int32_t offset_minutes)
 {
+    /// `result` is held only in this local between steps; root each new head.
+    auto roots = heap.make_external_root_frame();
     LispVal result = Nil;
 
     auto add_fix = [&](const char* key, std::int64_t value) -> std::expected<void, RuntimeError> {
-        return prepend_alist_fixnum(heap, intern_table, key, value, result);
+        auto r = prepend_alist_fixnum(heap, intern_table, key, value, result);
+        if (r) roots.push(result);
+        return r;
     };
 
     if (auto r = add_fix("offset-minutes", offset_minutes); !r) return std::unexpected(r.error());
     if (auto r = prepend_alist_pair(heap, intern_table, "is-dst", tm_parts.tm_isdst > 0 ? True : False, result); !r)
         return std::unexpected(r.error());
+    roots.push(result);
     if (auto r = add_fix("yearday", tm_parts.tm_yday); !r) return std::unexpected(r.error());
     if (auto r = add_fix("weekday", tm_parts.tm_wday); !r) return std::unexpected(r.error());
     if (auto r = add_fix("second", tm_parts.tm_sec); !r) return std::unexpected(r.error());
