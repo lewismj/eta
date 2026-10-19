@@ -1245,6 +1245,8 @@ BOOST_AUTO_TEST_CASE(large_bytevector_soft_limit_stress) {
 
     /// Soft limit: fits exactly 5 ByteVectors.  The 6th allocation triggers GC.
     Heap heap(bv_tracked * 5);
+    /// Asserts exactly when the soft limit triggers the callback; torture would fire it early.
+    heap.set_gc_torture(false);
     MarkSweepGC gc;
     std::vector<LispVal> roots;
 

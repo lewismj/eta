@@ -726,6 +726,8 @@ std::vector<std::string> Driver::discover_module_names() const {
 void Driver::collect_garbage_with_registry_roots() {
     auto roots = heap_.make_external_root_frame();
     registry_.push_constant_roots(roots);
+    /// The actor runtime holds the current-mailbox socket outside the heap.
+    if (actor_runtime_) roots.push(actor_runtime_->mailbox());
     vm_.collect_garbage();
 }
 
