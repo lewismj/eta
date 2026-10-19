@@ -649,6 +649,13 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
      */
     temp_roots_.push_back(proc);
 
+    /**
+     * The caller's closure is saved only in this C++ local: current_closure_
+     * is cleared below, so the return frame records Nil.  Keep it rooted for
+     * the nested run so it is still live when restored.
+     */
+    temp_roots_.push_back(saved_closure);
+
     /// Helper: restore outer state and truncate any accumulated frames
     auto restore = [&]() {
         stack_.resize(nested_sp);

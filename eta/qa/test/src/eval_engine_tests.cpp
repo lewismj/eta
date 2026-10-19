@@ -50,6 +50,13 @@ public:
         eta::interpreter::register_all_primitives(
             builtins_, heap_, intern_table_, vm_, {});
         eval_engine_.install_builtin(builtins_);
+
+        /// A bare VM does not mark function constants; root them as the Driver does.
+        heap_.set_gc_callback([this]() {
+            auto roots = heap_.make_external_root_frame();
+            registry_.push_constant_roots(roots);
+            vm_.collect_garbage();
+        });
     }
 
     std::optional<fs::path> resolve_import_path(

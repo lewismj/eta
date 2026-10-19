@@ -61,7 +61,9 @@ struct VmCallHarness {
     InternTable intern_table;
     vm::VM vm{heap, intern_table};
     BuiltinEnvironment env;
-    std::vector<LispVal> globals;
+
+    /// Install into the VM's globals so the primitives are GC roots.
+    std::vector<LispVal>& globals = vm.globals();
 
     VmCallHarness() {
         register_core_primitives(env, heap, intern_table, &vm);

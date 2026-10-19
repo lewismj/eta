@@ -1511,10 +1511,17 @@ std::expected<LispVal, RuntimeError> make_three_list(
     LispVal first,
     LispVal second,
     LispVal third) {
+    /// The elements and each partial tail are held only in locals while the next cell allocates.
+    auto roots = heap.make_external_root_frame();
+    roots.push(first);
+    roots.push(second);
+    roots.push(third);
     auto tail = make_cons(heap, third, Nil);
     if (!tail) return std::unexpected(tail.error());
+    roots.push(*tail);
     auto middle = make_cons(heap, second, *tail);
     if (!middle) return std::unexpected(middle.error());
+    roots.push(*middle);
     return make_cons(heap, first, *middle);
 }
 
@@ -1641,8 +1648,11 @@ void register_process_primitives(BuiltinEnvironment& env,
             return prefixed_error(kWaitFailedPrefix, "process exited without status");
         }
 
+        /// Each result (bytevectors in binary mode) is held only in a local while the next allocates.
+        auto result_roots = heap.make_external_root_frame();
         auto exit_code_value = make_exit_code_value(heap, *exit_code);
         if (!exit_code_value) return std::unexpected(exit_code_value.error());
+        result_roots.push(*exit_code_value);
 
         auto stdout_value = make_captured_stream_value(
             heap,
@@ -1651,6 +1661,7 @@ void register_process_primitives(BuiltinEnvironment& env,
             options->binary,
             stdout_capture);
         if (!stdout_value) return std::unexpected(stdout_value.error());
+        result_roots.push(*stdout_value);
 
         auto stderr_value = make_captured_stream_value(
             heap,

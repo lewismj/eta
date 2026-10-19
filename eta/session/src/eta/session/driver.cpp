@@ -922,6 +922,10 @@ void Driver::run_spawned_actor(runtime::types::Pid pid,
             return;
         }
 
+        /// Keep the payload's constants rooted until child_registry (rooted by the GC callback) holds them.
+        auto payload_roots = state->child_heap->make_external_root_frame();
+        etac_payload->registry.push_constant_roots(payload_roots);
+
         const std::uint32_t base_idx = static_cast<std::uint32_t>(state->child_registry->size());
         for (const auto& func : etac_payload->registry.all()) {
             runtime::vm::BytecodeFunction copy = func;

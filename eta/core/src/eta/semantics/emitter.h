@@ -112,7 +112,8 @@ public:
                      runtime::memory::heap::Heap& heap,
                      runtime::memory::intern::InternTable& intern_table,
                      BytecodeFunctionRegistry& registry)
-        : sem_(sem), heap_(heap), intern_table_(intern_table), registry_(registry) {}
+        : sem_(sem), heap_(heap), intern_table_(intern_table), registry_(registry),
+          constant_roots_(heap.make_external_root_frame()) {}
 
     runtime::vm::BytecodeFunction* emit();
 
@@ -123,6 +124,13 @@ private:
     runtime::memory::heap::Heap& heap_;
     runtime::memory::intern::InternTable& intern_table_;
     BytecodeFunctionRegistry& registry_;
+
+    /**
+     * A function's constants live in its Context until the function is added
+     * to the registry, so registry-based GC roots do not see them yet.  Hold
+     * every heap-backed constant here for the emitter's lifetime.
+     */
+    runtime::memory::heap::Heap::ExternalRootFrame constant_roots_;
 
     struct Context {
         runtime::vm::BytecodeFunction func;

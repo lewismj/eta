@@ -123,6 +123,9 @@ void Emitter::emit_node(const core::Node* node, Context& ctx) {
 uint32_t Emitter::add_const(LispVal val, Context& ctx) {
     uint32_t idx = static_cast<uint32_t>(ctx.func.constants.size());
     ctx.func.constants.push_back(val);
+    if (ops::is_boxed(val) && ops::tag(val) == Tag::HeapObject) {
+        constant_roots_.push(val);
+    }
     return idx;
 }
 

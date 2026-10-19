@@ -616,6 +616,13 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
 {
     EtacFile result;
 
+    /**
+     * Decoded constants are held only in `result` until the caller registers
+     * the functions, so keep each one rooted while later constants allocate.
+     * Callers must root `result.registry` themselves once this returns.
+     */
+    auto constant_roots = heap_.make_external_root_frame();
+
     /// Header
     char magic[4];
     is.read(magic, 4);
@@ -779,6 +786,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         for (uint32_t i = 0; i < num_consts; ++i) {
             auto c = read_constant(is);
             if (!c) return std::unexpected(c.error());
+            constant_roots.push(*c);
             func.constants.push_back(*c);
         }
 

@@ -14,7 +14,9 @@
  *                             PrimitiveSpecialisation pass (etac -O) emits Cons, so
  *                             these compile through that pass instead of the Driver.
  *   - values_opcode_*:        OpCode::Values pops into a vector before allocating.
+ *   - emitter_*:              constants are unrooted until their function reaches the registry.
  *   - rest_args_*:            VM::pack_rest_args builds the rest list in a C++ local.
+ *   - call_value_*:           VM::call_value holds the caller's closure in a C++ local.
  *   - make_closure_*:         OpCode::MakeClosure pops upvalues before allocating.
  *   - copy_term_*:            VM::copy_term holds partial copies and fresh vars in C++ locals.
  *   - json_read_*:            json_to_lisp keeps children in a local vector while recursing.
@@ -332,6 +334,34 @@ BOOST_AUTO_TEST_CASE(values_opcode_keeps_heap_values_alive) {
 }
 
 /**
+ * @test emitter_keeps_earlier_constants_alive
+ *
+ * While a function is being emitted its constants live only in the emitter's
+ * Context, not the registry.  Building the second quoted list allocates and
+ * must not sweep the first.
+ */
+BOOST_AUTO_TEST_CASE(emitter_keeps_earlier_constants_alive) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.two_quotes
+  (define (two-lists) (cons '(1 2) '(3 4)))
+  (define result (two-lists)))
+)eta");
+
+    auto& heap = h.driver.heap();
+    const auto* pair = as_cons(heap, result);
+    BOOST_REQUIRE_MESSAGE(pair != nullptr, "result is not a live pair");
+    auto first = list_items(heap, pair->car);
+    auto second = list_items(heap, pair->cdr);
+    BOOST_REQUIRE_EQUAL(first.size(), 2u);
+    BOOST_REQUIRE_EQUAL(second.size(), 2u);
+    BOOST_CHECK_EQUAL(as_int(first[0]), 1);
+    BOOST_CHECK_EQUAL(as_int(first[1]), 2);
+    BOOST_CHECK_EQUAL(as_int(second[0]), 3);
+    BOOST_CHECK_EQUAL(as_int(second[1]), 4);
+}
+
+/**
  * @test rest_args_list_is_not_aliased
  *
  * VM::pack_rest_args conses the rest list one cell at a time with the list
@@ -351,6 +381,26 @@ BOOST_AUTO_TEST_CASE(rest_args_list_is_not_aliased) {
     BOOST_CHECK_EQUAL(as_int(items[0]), 1);
     BOOST_CHECK_EQUAL(as_int(items[1]), 2);
     BOOST_CHECK_EQUAL(as_int(items[2]), 3);
+}
+
+/**
+ * @test call_value_keeps_caller_closure_alive
+ *
+ * When a builtin such as map calls back into Eta, VM::call_value saves the
+ * running closure in a C++ local and clears current_closure_.  The caller's
+ * closure must stay live so its upvalues can be read after the callback.
+ */
+BOOST_AUTO_TEST_CASE(call_value_keeps_caller_closure_alive) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.call_value
+  (define (make-counter k)
+    (lambda (xs)
+      (let ((boxed (map (lambda (x) (vector x)) xs)))
+        (+ k (vector-ref (car boxed) 0)))))
+  (define result ((make-counter 100) '(5 6 7))))
+)eta");
+    BOOST_TEST(as_int(result) == 105);
 }
 
 /**

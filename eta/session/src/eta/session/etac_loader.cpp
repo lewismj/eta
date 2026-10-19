@@ -118,6 +118,13 @@ bool EtacLoader::run_etac_file(const fs::path& path) {
     }
     auto& etac = *etac_res;
 
+    /**
+     * The payload's constants are not in any registry until execution
+     * registers its functions, and loading imports first can collect.
+     */
+    auto payload_roots = host_.heap().make_external_root_frame();
+    etac.registry.push_constant_roots(payload_roots);
+
     runtime::vm::FreshnessContext freshness;
     freshness.expected_compiler_id = runtime::vm::BytecodeSerializer::default_compiler_id();
     freshness.expected_builtin_count = static_cast<uint32_t>(host_.builtin_count());
