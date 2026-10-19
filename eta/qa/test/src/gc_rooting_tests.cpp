@@ -14,6 +14,7 @@
  *                             PrimitiveSpecialisation pass (etac -O) emits Cons, so
  *                             these compile through that pass instead of the Driver.
  *   - values_opcode_*:        OpCode::Values pops into a vector before allocating.
+ *   - rest_args_*:            VM::pack_rest_args builds the rest list in a C++ local.
  *   - make_closure_*:         OpCode::MakeClosure pops upvalues before allocating.
  *   - copy_term_*:            VM::copy_term holds partial copies and fresh vars in C++ locals.
  *   - json_read_*:            json_to_lisp keeps children in a local vector while recursing.
@@ -328,6 +329,28 @@ BOOST_AUTO_TEST_CASE(values_opcode_keeps_heap_values_alive) {
         (+ (vector-ref a 0) (vector-ref a 1) (vector-ref b 0) (vector-ref b 1))))))
 )eta");
     BOOST_TEST(as_int(result) == 10);
+}
+
+/**
+ * @test rest_args_list_is_not_aliased
+ *
+ * VM::pack_rest_args conses the rest list one cell at a time with the list
+ * so far held only in a C++ local.  A swept cell is reused for the next one,
+ * turning the rest list into a cycle.
+ */
+BOOST_AUTO_TEST_CASE(rest_args_list_is_not_aliased) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.rest_args
+  (define (collect a . rest) rest)
+  (define result (collect 0 1 2 3)))
+)eta");
+
+    auto items = list_items(h.driver.heap(), result);
+    BOOST_REQUIRE_EQUAL(items.size(), 3u);
+    BOOST_CHECK_EQUAL(as_int(items[0]), 1);
+    BOOST_CHECK_EQUAL(as_int(items[1]), 2);
+    BOOST_CHECK_EQUAL(as_int(items[2]), 3);
 }
 
 /**

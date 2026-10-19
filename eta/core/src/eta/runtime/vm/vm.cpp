@@ -2091,12 +2091,19 @@ std::expected<void, RuntimeError> VM::pack_rest_args(uint32_t argc, uint32_t req
      * Build a list from args at fp_+required .. fp_+argc-1
      * and store the list at fp_+required (the rest param slot).
      */
+    /// The list built so far is held only in `rest_list` while the next cell allocates.
+    const auto temp_root_mark = temp_roots_.size();
     LispVal rest_list = Nil;
     for (int32_t i = static_cast<int32_t>(argc) - 1; i >= static_cast<int32_t>(required); --i) {
         auto cons = make_cons(heap_, stack_[fp_ + i], rest_list);
-        if (!cons) return std::unexpected(cons.error());
+        if (!cons) {
+            temp_roots_.resize(temp_root_mark);
+            return std::unexpected(cons.error());
+        }
         rest_list = *cons;
+        temp_roots_.push_back(rest_list);
     }
+    temp_roots_.resize(temp_root_mark);
     stack_[fp_ + required] = rest_list;
     return {};
 }

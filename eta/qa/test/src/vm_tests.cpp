@@ -3127,6 +3127,12 @@ struct FinalizerVMFixture {
     memory::heap::Heap heap{1024 * 1024};
     memory::intern::InternTable intern_table;
 
+    /**
+     * These tests hold deliberately unreachable objects in C++ locals and
+     * choose exactly when to collect, so they opt out of ETA_GC_TORTURE.
+     */
+    FinalizerVMFixture() { heap.set_gc_torture(false); }
+
     static BytecodeFunction constant_return_function(LispVal value) {
         BytecodeFunction func;
         func.name = "finalizer_safe_point";
