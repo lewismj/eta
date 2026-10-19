@@ -137,23 +137,30 @@ std::expected<LispVal, RuntimeError> json_to_lisp(
         return make_string(heap, intern_table, value.as_string());
     }
     if (value.is_array()) {
+        /// Decoded children are held only in `elems` until make_vector; root them meanwhile.
+        auto roots = heap.make_external_root_frame();
         std::vector<LispVal> elems;
         elems.reserve(value.as_array().size());
         for (const auto& item : value.as_array()) {
             auto mapped = json_to_lisp(item, keep_integers_exact, env, heap, intern_table);
             if (!mapped) return std::unexpected(mapped.error());
             elems.push_back(*mapped);
+            roots.push(*mapped);
         }
         return make_vector(heap, std::move(elems));
     }
     if (value.is_object()) {
+        /// Keys and values are held only in `kv_args` until hash-map is built; root them meanwhile.
+        auto roots = heap.make_external_root_frame();
         std::vector<LispVal> kv_args;
         kv_args.reserve(value.as_object().size() * 2);
         for (const auto& [k, v] : value.as_object()) {
             auto key_val = make_string(heap, intern_table, k);
             if (!key_val) return std::unexpected(key_val.error());
+            roots.push(*key_val);
             auto mapped = json_to_lisp(v, keep_integers_exact, env, heap, intern_table);
             if (!mapped) return std::unexpected(mapped.error());
+            roots.push(*mapped);
             kv_args.push_back(*key_val);
             kv_args.push_back(*mapped);
         }

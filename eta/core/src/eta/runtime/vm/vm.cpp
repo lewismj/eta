@@ -1138,7 +1138,11 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
                     vals.push_back(pop());
                 }
                 std::reverse(vals.begin(), vals.end());
+                /// Popped values are no longer stack roots; keep them alive across the allocation.
+                const auto temp_root_mark = temp_roots_.size();
+                temp_roots_.insert(temp_roots_.end(), vals.begin(), vals.end());
                 auto mv = make_multiple_values(heap_, std::move(vals));
+                temp_roots_.resize(temp_root_mark);
                 if (!mv) return std::unexpected(mv.error());
                 push(*mv);
                 break;
@@ -1367,7 +1371,12 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
             case OpCode::Cons: {
                 LispVal cdr = pop();
                 LispVal car = pop();
+                /// Popped operands are no longer stack roots; keep them alive across the allocation.
+                const auto temp_root_mark = temp_roots_.size();
+                temp_roots_.push_back(car);
+                temp_roots_.push_back(cdr);
                 auto res = make_cons(heap_, car, cdr);
+                temp_roots_.resize(temp_root_mark);
                 if (!res) return std::unexpected(res.error());
                 push(*res);
                 break;

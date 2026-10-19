@@ -55,6 +55,10 @@ namespace eta::runtime::memory::heap {
             return std::unexpected(HeapError::GCInProgress);
         }
 
+        [[unlikely]] if (gc_torture_.load(std::memory_order_relaxed) && gc_callback_) {
+            gc_callback_();
+        }
+
         /// Soft-limit check (same logic as the general allocate path)
         const auto current_total = total_heap_bytes.load(std::memory_order_relaxed);
         if (current_total + sizeof(types::Cons) > max_heap_soft_limit_) {

@@ -244,6 +244,10 @@ namespace eta::runtime::memory::heap {
                 return std::unexpected(HeapError::GCInProgress);
             }
 
+            [[unlikely]] if (gc_torture_.load(std::memory_order_relaxed) && gc_callback_) {
+                gc_callback_();
+            }
+
             //! Highlight unlikley we use over PAYLOAD_MASK number of heap objects.
             //! Anticipate that no process would use over PAYLOAD_MASK during its lifetime.
             auto id = next_id.fetch_add(1, std::memory_order_relaxed);
@@ -372,6 +376,12 @@ namespace eta::runtime::memory::heap {
 
         void set_gc_callback(std::function<void()> cb) { gc_callback_ = std::move(cb); }
 
+        /**
+         * Test hook: when enabled, every allocation runs the GC callback first.
+         * Exposes values that are held only in C++ locals across an allocation.
+         */
+        void set_gc_torture(bool enabled) noexcept { gc_torture_.store(enabled, std::memory_order_relaxed); }
+
         ExternalRootFrame make_external_root_frame() { return ExternalRootFrame(*this); }
         const std::vector<LispVal>& external_roots() const { return external_roots_; }
 
@@ -445,6 +455,7 @@ namespace eta::runtime::memory::heap {
 
         //! GC pause flag - when true, allocations are rejected
         std::atomic<bool> gc_in_progress_{ false };
+        std::atomic<bool> gc_torture_{ false };
 
         std::function<void()> gc_callback_;
 
