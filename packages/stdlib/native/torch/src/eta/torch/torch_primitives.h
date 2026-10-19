@@ -108,6 +108,8 @@ inline LispVal tensor_to_list(const ::torch::Tensor& t, Heap& heap) {
     auto flat = t.flatten().to(::torch::kFloat64).contiguous();
     auto* data = flat.data_ptr<double>();
     int64_t n = flat.numel();
+    /// The list built so far is held only in `result` while the next cell allocates.
+    auto roots = heap.make_external_root_frame();
     LispVal result = Nil;
     /// Build list in reverse
     for (int64_t i = n - 1; i >= 0; --i) {
@@ -116,6 +118,7 @@ inline LispVal tensor_to_list(const ::torch::Tensor& t, Heap& heap) {
         auto cell = memory::factory::make_cons(heap, *enc, result);
         if (!cell) break;
         result = *cell;
+        roots.push(result);
     }
     return result;
 }
@@ -406,6 +409,8 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
         auto* t = get_tensor(heap, args[0]);
         if (!t) return std::unexpected(torch_error("torch/shape: tensor required"));
         auto sizes = t->tensor.sizes();
+        /// The list built so far is held only in `result` while the next cell allocates.
+        auto roots = heap.make_external_root_frame();
         LispVal result = Nil;
         for (int64_t i = static_cast<int64_t>(sizes.size()) - 1; i >= 0; --i) {
             auto enc = ops::encode(sizes[i]);
@@ -413,6 +418,7 @@ inline void register_torch_primitives(BuiltinEnvironment& env, Heap& heap,
             auto cell = memory::factory::make_cons(heap, *enc, result);
             if (!cell) return std::unexpected(torch_error("torch/shape: allocation error"));
             result = *cell;
+            roots.push(result);
         }
         return result;
     });

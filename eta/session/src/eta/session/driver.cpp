@@ -1005,6 +1005,14 @@ void Driver::run_spawned_actor(runtime::types::Pid pid,
             return;
         }
 
+        /**
+         * The decoder's own roots end when it returns; the decoded upvalues
+         * are held only in capture_payload until make_closure, which allocates.
+         */
+        auto capture_roots = state->child_heap->make_external_root_frame();
+        for (const auto uv : capture_payload->upvals) capture_roots.push(uv);
+        for (const auto& captured_global : capture_payload->globals) capture_roots.push(captured_global.value);
+
         for (const auto& captured_global : capture_payload->globals) {
             if (child_globals.size() <= captured_global.slot) {
                 child_globals.resize(captured_global.slot + 1, runtime::nanbox::Nil);

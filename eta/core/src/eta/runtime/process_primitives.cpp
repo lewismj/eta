@@ -1713,6 +1713,12 @@ void register_process_primitives(BuiltinEnvironment& env,
         ScopedPipeHandle stdout_parent(spawned->stdout_parent);
         ScopedPipeHandle stderr_parent(spawned->stderr_parent);
 
+        /**
+         * Ports are stored in `state`, which is not a heap object until
+         * make_process_handle; root each one so later allocations keep it alive.
+         */
+        auto port_roots = heap.make_external_root_frame();
+
         if ((options->stdin_mode == StdinMode::Pipe || options->stdin_mode == StdinMode::Data)
             && stdin_parent.valid()) {
             if (options->stdin_mode == StdinMode::Data) {
@@ -1724,6 +1730,7 @@ void register_process_primitives(BuiltinEnvironment& env,
                 auto stdin_port = make_port(heap, std::make_shared<NativePipePort>(
                     stdin_parent.release(), NativePipePort::Direction::Output));
                 if (!stdin_port) return std::unexpected(stdin_port.error());
+                port_roots.push(*stdin_port);
                 state->stdin_port = *stdin_port;
             }
         }
@@ -1733,6 +1740,7 @@ void register_process_primitives(BuiltinEnvironment& env,
             auto stdout_port = make_port(heap, std::make_shared<NativePipePort>(
                 stdout_parent.release(), NativePipePort::Direction::Input));
             if (!stdout_port) return std::unexpected(stdout_port.error());
+            port_roots.push(*stdout_port);
             state->stdout_port = *stdout_port;
         }
 
@@ -1741,6 +1749,7 @@ void register_process_primitives(BuiltinEnvironment& env,
             auto stderr_port = make_port(heap, std::make_shared<NativePipePort>(
                 stderr_parent.release(), NativePipePort::Direction::Input));
             if (!stderr_port) return std::unexpected(stderr_port.error());
+            port_roots.push(*stderr_port);
             state->stderr_port = *stderr_port;
         }
 
