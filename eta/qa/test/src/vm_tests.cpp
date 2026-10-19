@@ -37,6 +37,23 @@ struct VMTestFixture {
     }
 
     /**
+     * Point the heap's GC callback at @p vm with registry constants rooted, as
+     * the Driver does; a bare VM does not mark function constants.  The
+     * callback is cleared on scope exit so it never outlives the local VM.
+     */
+    struct GcCallbackScope {
+        memory::heap::Heap& heap;
+        GcCallbackScope(memory::heap::Heap& h, VM& vm, const BytecodeFunctionRegistry& reg) : heap(h) {
+            heap.set_gc_callback([&h, &vm, &reg]() {
+                auto roots = h.make_external_root_frame();
+                reg.push_constant_roots(roots);
+                vm.collect_garbage();
+            });
+        }
+        ~GcCallbackScope() { heap.set_gc_callback({}); }
+    };
+
+    /**
      * @brief Compile and execute a multi-module program, returning the value
      * of the 'result' global from the last module.
      *
@@ -75,7 +92,11 @@ struct VMTestFixture {
         }
 
         /// Execute each module in order on the same VM with unified globals
+        /// The VM constructor allocates its default ports, which can collect before gc_scope exists.
+        auto ctor_roots = heap.make_external_root_frame();
+        registry.push_constant_roots(ctor_roots);
         VM vm(heap, intern_table);
+        GcCallbackScope gc_scope(heap, vm, registry);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
         /// Install builtins ONCE with the unified total_globals count
@@ -140,7 +161,11 @@ struct VMTestFixture {
         Emitter emitter(sem_mod, heap, intern_table, registry);
         auto* main_func = emitter.emit();
 
+        /// The VM constructor allocates its default ports, which can collect before gc_scope exists.
+        auto ctor_roots = heap.make_external_root_frame();
+        registry.push_constant_roots(ctor_roots);
         VM vm(heap, intern_table);
+        GcCallbackScope gc_scope(heap, vm, registry);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
         /// Install builtins and size globals to accommodate all module bindings
@@ -207,7 +232,11 @@ struct VMTestFixture {
         Emitter emitter(sem_mod, heap, intern_table, registry);
         auto* main_func = emitter.emit();
 
+        /// The VM constructor allocates its default ports, which can collect before gc_scope exists.
+        auto ctor_roots = heap.make_external_root_frame();
+        registry.push_constant_roots(ctor_roots);
         VM vm(heap, intern_table);
+        GcCallbackScope gc_scope(heap, vm, registry);
         vm.set_function_resolver([this](uint32_t idx) { return registry.get(idx); });
 
         auto install_res = builtins.install(heap, vm.globals(), sem_mod.total_globals);

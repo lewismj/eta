@@ -244,7 +244,7 @@ namespace eta::runtime::memory::heap {
                 return std::unexpected(HeapError::GCInProgress);
             }
 
-            [[unlikely]] if (gc_torture_.load(std::memory_order_relaxed) && gc_callback_) {
+            [[unlikely]] if (should_torture_collect()) {
                 gc_callback_();
             }
 
@@ -379,8 +379,13 @@ namespace eta::runtime::memory::heap {
         /**
          * Test hook: when enabled, every allocation runs the GC callback first.
          * Exposes values that are held only in C++ locals across an allocation.
+         * The ETA_GC_TORTURE environment variable sets the default at construction:
+         * N > 0 collects on every Nth allocation, 0 or unset disables it.
          */
-        void set_gc_torture(bool enabled) noexcept { gc_torture_.store(enabled, std::memory_order_relaxed); }
+        void set_gc_torture(bool enabled) noexcept { set_gc_torture_interval(enabled ? 1 : 0); }
+        void set_gc_torture_interval(std::uint32_t interval) noexcept {
+            gc_torture_interval_.store(interval, std::memory_order_relaxed);
+        }
 
         ExternalRootFrame make_external_root_frame() { return ExternalRootFrame(*this); }
         const std::vector<LispVal>& external_roots() const { return external_roots_; }
@@ -455,7 +460,14 @@ namespace eta::runtime::memory::heap {
 
         //! GC pause flag - when true, allocations are rejected
         std::atomic<bool> gc_in_progress_{ false };
-        std::atomic<bool> gc_torture_{ false };
+        std::atomic<std::uint32_t> gc_torture_interval_{ 0 };
+        std::atomic<std::uint64_t> gc_torture_counter_{ 0 };
+
+        bool should_torture_collect() noexcept {
+            const auto interval = gc_torture_interval_.load(std::memory_order_relaxed);
+            if (interval == 0 || !gc_callback_) return false;
+            return gc_torture_counter_.fetch_add(1, std::memory_order_relaxed) % interval == 0;
+        }
 
         std::function<void()> gc_callback_;
 

@@ -15,6 +15,7 @@
  *                             these compile through that pass instead of the Driver.
  *   - values_opcode_*:        OpCode::Values pops into a vector before allocating.
  *   - make_closure_*:         OpCode::MakeClosure pops upvalues before allocating.
+ *   - copy_term_*:            VM::copy_term holds partial copies and fresh vars in C++ locals.
  *   - json_read_*:            json_to_lisp keeps children in a local vector while recursing.
  *
  * Results are inspected from C++ with bounded walks, because a dangling cons
@@ -347,6 +348,46 @@ BOOST_AUTO_TEST_CASE(make_closure_keeps_upvalues_alive) {
   (define result ((make-getter 7))))
 )eta");
     require_int_vector(h.driver.heap(), result, {7, 8}, "captured upvalue");
+}
+
+/**
+ * @test copy_term_keeps_partial_copy_alive
+ *
+ * VM::copy_term holds the copied car in a C++ local while it walks, and
+ * allocates for, the cdr.  The copied vectors must survive until the new
+ * list is built.
+ */
+BOOST_AUTO_TEST_CASE(copy_term_keeps_partial_copy_alive) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.copy_term_list
+  (define (build n) (cons (vector n (+ n 1)) (cons (vector (+ n 2) (+ n 3)) '())))
+  (define result (copy-term (build 1))))
+)eta");
+
+    auto& heap = h.driver.heap();
+    auto items = list_items(heap, result);
+    BOOST_REQUIRE_EQUAL(items.size(), 2u);
+    require_int_vector(heap, items[0], {1, 2}, "element 0");
+    require_int_vector(heap, items[1], {3, 4}, "element 1");
+}
+
+/**
+ * @test copy_term_keeps_fresh_vars_alive
+ *
+ * Fresh logic variables live only in copy_term's memo map until the copied
+ * pair is allocated.  Binding the copy's car must be visible through its cdr.
+ */
+BOOST_AUTO_TEST_CASE(copy_term_keeps_fresh_vars_alive) {
+    TortureHarness h;
+    auto result = h.run_tortured(R"eta(
+(module gc_rooting.copy_term_vars
+  (define x (logic-var))
+  (define c (copy-term (cons x x)))
+  (unify (car c) 99)
+  (define result (deref-lvar (cdr c))))
+)eta");
+    BOOST_TEST(as_int(result) == 99);
 }
 
 /**

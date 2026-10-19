@@ -79,6 +79,22 @@ public:
      */
     const std::deque<runtime::vm::BytecodeFunction>& all() const { return functions_; }
 
+    /**
+     * Push every heap-backed constant (quoted lists, vectors, ...) onto @p roots.
+     * VM::collect_garbage does not mark function constants, so any GC callback
+     * for a heap that holds compiled code must root them through this.
+     */
+    void push_constant_roots(runtime::memory::heap::Heap::ExternalRootFrame& roots) const {
+        for (const auto& func : functions_) {
+            for (auto c : func.constants) {
+                if (runtime::nanbox::ops::is_boxed(c) &&
+                    runtime::nanbox::ops::tag(c) == runtime::nanbox::Tag::HeapObject) {
+                    roots.push(c);
+                }
+            }
+        }
+    }
+
     /// Thread-safe size query
     std::size_t size() const {
         std::unique_lock lock(mutex_);

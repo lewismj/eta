@@ -3105,6 +3105,14 @@ std::expected<LispVal, RuntimeError> VM::copy_term(LispVal term) {
      */
     std::unordered_map<ObjectId, LispVal> memo;
 
+    /**
+     * The source term (popped by OpCode::CopyTerm) and every partial copy are
+     * held only in C++ locals until the final object is built; root them in
+     * temp_roots_ for the duration of the walk.
+     */
+    const auto temp_root_mark = temp_roots_.size();
+    temp_roots_.push_back(term);
+
     /// Recursive copy worker (as a std::function to allow self-reference).
     std::function<std::expected<LispVal, RuntimeError>(LispVal)> walk;
     walk = [&](LispVal v) -> std::expected<LispVal, RuntimeError> {
@@ -3122,6 +3130,7 @@ std::expected<LispVal, RuntimeError> VM::copy_term(LispVal term) {
                 if (it != memo.end()) return it->second;
                 auto fresh = make_logic_var(heap_);
                 if (!fresh) return std::unexpected(fresh.error());
+                temp_roots_.push_back(*fresh);
                 memo[id] = *fresh;
                 return *fresh;
             }
@@ -3132,8 +3141,10 @@ std::expected<LispVal, RuntimeError> VM::copy_term(LispVal term) {
         if (auto* cons = heap_.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
             auto car_copy = walk(cons->car);
             if (!car_copy) return car_copy;
+            temp_roots_.push_back(*car_copy);
             auto cdr_copy = walk(cons->cdr);
             if (!cdr_copy) return cdr_copy;
+            temp_roots_.push_back(*cdr_copy);
             return make_cons(heap_, *car_copy, *cdr_copy);
         }
 
@@ -3143,6 +3154,7 @@ std::expected<LispVal, RuntimeError> VM::copy_term(LispVal term) {
             for (auto& elem : vec->elements) {
                 auto elem_copy = walk(elem);
                 if (!elem_copy) return elem_copy;
+                temp_roots_.push_back(*elem_copy);
                 elems.push_back(*elem_copy);
             }
             return make_vector(heap_, std::move(elems));
@@ -3154,6 +3166,7 @@ std::expected<LispVal, RuntimeError> VM::copy_term(LispVal term) {
             for (auto& a : ct->args) {
                 auto a_copy = walk(a);
                 if (!a_copy) return a_copy;
+                temp_roots_.push_back(*a_copy);
                 args.push_back(*a_copy);
             }
             return make_compound(heap_, ct->functor, std::move(args));
@@ -3162,7 +3175,9 @@ std::expected<LispVal, RuntimeError> VM::copy_term(LispVal term) {
         return v;
     };
 
-    return walk(term);
+    auto result = walk(term);
+    temp_roots_.resize(temp_root_mark);
+    return result;
 }
 
 } ///< namespace eta::runtime::vm

@@ -725,14 +725,7 @@ std::vector<std::string> Driver::discover_module_names() const {
 
 void Driver::collect_garbage_with_registry_roots() {
     auto roots = heap_.make_external_root_frame();
-    for (const auto& func : registry_.all()) {
-        for (auto c : func.constants) {
-            if (runtime::nanbox::ops::is_boxed(c) &&
-                runtime::nanbox::ops::tag(c) == runtime::nanbox::Tag::HeapObject) {
-                roots.push(c);
-            }
-        }
-    }
+    registry_.push_constant_roots(roots);
     vm_.collect_garbage();
 }
 
@@ -937,6 +930,22 @@ void Driver::run_spawned_actor(runtime::types::Pid pid,
         }
 
         auto* child_registry = state->child_registry.get();
+
+        /**
+         * The VM's default GC callback does not mark function constants, so the
+         * actor's quoted literals would be swept on its first collection.  Root
+         * them the same way Driver::collect_garbage_with_registry_roots does.
+         */
+        {
+            auto* child_heap = state->child_heap.get();
+            auto* gc_vm = state->child_vm.get();
+            child_heap->set_gc_callback([child_heap, gc_vm, child_registry]() {
+                auto roots = child_heap->make_external_root_frame();
+                child_registry->push_constant_roots(roots);
+                gc_vm->collect_garbage();
+            });
+        }
+
         state->child_vm->set_function_resolver([child_registry](std::uint32_t idx) {
             return child_registry->get(idx);
         });

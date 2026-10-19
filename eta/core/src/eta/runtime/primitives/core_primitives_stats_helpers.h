@@ -70,6 +70,8 @@ inline std::expected<LispVal, RuntimeError> row_ids_to_list(
     const std::vector<std::size_t>& rows,
     Heap& heap,
     const char* who) {
+    /// Each new cell allocates while the list so far is held only in `result`.
+    auto roots = heap.make_external_root_frame();
     LispVal result = Nil;
     for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
         auto enc = ops::encode(static_cast<int64_t>(*it));
@@ -81,6 +83,7 @@ inline std::expected<LispVal, RuntimeError> row_ids_to_list(
         auto cell = make_cons(heap, *enc, result);
         if (!cell) return std::unexpected(cell.error());
         result = *cell;
+        roots.push(result);
     }
     return result;
 }

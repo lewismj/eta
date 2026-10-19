@@ -2,6 +2,7 @@
 #include "cons_pool.h"
 #include <eta/runtime/types/guardian.h>
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 
 namespace eta::runtime::memory::heap {
@@ -13,6 +14,10 @@ namespace eta::runtime::memory::heap {
     {
         /// ConsPool claims a contiguous ID range from next_id.
         cons_pool_ = std::make_unique<ConsPool>(8192, next_id);
+
+        if (const char* torture = std::getenv("ETA_GC_TORTURE"); torture && *torture) {
+            set_gc_torture_interval(static_cast<std::uint32_t>(std::strtoul(torture, nullptr, 10)));
+        }
     }
 
     Heap::~Heap() {
@@ -55,7 +60,7 @@ namespace eta::runtime::memory::heap {
             return std::unexpected(HeapError::GCInProgress);
         }
 
-        [[unlikely]] if (gc_torture_.load(std::memory_order_relaxed) && gc_callback_) {
+        [[unlikely]] if (should_torture_collect()) {
             gc_callback_();
         }
 

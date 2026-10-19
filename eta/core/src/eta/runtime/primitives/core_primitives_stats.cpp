@@ -167,8 +167,10 @@ void PrimReg::register_stats() {
         const LispVal sym = ops::box(Tag::Symbol, *ft.predicate_functor);
         auto ar = ops::encode(static_cast<int64_t>(ft.predicate_arity));
         if (!ar) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "%fact-table-predicate: arity encoding failed"}});
+        auto roots = heap.make_external_root_frame();
         auto tail = make_cons(heap, *ar, Nil);
         if (!tail) return std::unexpected(tail.error());
+        roots.push(*tail);
         auto head = make_cons(heap, sym, *tail);
         if (!head) return std::unexpected(head.error());
         return *head;
@@ -742,9 +744,11 @@ void PrimReg::register_stats() {
         auto v_pv = make_flonum(r->p_value);   if (!v_pv) return std::unexpected(v_pv.error());
         auto v_ts = make_flonum(r->t_stat);    if (!v_ts) return std::unexpected(v_ts.error());
 
-        auto l4 = make_cons(heap, *v_md, Nil);   if (!l4) return std::unexpected(l4.error());
-        auto l3 = make_cons(heap, *v_df, *l4);   if (!l3) return std::unexpected(l3.error());
-        auto l2 = make_cons(heap, *v_pv, *l3);   if (!l2) return std::unexpected(l2.error());
+        /// Each cell allocates while the tail built so far is held only in a local.
+        auto roots = heap.make_external_root_frame();
+        auto l4 = make_cons(heap, *v_md, Nil);   if (!l4) return std::unexpected(l4.error()); roots.push(*l4);
+        auto l3 = make_cons(heap, *v_df, *l4);   if (!l3) return std::unexpected(l3.error()); roots.push(*l3);
+        auto l2 = make_cons(heap, *v_pv, *l3);   if (!l2) return std::unexpected(l2.error()); roots.push(*l2);
         auto l1 = make_cons(heap, *v_ts, *l2);   if (!l1) return std::unexpected(l1.error());
         return *l1;
     });
@@ -767,14 +771,16 @@ void PrimReg::register_stats() {
         auto v2 = make_flonum(r->intercept);   if (!v2) return std::unexpected(v2.error());
         auto v1 = make_flonum(r->slope);       if (!v1) return std::unexpected(v1.error());
 
-        auto l9 = make_cons(heap, *v9, Nil);  if (!l9) return std::unexpected(l9.error());
-        auto l8 = make_cons(heap, *v8, *l9);  if (!l8) return std::unexpected(l8.error());
-        auto l7 = make_cons(heap, *v7, *l8);  if (!l7) return std::unexpected(l7.error());
-        auto l6 = make_cons(heap, *v6, *l7);  if (!l6) return std::unexpected(l6.error());
-        auto l5 = make_cons(heap, *v5, *l6);  if (!l5) return std::unexpected(l5.error());
-        auto l4 = make_cons(heap, *v4, *l5);  if (!l4) return std::unexpected(l4.error());
-        auto l3 = make_cons(heap, *v3, *l4);  if (!l3) return std::unexpected(l3.error());
-        auto l2 = make_cons(heap, *v2, *l3);  if (!l2) return std::unexpected(l2.error());
+        /// Each cell allocates while the tail built so far is held only in a local.
+        auto roots = heap.make_external_root_frame();
+        auto l9 = make_cons(heap, *v9, Nil);  if (!l9) return std::unexpected(l9.error()); roots.push(*l9);
+        auto l8 = make_cons(heap, *v8, *l9);  if (!l8) return std::unexpected(l8.error()); roots.push(*l8);
+        auto l7 = make_cons(heap, *v7, *l8);  if (!l7) return std::unexpected(l7.error()); roots.push(*l7);
+        auto l6 = make_cons(heap, *v6, *l7);  if (!l6) return std::unexpected(l6.error()); roots.push(*l6);
+        auto l5 = make_cons(heap, *v5, *l6);  if (!l5) return std::unexpected(l5.error()); roots.push(*l5);
+        auto l4 = make_cons(heap, *v4, *l5);  if (!l4) return std::unexpected(l4.error()); roots.push(*l4);
+        auto l3 = make_cons(heap, *v3, *l4);  if (!l3) return std::unexpected(l3.error()); roots.push(*l3);
+        auto l2 = make_cons(heap, *v2, *l3);  if (!l2) return std::unexpected(l2.error()); roots.push(*l2);
         auto l1 = make_cons(heap, *v1, *l2);  if (!l1) return std::unexpected(l1.error());
         return *l1;
     });
