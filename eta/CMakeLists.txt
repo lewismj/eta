@@ -337,6 +337,15 @@ add_custom_command(
 add_custom_target(eta_stdlib_doc_registry DEPENDS "${ETA_STDLIB_DOC_REGISTRY_INC}")
 
 set(ETA_STDLIB_BUILD_STAMP "${ETA_STDLIB_RUNTIME_DIR}/.eta_stdlib_etac.stamp")
+# etac dlopens the bundled stdlib sidecars while compiling, and they live in
+# the source tree (shared by every build dir), so rebuild them first; a stale
+# one fails with an undefined host symbol after any eta_core ABI change.
+set(ETA_STDLIB_SIDECAR_TARGETS)
+foreach(_t IN ITEMS eta_log_sidecar eta_stats_sidecar eta_torch_sidecar eta_nng_sidecar)
+    if(TARGET ${_t})
+        list(APPEND ETA_STDLIB_SIDECAR_TARGETS ${_t})
+    endif()
+endforeach()
 add_custom_command(
     OUTPUT "${ETA_STDLIB_BUILD_STAMP}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${ETA_STDLIB_RUNTIME_DIR}"
@@ -345,7 +354,7 @@ add_custom_command(
             --src-root "${ETA_STDLIB_SOURCE_DIR}"
             --out-root "${ETA_STDLIB_RUNTIME_DIR}"
     COMMAND ${CMAKE_COMMAND} -E touch "${ETA_STDLIB_BUILD_STAMP}"
-    DEPENDS etac "${ETA_STDLIB_BUILD_SCRIPT}" ${ETA_STDLIB_ETA_SOURCES}
+    DEPENDS etac ${ETA_STDLIB_SIDECAR_TARGETS} "${ETA_STDLIB_BUILD_SCRIPT}" ${ETA_STDLIB_ETA_SOURCES}
     VERBATIM
 )
 add_custom_target(eta_stdlib_etac DEPENDS "${ETA_STDLIB_BUILD_STAMP}")
