@@ -35,27 +35,28 @@
     (defun payload-trace (p) (car (cdr (cdr (cdr (cdr p))))))
 
     (define suite
-      (make-group "runtime-error-catchability"
+      (make-group
+        "runtime-error-catchability"
         (list
-          (make-test "super-tag catches type error"
+          (make-test
+            "super-tag catches type error"
             (lambda ()
               (let ((p (catch 'runtime.error (car 42))))
                 (assert-equal 'runtime-error (car p))
                 (assert-equal 'runtime.type-error (payload-tag p))
                 (assert-true (string? (payload-msg p))))))
-
-          (make-test "specific subtype catches invalid arity"
+          (make-test
+            "specific subtype catches invalid arity"
             (lambda ()
               (let ((p (catch 'runtime.invalid-arity (car 1 2))))
                 (assert-equal 'runtime.invalid-arity (payload-tag p))
                 (assert-true (string? (payload-msg p))))))
-
-          (make-test "tagless catch catches runtime errors"
+          (make-test
+            "tagless catch catches runtime errors"
             (lambda ()
-              (let ((p (catch (car 42))))
-                (assert-equal 'runtime.type-error (payload-tag p)))))
-
-          (make-test "payload span is introspectable"
+              (let ((p (catch (car 42)))) (assert-equal 'runtime.type-error (payload-tag p)))))
+          (make-test
+            "payload span is introspectable"
             (lambda ()
               (let ((spn (payload-span (catch 'runtime.error (car 42)))))
                 (assert-equal 'span (car spn))
@@ -64,8 +65,8 @@
                 (assert-true (number? (car (cdr (cdr (cdr spn))))))
                 (assert-true (number? (car (cdr (cdr (cdr (cdr spn)))))))
                 (assert-true (number? (car (cdr (cdr (cdr (cdr (cdr spn)))))))))))
-
-          (make-test "payload trace contains frame records"
+          (make-test
+            "payload trace contains frame records"
             (lambda ()
               (let ((tr (payload-trace (catch 'runtime.error (car 42)))))
                 (let ((fr (car tr)))

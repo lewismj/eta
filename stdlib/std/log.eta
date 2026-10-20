@@ -2,8 +2,7 @@
 
 (module std.log
   (import std.core)
-  (export
-    log:trace
+  (export log:trace
     log:debug
     log:info
     log:warn
@@ -37,10 +36,9 @@
     ;;@example
     ;; (log:strip-leading-colon "sample")
     (defun log:strip-leading-colon (s)
-      (if (and (> (string-length s) 0)
-               (eq? (string-ref s 0) #\:))
-          (substring s 1 (string-length s))
-          s))
+      (if (and (> (string-length s) 0) (eq? (string-ref s 0) #\:))
+        (substring s 1 (string-length s))
+        s))
 
     ;;@doc (log:normalize-opt-key k)
     ;;@category Log
@@ -49,8 +47,7 @@
     ;;@example
     ;; (log:normalize-opt-key 1)
     (defun log:normalize-opt-key (k)
-      (cond
-        ((symbol? k) (string->symbol (log:strip-leading-colon (symbol->string k))))
+      (cond ((symbol? k) (string->symbol (log:strip-leading-colon (symbol->string k))))
         ((string? k) (string->symbol (log:strip-leading-colon k)))
         (#t (error "log: option key must be a symbol or string"))))
 
@@ -61,15 +58,15 @@
     ;;@example
     ;; (log:opts->alist 'x)
     (defun log:opts->alist (opts)
-      (letrec ((loop (lambda (xs acc)
-                       (if (null? xs)
-                           (reverse acc)
-                           (if (null? (cdr xs))
-                               (error "log: options must be key/value pairs")
-                               (loop (cdr (cdr xs))
-                                     (cons (cons (log:normalize-opt-key (car xs))
-                                                 (car (cdr xs)))
-                                           acc)))))))
+      (letrec ((loop
+                 (lambda (xs acc)
+                   (if (null? xs)
+                     (reverse acc)
+                     (if (null? (cdr xs))
+                       (error "log: options must be key/value pairs")
+                       (loop
+                         (cdr (cdr xs))
+                         (cons (cons (log:normalize-opt-key (car xs)) (car (cdr xs))) acc)))))))
         (loop opts '())))
 
     ;;@doc (log:validate-options opts allowed)
@@ -79,12 +76,13 @@
     ;;@example
     ;; (log:validate-options 'x 'x)
     (defun log:validate-options (opts allowed)
-      (letrec ((loop (lambda (xs)
-                       (if (null? xs)
-                           '()
-                           (if (member (car (car xs)) allowed)
-                               (loop (cdr xs))
-                               (error "log: unknown option key"))))))
+      (letrec ((loop
+                 (lambda (xs)
+                   (if (null? xs)
+                     '()
+                     (if (member (car (car xs)) allowed)
+                       (loop (cdr xs))
+                       (error "log: unknown option key"))))))
         (loop opts)))
 
     ;;@doc (log:option-ref opts key default)
@@ -94,8 +92,7 @@
     ;;@example
     ;; (log:option-ref 'x 'x 'x)
     (defun log:option-ref (opts key default)
-      (let ((entry (assq key opts)))
-        (if entry (cdr entry) default)))
+      (let ((entry (assq key opts))) (if entry (cdr entry) default)))
 
     ;;@doc (log:default ...)
     ;;@category Log
@@ -103,8 +100,7 @@
     ;; Logging helpers backed by %log-* runtime primitives Uses `log:default`.
     ;;@example
     ;; (log:default)
-    (defun log:default ()
-      (%log-default-logger))
+    (defun log:default () (%log-default-logger))
 
     ;;@doc (log:set-default! logger)
     ;;@category Log
@@ -112,8 +108,7 @@
     ;; Compute `log:set-default!`.
     ;;@example
     ;; (log:set-default! 'x)
-    (defun log:set-default! (logger)
-      (%log-set-default! logger))
+    (defun log:set-default! (logger) (%log-set-default! logger))
 
     ;;@doc (log:get-logger name)
     ;;@category Log
@@ -121,8 +116,7 @@
     ;; Compute `log:get-logger`.
     ;;@example
     ;; (log:get-logger "sample")
-    (defun log:get-logger (name)
-      (%log-get-logger name))
+    (defun log:get-logger (name) (%log-get-logger name))
 
     ;;@doc (log:make-logger name sinks)
     ;;@category Log
@@ -130,8 +124,7 @@
     ;; Construct `log:make-logger`.
     ;;@example
     ;; (log:make-logger "sample" 'x)
-    (defun log:make-logger (name sinks)
-      (%log-make-logger name sinks))
+    (defun log:make-logger (name sinks) (%log-make-logger name sinks))
 
     (defun log:make-stdout-sink opts
       (let ((alist (log:opts->alist opts)))
@@ -178,8 +171,7 @@
     ;; Construct `log:make-port-sink`.
     ;;@example
     ;; (log:make-port-sink 8080)
-    (defun log:make-port-sink (port)
-      (%log-make-port-sink port))
+    (defun log:make-port-sink (port) (%log-make-port-sink port))
 
     ;;@doc (log:make-error-port-sink)
     ;;@category Log
@@ -187,8 +179,7 @@
     ;; Construct `log:make-error-port-sink`.
     ;;@example
     ;; (log:make-error-port-sink)
-    (defun log:make-error-port-sink ()
-      (%log-make-current-error-sink))
+    (defun log:make-error-port-sink () (%log-make-current-error-sink))
 
     ;;@doc (log:set-level! logger level)
     ;;@category Log
@@ -196,8 +187,7 @@
     ;; Compute `log:set-level!`.
     ;;@example
     ;; (log:set-level! 'x 'x)
-    (defun log:set-level! (logger level)
-      (%log-set-level! logger level))
+    (defun log:set-level! (logger level) (%log-set-level! logger level))
 
     ;;@doc (log:level logger)
     ;;@category Log
@@ -205,8 +195,7 @@
     ;; Compute `log:level`.
     ;;@example
     ;; (log:level 'x)
-    (defun log:level (logger)
-      (%log-level logger))
+    (defun log:level (logger) (%log-level logger))
 
     ;;@doc (log:set-global-level! level)
     ;;@category Log
@@ -214,8 +203,7 @@
     ;; Compute `log:set-global-level!`.
     ;;@example
     ;; (log:set-global-level! 'x)
-    (defun log:set-global-level! (level)
-      (%log-set-global-level! level))
+    (defun log:set-global-level! (level) (%log-set-global-level! level))
 
     ;;@doc (log:set-pattern! logger pattern)
     ;;@category Log
@@ -223,8 +211,7 @@
     ;; Compute `log:set-pattern!`.
     ;;@example
     ;; (log:set-pattern! 'x "sample")
-    (defun log:set-pattern! (logger pattern)
-      (%log-set-pattern! logger pattern))
+    (defun log:set-pattern! (logger pattern) (%log-set-pattern! logger pattern))
 
     ;;@doc (log:set-formatter! logger formatter)
     ;;@category Log
@@ -232,8 +219,7 @@
     ;; Compute `log:set-formatter!`.
     ;;@example
     ;; (log:set-formatter! 'x 'x)
-    (defun log:set-formatter! (logger formatter)
-      (%log-set-formatter! logger formatter))
+    (defun log:set-formatter! (logger formatter) (%log-set-formatter! logger formatter))
 
     ;;@doc (log:flush! logger)
     ;;@category Log
@@ -241,8 +227,7 @@
     ;; Compute `log:flush!`.
     ;;@example
     ;; (log:flush! 'x)
-    (defun log:flush! (logger)
-      (%log-flush! logger))
+    (defun log:flush! (logger) (%log-flush! logger))
 
     ;;@doc (log:flush-on! logger level)
     ;;@category Log
@@ -250,8 +235,7 @@
     ;; Compute `log:flush-on!`.
     ;;@example
     ;; (log:flush-on! 'x 'x)
-    (defun log:flush-on! (logger level)
-      (%log-flush-on! logger level))
+    (defun log:flush-on! (logger level) (%log-flush-on! logger level))
 
     ;;@doc (log:shutdown!)
     ;;@category Log
@@ -259,8 +243,7 @@
     ;; Compute `log:shutdown!`.
     ;;@example
     ;; (log:shutdown!)
-    (defun log:shutdown! ()
-      (%log-shutdown!))
+    (defun log:shutdown! () (%log-shutdown!))
 
     ;;@doc (log:emit-level level args)
     ;;@category Log
@@ -269,36 +252,24 @@
     ;;@example
     ;; (log:emit-level 'x '())
     (defun log:emit-level (level args)
-      (cond
-        ((null? args)
-          (error "log: expected (msg [payload]) or (logger msg [payload])"))
-        ((null? (cdr args))
-          (%log-emit (log:default) level (car args) '()))
+      (cond ((null? args) (error "log: expected (msg [payload]) or (logger msg [payload])"))
+        ((null? (cdr args)) (%log-emit (log:default) level (car args) '()))
         ((null? (cdr (cdr args)))
-          (if (string? (car args))
-              (%log-emit (log:default) level (car args) (car (cdr args)))
-              (%log-emit (car args) level (car (cdr args)) '())))
+         (if (string? (car args))
+           (%log-emit (log:default) level (car args) (car (cdr args)))
+           (%log-emit (car args) level (car (cdr args)) '())))
         ((null? (cdr (cdr (cdr args))))
-          (%log-emit (car args) level (car (cdr args)) (car (cdr (cdr args)))))
-        (#t
-          (error "log: expected (msg [payload]) or (logger msg [payload])"))))
+         (%log-emit (car args) level (car (cdr args)) (car (cdr (cdr args)))))
+        (#t (error "log: expected (msg [payload]) or (logger msg [payload])"))))
 
-    (defun log:trace args
-      (log:emit-level 'trace args))
+    (defun log:trace args (log:emit-level 'trace args))
 
-    (defun log:debug args
-      (log:emit-level 'debug args))
+    (defun log:debug args (log:emit-level 'debug args))
 
-    (defun log:info args
-      (log:emit-level 'info args))
+    (defun log:info args (log:emit-level 'info args))
 
-    (defun log:warn args
-      (log:emit-level 'warn args))
+    (defun log:warn args (log:emit-level 'warn args))
 
-    (defun log:error args
-      (log:emit-level 'error args))
+    (defun log:error args (log:emit-level 'error args))
 
-    (defun log:critical args
-      (log:emit-level 'critical args))
-
-  ))
+    (defun log:critical args (log:emit-level 'critical args))))

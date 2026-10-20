@@ -8,15 +8,17 @@
   (begin
 
     (defun %vector->list (vec)
-      (let loop ((i 0) (acc '()))
-        (if (= i (vector-length vec))
-            (reverse acc)
-            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
+      (let
+        loop
+        ((i 0) (acc '()))
+        (if (= i (vector-length vec)) (reverse acc) (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
     (defun make-worker (offset)
       (spawn
         (lambda ()
-          (let loop ()
+          (let
+            loop
+            ()
             (receive
               (list
                 (match-case
@@ -27,30 +29,24 @@
                           (value (car (cdr (cdr (cdr msg))))))
                       (send from (list 'sum tag (+ value offset)))
                       (loop))))
-                (match-case
-                  (match-symbol 'stop)
-                  (lambda (msg)
-                    'ok)))
+                (match-case (match-symbol 'stop) (lambda (msg) 'ok)))
               'wait)))))
 
-    (define workers
-      (list
-        (make-worker 10)
-        (make-worker 20)
-        (make-worker 30)))
+    (define workers (list (make-worker 10) (make-worker 20) (make-worker 30)))
     (define inputs '(5 6 7))
     (define tags (range 0 (length workers)))
 
-    (let dispatch ((rest-workers workers) (rest-tags tags) (rest-values inputs))
-      (when (and (pair? rest-workers)
-                 (pair? rest-tags)
-                 (pair? rest-values))
-        (send (car rest-workers)
-              (list 'add (self) (car rest-tags) (car rest-values)))
+    (let
+      dispatch
+      ((rest-workers workers) (rest-tags tags) (rest-values inputs))
+      (when (and (pair? rest-workers) (pair? rest-tags) (pair? rest-values))
+        (send (car rest-workers) (list 'add (self) (car rest-tags) (car rest-values)))
         (dispatch (cdr rest-workers) (cdr rest-tags) (cdr rest-values))))
 
     (define results (make-vector (length workers) 0))
-    (let loop ((remaining (length workers)))
+    (let
+      loop
+      ((remaining (length workers)))
       (when (> remaining 0)
         (let ((msg (receive-match (match-list 'sum 2) 1000)))
           (vector-set! results (car (cdr msg)) (car (cdr (cdr msg))))

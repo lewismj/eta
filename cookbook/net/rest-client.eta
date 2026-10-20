@@ -3,11 +3,11 @@
   (export run-rest-client)
   (begin
     (defun run-rest-client (base-url bearer-token)
-      (let ((session (make-session '((timeout-ms . 30000)
-                                     (user-agent . "cookbook-rest-client/0.1")))))
+      (let ((session
+              (make-session '((timeout-ms . 30000) (user-agent . "cookbook-rest-client/0.1")))))
         (if (and (string? bearer-token) (> (string-length bearer-token) 0))
-            (session-set-option! session 'bearer-token bearer-token)
-            #t)
+          (session-set-option! session 'bearer-token bearer-token)
+          #t)
         (let* ((value-from-get (get-json (string-append base-url "/json-get") session))
                (post-response (post-json (string-append base-url "/json") value-from-get session))
                (echoed-value (body-json post-response)))
@@ -17,6 +17,6 @@
             (cons 'post-status (status post-response))
             (cons 'post-value echoed-value)))))
 
-    ;; Example for public internet usage:
-    ;; (run-rest-client "https://api.example.com" "token-value")
-    ))
+  ;; Example for public internet usage:
+  ;; (run-rest-client "https://api.example.com" "token-value")
+  ))

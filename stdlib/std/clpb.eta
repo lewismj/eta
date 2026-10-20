@@ -42,12 +42,17 @@
   ;; Note: `put-attr`, `get-attr`, `register-prop-attr!` are core VM
   ;; built-ins registered globally  the `'clp.prop` attribute is
   ;; registered once by `std.clp` at module load, shared here.
-  (export
-    clp:boolean
-    clp:and clp:or clp:xor clp:imp clp:eq clp:not
+  (export clp:boolean
+    clp:and
+    clp:or
+    clp:xor
+    clp:imp
+    clp:eq
+    clp:not
     clp:card
     clp:labeling-b
-    clp:sat? clp:taut?)
+    clp:sat?
+    clp:taut?)
   (begin
 
     ;;@doc (%clpb-prop-attach! v thunk)
@@ -60,8 +65,7 @@
     ;; boundary clean: CLP(B) is a self-contained module that only needs
     ;; std.clp for its domain accessors, not its internals.
     (defun %clpb-prop-attach! (v thunk)
-      (cond
-        ((not (logic-var? (deref-lvar v))) #t)
+      (cond ((not (logic-var? (deref-lvar v))) #t)
         (else
           (let ((existing (get-attr v 'clp.prop)))
             (put-attr v 'clp.prop (cons thunk (if existing existing '())))
@@ -98,18 +102,19 @@
          ;;@example
          ;; (name 1 1 1)
          (defun name (z x y)
-           (and (prim z x y)
-                (let ((thunk (lambda () (prim z x y))))
-                  (%clpb-prop-attach! z thunk)
-                  (%clpb-prop-attach! x thunk)
-                  (%clpb-prop-attach! y thunk)
-                  #t))))))
+           (and
+             (prim z x y)
+             (let ((thunk (lambda () (prim z x y))))
+               (%clpb-prop-attach! z thunk)
+               (%clpb-prop-attach! x thunk)
+               (%clpb-prop-attach! y thunk)
+               #t))))))
 
     (%clpb-define-binop clp:and %clp-bool-and!)
-    (%clpb-define-binop clp:or  %clp-bool-or!)
+    (%clpb-define-binop clp:or %clp-bool-or!)
     (%clpb-define-binop clp:xor %clp-bool-xor!)
     (%clpb-define-binop clp:imp %clp-bool-imp!)
-    (%clpb-define-binop clp:eq  %clp-bool-eq!)
+    (%clpb-define-binop clp:eq %clp-bool-eq!)
 
     ;;  Unary (well, binary: z = x) 
 
@@ -120,11 +125,12 @@
     ;;@example
     ;; (clp:not 1 1)
     (defun clp:not (z x)
-      (and (%clp-bool-not! z x)
-           (let ((thunk (lambda () (%clp-bool-not! z x))))
-             (%clpb-prop-attach! z thunk)
-             (%clpb-prop-attach! x thunk)
-             #t)))
+      (and
+        (%clp-bool-not! z x)
+        (let ((thunk (lambda () (%clp-bool-not! z x))))
+          (%clpb-prop-attach! z thunk)
+          (%clpb-prop-attach! x thunk)
+          #t)))
 
     ;;  Cardinality: k-lo   xs  k-hi 
 
@@ -135,14 +141,13 @@
     ;;@example
     ;; (clp:card '() 'x 'x)
     (defun clp:card (xs k-lo k-hi)
-      (and (%clp-bool-card! xs k-lo k-hi)
-           (let ((thunk (lambda () (%clp-bool-card! xs k-lo k-hi))))
-             (let loop ((ys xs))
-               (cond
-                 ((null? ys) #t)
-                 (else
-                   (%clpb-prop-attach! (car ys) thunk)
-                   (loop (cdr ys))))))))
+      (and
+        (%clp-bool-card! xs k-lo k-hi)
+        (let ((thunk (lambda () (%clp-bool-card! xs k-lo k-hi))))
+          (let
+            loop
+            ((ys xs))
+            (cond ((null? ys) #t) (else (%clpb-prop-attach! (car ys) thunk) (loop (cdr ys))))))))
 
     ;;  Labelling / query 
     ;;
@@ -169,10 +174,7 @@
     ;; the user can continue posting constraints / asking further
     ;; questions without having to undo bindings manually.
     (defun clp:sat? (vars)
-      (let ((m (trail-mark)))
-        (let ((r (clp:labeling vars)))
-          (unwind-trail m)
-          (if r #t #f))))
+      (let ((m (trail-mark))) (let ((r (clp:labeling vars))) (unwind-trail m) (if r #t #f))))
 
     ;;@doc (clp:taut? vars)
     ;;@category Clpb
@@ -184,9 +186,4 @@
     ;; constraint set a contradiction on `vars`?".  For tautology
     ;; testing of a formula F, the canonical pattern is to post `F`
     ;; and call `clp:taut?`.
-    (defun clp:taut? (vars) (not (clp:sat? vars)))
-
-  ))
-
-
-
+    (defun clp:taut? (vars) (not (clp:sat? vars)))))

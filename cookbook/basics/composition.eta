@@ -12,23 +12,20 @@
     ;; ── compose — chain two functions: (f ∘ g)(x) = f(g(x)) ────────
     ;;@example
     ;; (display inc-then-double)
-    (define inc-then-double
-      (compose (lambda (x) (* 2 x))
-               (lambda (x) (+ x 1))))
-    (println (inc-then-double 5))    ; => 12  ((5+1)*2)
+    (define inc-then-double (compose (lambda (x) (* 2 x)) (lambda (x) (+ x 1))))
+    (println (inc-then-double 5)) ; => 12  ((5+1)*2)
 
-    (define stringify-length
-      (compose number->string string-length))
-    (println (stringify-length "hello world"))  ; => "11"
+    (define stringify-length (compose number->string string-length))
+    (println (stringify-length "hello world")) ; => "11"
 
     ;; ── flip — swap argument order ──────────────────────────────────
     (define rcons (flip cons))
-    (println (rcons '(1 2 3) 0))     ; => (0 1 2 3)
+    (println (rcons '(1 2 3) 0)) ; => (0 1 2 3)
 
     ;; ── constantly — always returns the same value ──────────────────
     (define always-42 (constantly 42))
-    (println (always-42))            ; => 42
-    (println (always-42 'ignored))   ; => 42
+    (println (always-42)) ; => 42
+    (println (always-42 'ignored)) ; => 42
 
     ;;@doc (add a)
     ;;@category Basics
@@ -36,14 +33,13 @@
     ;;@example
     ;; (add 1)
     ;; ── Manual currying — return a closure for partial application ──
-    (defun add (a)
-      (lambda (b) (+ a b)))
+    (defun add (a) (lambda (b) (+ a b)))
 
-    (define inc   (add 1))
+    (define inc (add 1))
     (define add10 (add 10))
 
-    (println (inc 99))               ; => 100
-    (println (add10 32))             ; => 42
+    (println (inc 99)) ; => 100
+    (println (add10 32)) ; => 42
 
     ;;@doc (mul a)
     ;;@category Basics
@@ -51,14 +47,13 @@
     ;;@example
     ;; (mul 1)
     ;; ── Curried multiply ────────────────────────────────────────────
-    (defun mul (a)
-      (lambda (b) (* a b)))
+    (defun mul (a) (lambda (b) (* a b)))
 
     (define double (mul 2))
     (define triple (mul 3))
 
-    (println (map* double '(1 2 3 4 5)))   ; => (2 4 6 8 10)
-    (println (map* triple '(1 2 3 4 5)))   ; => (3 6 9 12 15)
+    (println (map* double '(1 2 3 4 5))) ; => (2 4 6 8 10)
+    (println (map* triple '(1 2 3 4 5))) ; => (3 6 9 12 15)
 
     ;; ── Composing curried functions into a pipeline ─────────────────
     (define double-then-inc (compose (add 1) (mul 2)))
@@ -72,11 +67,10 @@
 
     ;; ── Putting it all together: a data pipeline ────────────────────
     ;; "take the first 5 odd squares from 1..20"
-    (define odds    (filter odd? (range 1 21)))
+    (define odds (filter odd? (range 1 21)))
     (define squares (map* square odds))
-    (define top5    (take 5 squares))
+    (define top5 (take 5 squares))
     (println top5)
-    ;; => (1 9 25 49 81)
+  ;; => (1 9 25 49 81)
 
   ))
-

@@ -8,16 +8,12 @@
   (begin
 
     (defun %vector->list (vec)
-      (let loop ((i 0) (acc '()))
-        (if (= i (vector-length vec))
-            (reverse acc)
-            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
+      (let
+        loop
+        ((i 0) (acc '()))
+        (if (= i (vector-length vec)) (reverse acc) (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
-    (defun fib (n)
-      (let loop ((k n) (a 0) (b 1))
-        (if (= k 0)
-            a
-            (loop (- k 1) b (+ a b)))))
+    (defun fib (n) (let loop ((k n) (a 0) (b 1)) (if (= k 0) a (loop (- k 1) b (+ a b)))))
 
     (define inputs '(25 26 27 28 29 30))
     (define indices (range 0 (length inputs)))
@@ -39,16 +35,17 @@
                 'wait))))
         inputs))
 
-    (let dispatch ((rest-workers workers) (rest-indices indices) (rest-values inputs))
-      (when (and (pair? rest-workers)
-                 (pair? rest-indices)
-                 (pair? rest-values))
-        (send (car rest-workers)
-              (list 'fib-task (self) (car rest-indices) (car rest-values)))
+    (let
+      dispatch
+      ((rest-workers workers) (rest-indices indices) (rest-values inputs))
+      (when (and (pair? rest-workers) (pair? rest-indices) (pair? rest-values))
+        (send (car rest-workers) (list 'fib-task (self) (car rest-indices) (car rest-values)))
         (dispatch (cdr rest-workers) (cdr rest-indices) (cdr rest-values))))
 
     (define results (make-vector (length inputs) 0))
-    (let loop ((remaining (length inputs)))
+    (let
+      loop
+      ((remaining (length inputs)))
       (when (> remaining 0)
         (let ((msg (receive-match (match-list 'fib-result 2) 1000)))
           (vector-set! results (car (cdr msg)) (car (cdr (cdr msg))))

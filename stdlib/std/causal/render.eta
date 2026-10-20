@@ -20,11 +20,7 @@
   (import std.collections)
   (import std.causal)
   (import std.io)
-  (export
-    dag:->dot
-    dag:->mermaid
-    dag:->latex
-    define-dag)
+  (export dag:->dot dag:->mermaid dag:->latex define-dag)
   (begin
 
     ;; -- Basic helpers ---------------------------------------------------
@@ -36,10 +32,7 @@
     ;;@example
     ;; (%member? 1 '())
     (defun %member? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((equal? x (car xs)) #t)
-        (else (%member? x (cdr xs)))))
+      (cond ((null? xs) #f) ((equal? x (car xs)) #t) (else (%member? x (cdr xs)))))
 
     ;;@doc (%adjoin x xs)
     ;;@category Causal
@@ -47,8 +40,7 @@
     ;; Compute `%adjoin`.
     ;;@example
     ;; (%adjoin 1 '())
-    (defun %adjoin (x xs)
-      (if (%member? x xs) xs (cons x xs)))
+    (defun %adjoin (x xs) (if (%member? x xs) xs (cons x xs)))
 
     ;;@doc (%symbol<? a b)
     ;;@category Causal
@@ -56,8 +48,7 @@
     ;; Return whether `%symbol<?` holds.
     ;;@example
     ;; (%symbol<? 1 1)
-    (defun %symbol<? (a b)
-      (string<? (symbol->string a) (symbol->string b)))
+    (defun %symbol<? (a b) (string<? (symbol->string a) (symbol->string b)))
 
     ;;@doc (%ordered-pair a b)
     ;;@category Causal
@@ -65,8 +56,7 @@
     ;; Compute `%ordered-pair`.
     ;;@example
     ;; (%ordered-pair 1 1)
-    (defun %ordered-pair (a b)
-      (if (%symbol<? a b) (list a b) (list b a)))
+    (defun %ordered-pair (a b) (if (%symbol<? a b) (list a b) (list b a)))
 
     ;;@doc (%edge-from e)
     ;;@category Causal
@@ -118,10 +108,7 @@
     ;; Return whether `%render-kind?` holds.
     ;;@example
     ;; (%render-kind? 1)
-    (defun %render-kind? (k)
-      (or (eq? k '->)
-          (eq? k '<->)
-          (eq? k '--)))
+    (defun %render-kind? (k) (or (eq? k '->) (eq? k '<->) (eq? k '--)))
 
     ;;@doc (%edge-shape? e)
     ;;@category Causal
@@ -130,11 +117,12 @@
     ;;@example
     ;; (%edge-shape? 'x)
     (defun %edge-shape? (e)
-      (and (list? e)
-           (= (length e) 3)
-           (symbol? (%edge-from e))
-           (symbol? (%edge-to e))
-           (%render-kind? (%edge-kind e))))
+      (and
+        (list? e)
+        (= (length e) 3)
+        (symbol? (%edge-from e))
+        (symbol? (%edge-to e))
+        (%render-kind? (%edge-kind e))))
 
     ;;@doc (%edge-valid? e)
     ;;@category Causal
@@ -142,9 +130,7 @@
     ;; Return whether `%edge-valid?` holds.
     ;;@example
     ;; (%edge-valid? 'x)
-    (defun %edge-valid? (e)
-      (and (%edge-shape? e)
-           (not (eq? (%edge-from e) (%edge-to e)))))
+    (defun %edge-valid? (e) (and (%edge-shape? e) (not (eq? (%edge-from e) (%edge-to e)))))
 
     ;;@doc (%define-dag-edge? e)
     ;;@category Causal
@@ -153,9 +139,7 @@
     ;;@example
     ;; (%define-dag-edge? 'x)
     (defun %define-dag-edge? (e)
-      (and (%edge-valid? e)
-           (or (%directed-edge? e)
-               (%bidirected-edge? e))))
+      (and (%edge-valid? e) (or (%directed-edge? e) (%bidirected-edge? e))))
 
     ;;@doc (%normalize-render-edge e)
     ;;@category Causal
@@ -164,13 +148,10 @@
     ;;@example
     ;; (%normalize-render-edge 'x)
     (defun %normalize-render-edge (e)
-      (let ((u (%edge-from e))
-            (k (%edge-kind e))
-            (v (%edge-to e)))
+      (let ((u (%edge-from e)) (k (%edge-kind e)) (v (%edge-to e)))
         (if (or (eq? k '<->) (eq? k '--))
-            (let ((ord (%ordered-pair u v)))
-              (list (car ord) k (cadr ord)))
-            e)))
+          (let ((ord (%ordered-pair u v))) (list (car ord) k (cadr ord)))
+          e)))
 
     ;;@doc (%edge-member? edge edges)
     ;;@category Causal
@@ -178,8 +159,7 @@
     ;; Return whether `%edge-member?` holds.
     ;;@example
     ;; (%edge-member? 'x 'x)
-    (defun %edge-member? (edge edges)
-      (any? (lambda (e) (equal? edge e)) edges))
+    (defun %edge-member? (edge edges) (any? (lambda (e) (equal? edge e)) edges))
 
     ;;@doc (%edge-adjoin edge edges)
     ;;@category Causal
@@ -187,8 +167,7 @@
     ;; Compute `%edge-adjoin`.
     ;;@example
     ;; (%edge-adjoin 'x 'x)
-    (defun %edge-adjoin (edge edges)
-      (if (%edge-member? edge edges) edges (cons edge edges)))
+    (defun %edge-adjoin (edge edges) (if (%edge-member? edge edges) edges (cons edge edges)))
 
     ;;@doc (%normalize-render-graph g)
     ;;@category Causal
@@ -197,11 +176,7 @@
     ;;@example
     ;; (%normalize-render-graph 'x)
     (defun %normalize-render-graph (g)
-      (reverse
-        (foldl (lambda (acc e)
-                 (%edge-adjoin (%normalize-render-edge e) acc))
-               '()
-               g)))
+      (reverse (foldl (lambda (acc e) (%edge-adjoin (%normalize-render-edge e) acc)) '() g)))
 
     ;;@doc (%edge<? a b)
     ;;@category Causal
@@ -216,8 +191,7 @@
              (bk (symbol->string (%edge-kind b)))
              (at (symbol->string (%edge-to a)))
              (bt (symbol->string (%edge-to b))))
-        (cond
-          ((string<? af bf) #t)
+        (cond ((string<? af bf) #t)
           ((string<? bf af) #f)
           ((string<? ak bk) #t)
           ((string<? bk ak) #f)
@@ -229,8 +203,7 @@
     ;; Compute `%sort-edges`.
     ;;@example
     ;; (%sort-edges 'x)
-    (defun %sort-edges (edges)
-      (sort %edge<? edges))
+    (defun %sort-edges (edges) (sort %edge<? edges))
 
     ;;@doc (%graph-nodes g)
     ;;@category Causal
@@ -239,11 +212,9 @@
     ;;@example
     ;; (%graph-nodes 'x)
     (defun %graph-nodes (g)
-      (sort %symbol<?
-            (foldl (lambda (acc e)
-                     (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
-                   '()
-                   g)))
+      (sort
+        %symbol<?
+        (foldl (lambda (acc e) (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc))) '() g)))
 
     ;;@doc (%directed-only g)
     ;;@category Causal
@@ -251,8 +222,7 @@
     ;; Compute `%directed-only`.
     ;;@example
     ;; (%directed-only 'x)
-    (defun %directed-only (g)
-      (filter %directed-edge? g))
+    (defun %directed-only (g) (filter %directed-edge? g))
 
     ;;@doc (%assert-render-graph g)
     ;;@category Causal
@@ -262,11 +232,8 @@
     ;; (%assert-render-graph 'x)
     (defun %assert-render-graph (g)
       (if (every? %edge-valid? g)
-          (let ((dg (%directed-only g)))
-            (if (dag:valid? dg)
-                g
-                (error 'invalid-dag g)))
-          (error 'invalid-graph g)))
+        (let ((dg (%directed-only g))) (if (dag:valid? dg) g (error 'invalid-dag g)))
+        (error 'invalid-graph g)))
 
     ;;@doc (%assert-define-dag g)
     ;;@category Causal
@@ -276,11 +243,8 @@
     ;; (%assert-define-dag 'x)
     (defun %assert-define-dag (g)
       (if (every? %define-dag-edge? g)
-          (let ((dg (%directed-only g)))
-            (if (dag:valid? dg)
-                g
-                (error 'invalid-dag g)))
-          (error 'invalid-graph g)))
+        (let ((dg (%directed-only g))) (if (dag:valid? dg) g (error 'invalid-dag g)))
+        (error 'invalid-graph g)))
 
     ;;@doc (%pair-list? xs)
     ;;@category Causal
@@ -288,11 +252,7 @@
     ;; Return whether `%pair-list?` holds.
     ;;@example
     ;; (%pair-list? '())
-    (defun %pair-list? (xs)
-      (if (null? xs)
-          #t
-          (and (pair? (car xs))
-               (%pair-list? (cdr xs)))))
+    (defun %pair-list? (xs) (if (null? xs) #t (and (pair? (car xs)) (%pair-list? (cdr xs)))))
 
     ;;@doc (%normalize-opts opts-rest)
     ;;@category Causal
@@ -301,11 +261,8 @@
     ;;@example
     ;; (%normalize-opts 'x)
     (defun %normalize-opts (opts-rest)
-      (cond
-        ((null? opts-rest) '())
-        ((and (= (length opts-rest) 1)
-              (list? (car opts-rest))
-              (%pair-list? (car opts-rest)))
+      (cond ((null? opts-rest) '())
+        ((and (= (length opts-rest) 1) (list? (car opts-rest)) (%pair-list? (car opts-rest)))
          (car opts-rest))
         ((%pair-list? opts-rest) opts-rest)
         (else (error "dag:->dot: expected alist options"))))
@@ -317,8 +274,7 @@
     ;;@example
     ;; (%opt-ref 'x 'x 'x)
     (defun %opt-ref (opts key default)
-      (let ((entry (assq key opts)))
-        (if entry (cdr entry) default)))
+      (let ((entry (assq key opts))) (if entry (cdr entry) default)))
 
     ;;@doc (%value->string x)
     ;;@category Causal
@@ -326,8 +282,7 @@
     ;; Compute `%value->string`.
     ;;@example
     ;; (%value->string 1)
-    (defun %value->string (x)
-      (if (string? x) x (display->string x)))
+    (defun %value->string (x) (if (string? x) x (display->string x)))
 
     ;;@doc (%dot-quote sym)
     ;;@category Causal
@@ -335,10 +290,7 @@
     ;; Compute `%dot-quote`.
     ;;@example
     ;; (%dot-quote 'x)
-    (defun %dot-quote (sym)
-      (string-append "\""
-                     (%escape-dot-string (symbol->string sym))
-                     "\""))
+    (defun %dot-quote (sym) (string-append "\"" (%escape-dot-string (symbol->string sym)) "\""))
 
     ;;@doc (%escape-dot-string s)
     ;;@category Causal
@@ -347,22 +299,16 @@
     ;;@example
     ;; (%escape-dot-string "sample")
     (defun %escape-dot-string (s)
-      (let ((p (open-output-string))
-            (n (string-length s)))
-        (let loop ((i 0))
+      (let ((p (open-output-string)) (n (string-length s)))
+        (let
+          loop
+          ((i 0))
           (if (>= i n)
-              (get-output-string p)
-              (let ((c (string-ref s i)))
-                (cond
-                  ((eqv? c #\\)
-                   (display "\\\\" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\")
-                   (display "\\\"" p)
-                   (loop (+ i 1)))
-                  (else
-                   (display c p)
-                   (loop (+ i 1)))))))))
+            (get-output-string p)
+            (let ((c (string-ref s i)))
+              (cond ((eqv? c #\\) (display "\\\\" p) (loop (+ i 1)))
+                ((eqv? c #\") (display "\\\"" p) (loop (+ i 1)))
+                (else (display c p) (loop (+ i 1)))))))))
 
     ;;@doc (%escape-mermaid-label s)
     ;;@category Causal
@@ -371,22 +317,16 @@
     ;;@example
     ;; (%escape-mermaid-label "sample")
     (defun %escape-mermaid-label (s)
-      (let ((p (open-output-string))
-            (n (string-length s)))
-        (let loop ((i 0))
+      (let ((p (open-output-string)) (n (string-length s)))
+        (let
+          loop
+          ((i 0))
           (if (>= i n)
-              (get-output-string p)
-              (let ((c (string-ref s i)))
-                (cond
-                  ((eqv? c #\\)
-                   (display "\\\\" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\")
-                   (display "\\\"" p)
-                   (loop (+ i 1)))
-                  (else
-                   (display c p)
-                   (loop (+ i 1)))))))))
+            (get-output-string p)
+            (let ((c (string-ref s i)))
+              (cond ((eqv? c #\\) (display "\\\\" p) (loop (+ i 1)))
+                ((eqv? c #\") (display "\\\"" p) (loop (+ i 1)))
+                (else (display c p) (loop (+ i 1)))))))))
 
     ;;@doc (%escape-latex-string s)
     ;;@category Causal
@@ -395,40 +335,22 @@
     ;;@example
     ;; (%escape-latex-string "sample")
     (defun %escape-latex-string (s)
-      (let ((p (open-output-string))
-            (n (string-length s)))
-        (let loop ((i 0))
+      (let ((p (open-output-string)) (n (string-length s)))
+        (let
+          loop
+          ((i 0))
           (if (>= i n)
-              (get-output-string p)
-              (let ((c (string-ref s i)))
-                (cond
-                  ((eqv? c #\\)
-                   (display "\\textbackslash{}" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\_)
-                   (display "\\_" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\{)
-                   (display "\\{" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\})
-                   (display "\\}" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\%)
-                   (display "\\%" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\&)
-                   (display "\\&" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\$)
-                   (display "\\$" p)
-                   (loop (+ i 1)))
-                  ((eqv? c #\#)
-                   (display "\\#" p)
-                   (loop (+ i 1)))
-                  (else
-                   (display c p)
-                   (loop (+ i 1)))))))))
+            (get-output-string p)
+            (let ((c (string-ref s i)))
+              (cond ((eqv? c #\\) (display "\\textbackslash{}" p) (loop (+ i 1)))
+                ((eqv? c #\_) (display "\\_" p) (loop (+ i 1)))
+                ((eqv? c #\{) (display "\\{" p) (loop (+ i 1)))
+                ((eqv? c #\}) (display "\\}" p) (loop (+ i 1)))
+                ((eqv? c #\%) (display "\\%" p) (loop (+ i 1)))
+                ((eqv? c #\&) (display "\\&" p) (loop (+ i 1)))
+                ((eqv? c #\$) (display "\\$" p) (loop (+ i 1)))
+                ((eqv? c #\#) (display "\\#" p) (loop (+ i 1)))
+                (else (display c p) (loop (+ i 1)))))))))
 
     ;;@doc (%node-id-map nodes)
     ;;@category Causal
@@ -437,14 +359,15 @@
     ;;@example
     ;; (%node-id-map 'x)
     (defun %node-id-map (nodes)
-      (let loop ((rest nodes) (idx 0) (acc '()))
+      (let
+        loop
+        ((rest nodes) (idx 0) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (loop (cdr rest)
-                  (+ idx 1)
-                  (cons (cons (car rest)
-                              (string-append "n" (number->string idx)))
-                        acc)))))
+          (reverse acc)
+          (loop
+            (cdr rest)
+            (+ idx 1)
+            (cons (cons (car rest) (string-append "n" (number->string idx))) acc)))))
 
     ;;@doc (%id-of id-map node)
     ;;@category Causal
@@ -453,10 +376,7 @@
     ;;@example
     ;; (%id-of 'x 'x)
     (defun %id-of (id-map node)
-      (let ((entry (assq node id-map)))
-        (if entry
-            (cdr entry)
-            (error 'unknown-variable node))))
+      (let ((entry (assq node id-map))) (if entry (cdr entry) (error 'unknown-variable node))))
 
     ;;@doc (%join-strings xs sep)
     ;;@category Causal
@@ -466,12 +386,11 @@
     ;; (%join-strings '() 'x)
     (defun %join-strings (xs sep)
       (if (null? xs)
-          ""
-          (let loop ((rest (cdr xs)) (acc (car xs)))
-            (if (null? rest)
-                acc
-                (loop (cdr rest)
-                      (string-append acc sep (car rest)))))))
+        ""
+        (let
+          loop
+          ((rest (cdr xs)) (acc (car xs)))
+          (if (null? rest) acc (loop (cdr rest) (string-append acc sep (car rest)))))))
 
     ;;@doc (%latex-node s)
     ;;@category Causal
@@ -480,9 +399,7 @@
     ;;@example
     ;; (%latex-node "sample")
     (defun %latex-node (s)
-      (string-append "\\texttt{"
-                     (%escape-latex-string (symbol->string s))
-                     "}"))
+      (string-append "\\texttt{" (%escape-latex-string (symbol->string s)) "}"))
 
     ;;@doc (%latex-edge e)
     ;;@category Causal
@@ -491,12 +408,10 @@
     ;;@example
     ;; (%latex-edge 'x)
     (defun %latex-edge (e)
-      (let ((u (%latex-node (%edge-from e)))
-            (v (%latex-node (%edge-to e))))
-        (cond
-          ((%directed-edge? e)   (string-append u " \\to " v))
+      (let ((u (%latex-node (%edge-from e))) (v (%latex-node (%edge-to e))))
+        (cond ((%directed-edge? e) (string-append u " \\to " v))
           ((%bidirected-edge? e) (string-append u " \\leftrightarrow " v))
-          (else                  (string-append u " - " v)))))
+          (else (string-append u " - " v)))))
 
     ;; -- Public renderers ------------------------------------------------
 
@@ -521,31 +436,26 @@
         (display rankdir p)
         (display ";" p)
         (newline p)
-        (let loop ((rest graph))
+        (let
+          loop
+          ((rest graph))
           (if (null? rest)
-              'ok
-              (let* ((e (car rest))
-                     (u (%dot-quote (%edge-from e)))
-                     (v (%dot-quote (%edge-to e))))
-                (display "  " p)
-                (cond
-                  ((%directed-edge? e)
-                   (display u p)
-                   (display " -> " p)
-                   (display v p)
-                   (display ";" p))
-                  ((%bidirected-edge? e)
-                   (display u p)
-                   (display " -> " p)
-                   (display v p)
-                   (display " [dir=both, style=dashed];" p))
-                  (else
-                   (display u p)
-                   (display " -> " p)
-                   (display v p)
-                   (display " [dir=none];" p)))
-                (newline p)
-                (loop (cdr rest)))))
+            'ok
+            (let* ((e (car rest)) (u (%dot-quote (%edge-from e))) (v (%dot-quote (%edge-to e))))
+              (display "  " p)
+              (cond ((%directed-edge? e)
+                     (display u p)
+                     (display " -> " p)
+                     (display v p)
+                     (display ";" p))
+                ((%bidirected-edge? e)
+                 (display u p)
+                 (display " -> " p)
+                 (display v p)
+                 (display " [dir=both, style=dashed];" p))
+                (else (display u p) (display " -> " p) (display v p) (display " [dir=none];" p)))
+              (newline p)
+              (loop (cdr rest)))))
         (display "}" p)
         (get-output-string p)))
 
@@ -563,49 +473,46 @@
              (p (open-output-string)))
         (display "flowchart LR" p)
         (newline p)
-        (let loop-nodes ((rest nodes))
+        (let
+          loop-nodes
+          ((rest nodes))
           (if (null? rest)
-              'ok
-              (let* ((node (car rest))
-                     (id (%id-of id-map node)))
-                (display "  " p)
-                (display id p)
-                (display "[\"" p)
-                (display (%escape-mermaid-label (symbol->string node)) p)
-                (display "\"]" p)
-                (newline p)
-                (loop-nodes (cdr rest)))))
-        (let loop-edges ((rest graph))
+            'ok
+            (let* ((node (car rest)) (id (%id-of id-map node)))
+              (display "  " p)
+              (display id p)
+              (display "[\"" p)
+              (display (%escape-mermaid-label (symbol->string node)) p)
+              (display "\"]" p)
+              (newline p)
+              (loop-nodes (cdr rest)))))
+        (let
+          loop-edges
+          ((rest graph))
           (if (null? rest)
-              'ok
-              (let* ((e (car rest))
-                     (u (%id-of id-map (%edge-from e)))
-                     (v (%id-of id-map (%edge-to e))))
-                (cond
-                  ((%directed-edge? e)
-                   (display "  " p)
-                   (display u p)
-                   (display " --> " p)
-                   (display v p)
-                   (newline p))
-                  ((%bidirected-edge? e)
-                   (display "  " p)
-                   (display u p)
-                   (display " -.-> " p)
-                   (display v p)
-                   (newline p)
-                   (display "  " p)
-                   (display v p)
-                   (display " -.-> " p)
-                   (display u p)
-                   (newline p))
-                  (else
-                   (display "  " p)
-                   (display u p)
-                   (display " --- " p)
-                   (display v p)
-                   (newline p)))
-                (loop-edges (cdr rest)))))
+            'ok
+            (let* ((e (car rest))
+                   (u (%id-of id-map (%edge-from e)))
+                   (v (%id-of id-map (%edge-to e))))
+              (cond ((%directed-edge? e)
+                     (display "  " p)
+                     (display u p)
+                     (display " --> " p)
+                     (display v p)
+                     (newline p))
+                ((%bidirected-edge? e)
+                 (display "  " p)
+                 (display u p)
+                 (display " -.-> " p)
+                 (display v p)
+                 (newline p)
+                 (display "  " p)
+                 (display v p)
+                 (display " -.-> " p)
+                 (display u p)
+                 (newline p))
+                (else (display "  " p) (display u p) (display " --- " p) (display v p) (newline p)))
+              (loop-edges (cdr rest)))))
         (get-output-string p)))
 
     ;;@doc (dag:->latex g)
@@ -619,10 +526,8 @@
              (graph (%sort-edges (%normalize-render-graph validated)))
              (pieces (map* %latex-edge graph)))
         (if (null? pieces)
-            "\\[\n\\mathcal{G} = \\emptyset\n\\]"
-            (string-append "\\[\n\\mathcal{G} = \\{ "
-                           (%join-strings pieces ",\\; ")
-                           " \\}\n\\]"))))
+          "\\[\n\\mathcal{G} = \\emptyset\n\\]"
+          (string-append "\\[\n\\mathcal{G} = \\{ " (%join-strings pieces ",\\; ") " \\}\n\\]"))))
 
     ;; -- Validation helper ----------------------------------------------
 
@@ -632,7 +537,4 @@
     ;; Compute `define-dag`.
     ;;@example
     ;; (define-dag 'x)
-    (defun define-dag (g)
-      (%normalize-render-graph (%assert-define-dag g)))
-
-  ))
+    (defun define-dag (g) (%normalize-render-graph (%assert-define-dag g)))))

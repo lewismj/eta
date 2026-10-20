@@ -10,8 +10,7 @@
     ;; Construct `make-row`.
     ;;@example
     ;; (make-row 1 1 1)
-    (defun make-row (x m y)
-      (list (cons 'x x) (cons 'm m) (cons 'y y)))
+    (defun make-row (x m y) (list (cons 'x x) (cons 'm m) (cons 'y y)))
 
     ;;@doc (repeat-row n row)
     ;;@category Tests
@@ -20,10 +19,7 @@
     ;;@example
     ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
-      (let loop ((i 0) (acc '()))
-        (if (= i n)
-            (reverse acc)
-            (loop (+ i 1) (cons row acc)))))
+      (let loop ((i 0) (acc '())) (if (= i n) (reverse acc) (loop (+ i 1) (cons row acc)))))
 
     ;;@doc (make-linear-mediation-data)
     ;;@category Tests
@@ -46,11 +42,7 @@
     ;; Compute `mean`.
     ;;@example
     ;; (mean '())
-    (defun mean (xs)
-      (if (null? xs)
-          0.0
-          (/ (foldl (lambda (acc x) (+ acc x)) 0.0 xs)
-             (length xs))))
+    (defun mean (xs) (if (null? xs) 0.0 (/ (foldl (lambda (acc x) (+ acc x)) 0.0 xs) (length xs))))
 
     ;;@doc (treatment obs)
     ;;@category Tests
@@ -65,7 +57,7 @@
     ;; Compute `outcome`.
     ;;@example
     ;; (outcome 'x)
-    (defun outcome (obs)   (cdr (assq 'y obs)))
+    (defun outcome (obs) (cdr (assq 'y obs)))
 
     ;;@doc (total-effect data)
     ;;@category Tests
@@ -83,14 +75,14 @@
     (define data (make-linear-mediation-data))
 
     (define suite
-      (make-group "std.causal.mediation"
+      (make-group
+        "std.causal.mediation"
         (list
-          (make-test "mediation-formula computes cross-world mean"
-            (lambda ()
-              (assert-approx-equal 1.94
-                                   (mediation-formula data 'y 'x '(m) 1 0)
-                                   1e-12)))
-          (make-test "NDE + NIE equals total effect on linear mediation data"
+          (make-test
+            "mediation-formula computes cross-world mean"
+            (lambda () (assert-approx-equal 1.94 (mediation-formula data 'y 'x '(m) 1 0) 1e-12)))
+          (make-test
+            "NDE + NIE equals total effect on linear mediation data"
             (lambda ()
               (let* ((te (total-effect data))
                      (nde (do:nde '() 'y 'x '(m) data 0 1))
@@ -98,7 +90,8 @@
                 (assert-approx-equal te (+ nde nie) 1e-12)
                 (assert-approx-equal 0.7 nde 1e-12)
                 (assert-approx-equal 0.72 nie 1e-12))))
-          (make-test "controlled direct effect is stable across mediator levels"
+          (make-test
+            "controlled direct effect is stable across mediator levels"
             (lambda ()
               (assert-approx-equal 0.7 (do:cde '() 'y 'x '(m) data 0 0 1) 1e-12)
               (assert-approx-equal 0.7 (do:cde '() 'y 'x '(m) data 1 0 1) 1e-12))))))

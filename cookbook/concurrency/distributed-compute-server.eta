@@ -7,47 +7,33 @@
   (import std.io)
   (begin
 
-    (defun fib (n)
-      (let loop ((k n) (a 0) (b 1))
-        (if (= k 0)
-            a
-            (loop (- k 1) b (+ a b)))))
+    (defun fib (n) (let loop ((k n) (a 0) (b 1)) (if (= k 0) a (loop (- k 1) b (+ a b)))))
 
     (define endpoint "tcp://127.0.0.1:6000")
     (define sock (nng-socket 'rep))
     (nng-listen sock endpoint)
     (println (string-append "compute-server: listening on " endpoint))
 
-    (let loop ()
+    (let
+      loop
+      ()
       (let ((task (recv! sock 'wait)))
-        (cond
-          ((and (pair? task)
-                (eq? (car task) 'square)
-                (pair? (cdr task))
-                (null? (cdr (cdr task))))
-           (let ((n (car (cdr task))))
-             (send! sock (* n n) 'wait)
-             (loop)))
-          ((and (pair? task)
-                (eq? (car task) 'mul)
-                (pair? (cdr task))
-                (pair? (cdr (cdr task)))
-                (null? (cdr (cdr (cdr task)))))
-           (let ((a (car (cdr task)))
-                 (b (car (cdr (cdr task)))))
-             (send! sock (* a b) 'wait)
-             (loop)))
-          ((and (pair? task)
-                (eq? (car task) 'fib)
-                (pair? (cdr task))
-                (null? (cdr (cdr task))))
-           (let ((n (car (cdr task))))
-             (send! sock (fib n) 'wait)
-             (loop)))
-          ((equal? task '(shutdown))
-           (send! sock 'ok 'wait))
-          (else
-           (send! sock '(error bad-request) 'wait)
-           (loop)))))
+        (cond ((and
+                 (pair? task)
+                 (eq? (car task) 'square)
+                 (pair? (cdr task))
+                 (null? (cdr (cdr task))))
+               (let ((n (car (cdr task)))) (send! sock (* n n) 'wait) (loop)))
+          ((and
+             (pair? task)
+             (eq? (car task) 'mul)
+             (pair? (cdr task))
+             (pair? (cdr (cdr task)))
+             (null? (cdr (cdr (cdr task)))))
+           (let ((a (car (cdr task))) (b (car (cdr (cdr task))))) (send! sock (* a b) 'wait) (loop)))
+          ((and (pair? task) (eq? (car task) 'fib) (pair? (cdr task)) (null? (cdr (cdr task))))
+           (let ((n (car (cdr task)))) (send! sock (fib n) 'wait) (loop)))
+          ((equal? task '(shutdown)) (send! sock 'ok 'wait))
+          (else (send! sock '(error bad-request) 'wait) (loop)))))
 
     (nng-close sock)))

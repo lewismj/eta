@@ -10,8 +10,7 @@
     ;; `.
     ;;@example
     ;; (contains-edge? 'x 'x)
-    (defun contains-edge? (g edge)
-      (any? (lambda (e) (equal? e edge)) g))
+    (defun contains-edge? (g edge) (any? (lambda (e) (equal? e edge)) g))
 
     ;;@doc (subset? a b)
     ;;@category Tests
@@ -19,8 +18,7 @@
     ;; Return whether `subset?` holds.
     ;;@example
     ;; (subset? 1 1)
-    (defun subset? (a b)
-      (every? (lambda (x) (member x b)) a))
+    (defun subset? (a b) (every? (lambda (x) (member x b)) a))
 
     ;;@doc (set-equal? a b)
     ;;@category Tests
@@ -28,29 +26,29 @@
     ;; Return whether `set-equal?` holds.
     ;;@example
     ;; (set-equal? 1 1)
-    (defun set-equal? (a b)
-      (and (subset? a b) (subset? b a)))
+    (defun set-equal? (a b) (and (subset? a b) (subset? b a)))
 
     (define suite
-      (make-group "std.causal.admg"
+      (make-group
+        "std.causal.admg"
         (list
-          (make-test "district groups bidirected-connected nodes"
+          (make-test
+            "district groups bidirected-connected nodes"
             (lambda ()
               (let ((g '((a -> b) (b -> c) (a <-> c))))
                 (assert-true (set-equal? (admg:district g 'a) '(a c)))
                 (assert-true (set-equal? (admg:district g 'b) '(b))))))
-
-          (make-test "ancestors ignores bidirected edges"
+          (make-test
+            "ancestors ignores bidirected edges"
             (lambda ()
               (let ((g '((a <-> b) (b -> c) (d -> b))))
                 (assert-true (set-equal? (admg:ancestors g 'c) '(b d)))
                 (assert-false (member 'a (admg:ancestors g 'c))))))
-
-          (make-test "latent projection of bow graph yields directed and bidirected edge"
+          (make-test
+            "latent projection of bow graph yields directed and bidirected edge"
             (lambda ()
               ;; latent u with u->x, u->y and directed x->y
-              (let* ((dag '((u -> x) (u -> y) (x -> y)))
-                     (g (admg:project dag '(u))))
+              (let* ((dag '((u -> x) (u -> y) (x -> y))) (g (admg:project dag '(u))))
                 (assert-true (contains-edge? g '(x -> y)))
                 (assert-true (contains-edge? g '(x <-> y)))))))))
 

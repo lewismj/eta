@@ -11,10 +11,7 @@
     ;;@example
     ;; (contains? 1 '())
     (defun contains? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((equal? x (car xs)) #t)
-        (else (contains? x (cdr xs)))))
+      (cond ((null? xs) #f) ((equal? x (car xs)) #t) (else (contains? x (cdr xs)))))
 
     ;;@doc (disjoint? xs ys)
     ;;@category Tests
@@ -22,8 +19,7 @@
     ;; Return whether `disjoint?` holds.
     ;;@example
     ;; (disjoint? '() '())
-    (defun disjoint? (xs ys)
-      (not (any? (lambda (x) (contains? x ys)) xs)))
+    (defun disjoint? (xs ys) (not (any? (lambda (x) (contains? x ys)) xs)))
 
     ;;@doc (alist-ref key al)
     ;;@category Tests
@@ -33,9 +29,7 @@
     ;; (alist-ref 'x 'x)
     (defun alist-ref (key al)
       (let ((entry (assq key al)))
-        (if entry
-            (cdr entry)
-            (error "missing alist key in test result" key))))
+        (if entry (cdr entry) (error "missing alist key in test result" key))))
 
     ;;@doc (repeat-row n row)
     ;;@category Tests
@@ -44,10 +38,7 @@
     ;;@example
     ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
-      (let loop ((i 0) (acc '()))
-        (if (= i n)
-            (reverse acc)
-            (loop (+ i 1) (cons row acc)))))
+      (let loop ((i 0) (acc '())) (if (= i n) (reverse acc) (loop (+ i 1) (cons row acc)))))
 
     ;;@doc (make-id-data n)
     ;;@category Tests
@@ -55,12 +46,7 @@
     ;; Construct `make-id-data`.
     ;;@example
     ;; (make-id-data 1)
-    (defun make-id-data (n)
-      (map* (lambda (i)
-              (list
-                (cons 'id i)
-                (cons 'y 0.0)))
-            (range 0 n)))
+    (defun make-id-data (n) (map* (lambda (i) (list (cons 'id i) (cons 'y 0.0))) (range 0 n)))
 
     ;;@doc (make-membership-learner)
     ;;@category Tests
@@ -70,19 +56,12 @@
     ;; Learner that predicts 1.0 if an id was seen during fit, 0.0 otherwise.
     ;; With correct OOF splits, every prediction should be 0.0.
     (defun make-membership-learner ()
-      (letrec ((fit
-                 (lambda (x-matrix _y-vector)
-                   (list (cons 'seen-ids (map* car x-matrix)))))
+      (letrec ((fit (lambda (x-matrix _y-vector) (list (cons 'seen-ids (map* car x-matrix)))))
                (predict
                  (lambda (model x-matrix)
                    (let ((seen (alist-ref 'seen-ids model)))
-                     (map* (lambda (row)
-                             (if (contains? (car row) seen) 1.0 0.0))
-                           x-matrix)))))
-        (list
-          (cons 'fit fit)
-          (cons 'predict predict)
-          (cons 'kind 'regressor))))
+                     (map* (lambda (row) (if (contains? (car row) seen) 1.0 0.0)) x-matrix)))))
+        (list (cons 'fit fit) (cons 'predict predict) (cons 'kind 'regressor))))
 
     ;;@doc (make-plr-row i)
     ;;@category Tests
@@ -99,11 +78,7 @@
              (v (* 0.15 (- (modulo (+ (* 3 i) 1) 7) 3)))
              (x (+ (* 0.8 z1) (* -0.6 z2) u))
              (y (+ (* 1.0 x) (* 1.5 z1) (* -0.2 z2) v)))
-        (list
-          (cons 'z1 z1)
-          (cons 'z2 z2)
-          (cons 'x x)
-          (cons 'y y))))
+        (list (cons 'z1 z1) (cons 'z2 z2) (cons 'x x) (cons 'y y))))
 
     ;;@doc (make-plr-data n)
     ;;@category Tests
@@ -111,8 +86,7 @@
     ;; Construct `make-plr-data`.
     ;;@example
     ;; (make-plr-data 1)
-    (defun make-plr-data (n)
-      (map* make-plr-row (range 0 n)))
+    (defun make-plr-data (n) (map* make-plr-row (range 0 n)))
 
     ;;@doc (make-irm-data)
     ;;@category Tests
@@ -121,8 +95,7 @@
     ;; (make-irm-data)
     ;; IRM DGP with both treatment arms present in every (z1,z2) stratum.
     (defun make-irm-data ()
-      (let ((z1s '(-2 -1 0 1 2))
-            (z2s '(-1 0 1)))
+      (let ((z1s '(-2 -1 0 1 2)) (z2s '(-1 0 1)))
         (foldl
           (lambda (acc z1)
             (append
@@ -133,17 +106,9 @@
                          (tau (+ 1.2 (* 0.1 z2)))
                          (n1 (if (>= z1 0) 12 4))
                          (n0 (if (>= z1 0) 4 12))
-                         (r0 (list (cons 'x 0)
-                                   (cons 'z1 z1)
-                                   (cons 'z2 z2)
-                                   (cons 'y base)))
-                         (r1 (list (cons 'x 1)
-                                   (cons 'z1 z1)
-                                   (cons 'z2 z2)
-                                   (cons 'y (+ base tau)))))
-                    (append acc2
-                            (repeat-row n0 r0)
-                            (repeat-row n1 r1))))
+                         (r0 (list (cons 'x 0) (cons 'z1 z1) (cons 'z2 z2) (cons 'y base)))
+                         (r1 (list (cons 'x 1) (cons 'z1 z1) (cons 'z2 z2) (cons 'y (+ base tau)))))
+                    (append acc2 (repeat-row n0 r0) (repeat-row n1 r1))))
                 '()
                 z2s)))
           '()
@@ -154,32 +119,30 @@
     (define irm-data (make-irm-data))
 
     (define suite
-      (make-group "std.causal.crossfit"
+      (make-group
+        "std.causal.crossfit"
         (list
-
-          (make-test "k-fold partition is exact and deterministic"
+          (make-test
+            "k-fold partition is exact and deterministic"
             (lambda ()
               (let* ((folds (crossfit:k-folds 100 5 42))
                      (folds2 (crossfit:k-folds 100 5 42))
-                     (test-idx (foldl (lambda (acc f) (append acc (cdr f)))
-                                      '()
-                                      folds))
+                     (test-idx (foldl (lambda (acc f) (append acc (cdr f))) '() folds))
                      (sorted (sort (lambda (a b) (< a b)) test-idx)))
                 (assert-equal 5 (length folds))
                 (assert-equal 100 (length test-idx))
                 (assert-equal (range 0 100) sorted)
                 (assert-equal folds folds2)
-                (assert-true
-                  (every? (lambda (f) (disjoint? (car f) (cdr f))) folds)))))
-
-          (make-test "OOF predictions never train on themselves"
+                (assert-true (every? (lambda (f) (disjoint? (car f) (cdr f))) folds)))))
+          (make-test
+            "OOF predictions never train on themselves"
             (lambda ()
               (let* ((d (make-id-data 120))
                      (learner (make-membership-learner))
                      (pred (crossfit:nuisance learner d '(id) 'y 6 7)))
                 (assert-true (every? (lambda (v) (= v 0.0)) pred)))))
-
-          (make-test "nuisance-arm returns aligned predictions for both arms"
+          (make-test
+            "nuisance-arm returns aligned predictions for both arms"
             (lambda ()
               (let* ((mu1 (crossfit:nuisance-arm ols irm-data 'y 'x '(z1 z2) 1 5 19))
                      (mu0 (crossfit:nuisance-arm ols irm-data 'y 'x '(z1 z2) 0 5 23))
@@ -187,8 +150,8 @@
                 (assert-equal (length irm-data) (length mu1))
                 (assert-equal (length irm-data) (length mu0))
                 (assert-true (> (stats:mean delta) 0.5)))))
-
-          (make-test "DML PLR recovers theta on linear DGP"
+          (make-test
+            "DML PLR recovers theta on linear DGP"
             (lambda ()
               (let* ((d (make-plr-data 1200))
                      (r (crossfit:dml-plr d 'y 'x '(z1 z2) ols ols 5 42))
@@ -197,10 +160,9 @@
                      (ci (alist-ref 'ci r)))
                 (assert-approx-equal 1.0 theta 0.05)
                 (assert-true (> se 0.0))
-                (assert-true (and (<= (car ci) 1.0)
-                                  (>= (cadr ci) 1.0))))))
-
-          (make-test "DML IRM matches AIPW on stratified overlap sample"
+                (assert-true (and (<= (car ci) 1.0) (>= (cadr ci) 1.0))))))
+          (make-test
+            "DML IRM matches AIPW on stratified overlap sample"
             (lambda ()
               (let* ((r (crossfit:dml-irm irm-data 'y 'x '(z1 z2) ols logit 5 31))
                      (theta (alist-ref 'theta r))
@@ -208,8 +170,6 @@
                      (ci (alist-ref 'ci r)))
                 (assert-approx-equal 1.2 theta 0.05)
                 (assert-approx-equal aipw theta 0.05)
-                (assert-true (and (<= (car ci) theta)
-                                  (>= (cadr ci) theta))))))
-          )))
+                (assert-true (and (<= (car ci) theta) (>= (cadr ci) theta)))))))))
 
     (print-tap (run suite))))

@@ -1,5 +1,6 @@
 ;;; stdlib/tests/time.test.eta - Unit tests for std.time
 
+;; eta-lint:disable-file=ETA501
 (module time.tests
   (import std.test std.time)
   (begin
@@ -10,8 +11,7 @@
     ;; Unit tests for std.time Uses `has-key?`.
     ;;@example
     ;; (has-key? 1 'x)
-    (defun has-key? (k alist)
-      (not (eq? (assoc k alist) #f)))
+    (defun has-key? (k alist) (not (eq? (assoc k alist) #f)))
 
     ;;@doc (digit-char? ch)
     ;;@category Tests
@@ -20,35 +20,37 @@
     ;;@example
     ;; (digit-char? 'x)
     (defun digit-char? (ch)
-      (let ((n (char->integer ch)))
-        (and (>= n (char->integer #\0))
-             (<= n (char->integer #\9)))))
+      (let ((n (char->integer ch))) (and (>= n (char->integer #\0)) (<= n (char->integer #\9)))))
 
     (define suite
-      (make-group "std.time"
+      (make-group
+        "std.time"
         (list
-
-          (make-group "wrappers"
+          (make-group
+            "wrappers"
             (list
-              (make-test "now wrappers return numbers"
+              (make-test
+                "now wrappers return numbers"
                 (lambda ()
                   (assert-true (number? (time:now-ms)))
                   (assert-true (number? (time:now-us)))
                   (assert-true (number? (time:now-ns)))))
-              (make-test "monotonic is non-decreasing"
+              (make-test
+                "monotonic is non-decreasing"
                 (lambda ()
                   (let ((a (time:monotonic-ms)))
                     (time:sleep-ms 5)
-                    (let ((b (time:monotonic-ms)))
-                      (assert-true (>= b a))))))
-              (make-test "elapsed-ms computes non-negative delta"
+                    (let ((b (time:monotonic-ms))) (assert-true (>= b a))))))
+              (make-test
+                "elapsed-ms computes non-negative delta"
                 (lambda ()
                   (assert-equal 7 (time:elapsed-ms 10 17))
                   (assert-equal 0 (time:elapsed-ms 17 10))))))
-
-          (make-group "parts"
+          (make-group
+            "parts"
             (list
-              (make-test "utc-parts has required keys"
+              (make-test
+                "utc-parts has required keys"
                 (lambda ()
                   (let ((parts (time:utc-parts (time:now-ms))))
                     (assert-true (has-key? 'year parts))
@@ -62,7 +64,8 @@
                     (assert-true (has-key? 'is-dst parts))
                     (assert-true (has-key? 'offset-minutes parts))
                     (assert-equal 0 (cdr (assoc 'offset-minutes parts))))))
-              (make-test "local-parts has required keys"
+              (make-test
+                "local-parts has required keys"
                 (lambda ()
                   (let ((parts (time:local-parts (time:now-ms))))
                     (assert-true (has-key? 'year parts))
@@ -75,14 +78,14 @@
                     (assert-true (has-key? 'yearday parts))
                     (assert-true (has-key? 'is-dst parts))
                     (assert-true (has-key? 'offset-minutes parts)))))))
-
-          (make-group "formatting"
+          (make-group
+            "formatting"
             (list
-              (make-test "utc format at epoch is stable"
-                (lambda ()
-                  (assert-equal "1970-01-01T00:00:00Z"
-                                (time:format-iso8601-utc 0))))
-              (make-test "local format has expected separators"
+              (make-test
+                "utc format at epoch is stable"
+                (lambda () (assert-equal "1970-01-01T00:00:00Z" (time:format-iso8601-utc 0))))
+              (make-test
+                "local format has expected separators"
                 (lambda ()
                   (let ((s (time:format-iso8601-local 0)))
                     (assert-true (string? s))
@@ -92,8 +95,7 @@
                     (assert-true (eqv? (string-ref s 10) #\T))
                     (assert-true (eqv? (string-ref s 13) #\:))
                     (assert-true (eqv? (string-ref s 16) #\:))
-                    (assert-true (or (eqv? (string-ref s 19) #\+)
-                                     (eqv? (string-ref s 19) #\-)))
+                    (assert-true (or (eqv? (string-ref s 19) #\+) (eqv? (string-ref s 19) #\-)))
                     (assert-true (eqv? (string-ref s 22) #\:))
                     (assert-true (digit-char? (string-ref s 0)))
                     (assert-true (digit-char? (string-ref s 1)))
@@ -102,7 +104,6 @@
                     (assert-true (digit-char? (string-ref s 20)))
                     (assert-true (digit-char? (string-ref s 21)))
                     (assert-true (digit-char? (string-ref s 23)))
-                    (assert-true (digit-char? (string-ref s 24)))))))))
-          ))
+                    (assert-true (digit-char? (string-ref s 24)))))))))))
 
     (print-tap (run suite))))

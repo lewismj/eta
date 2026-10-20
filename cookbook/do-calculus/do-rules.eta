@@ -26,13 +26,14 @@
 (module do-rules
   (import std.io)
   (import std.collections)
-  (import (except std.causal
-                  dag:d-separated?
-                  dag:mutilate-do
-                  dag:mutilate-see
-                  do-rule1-applies?
-                  do-rule2-applies?
-                  do-rule3-applies?))
+  (import (except
+            std.causal
+            dag:d-separated?
+            dag:mutilate-do
+            dag:mutilate-see
+            do-rule1-applies?
+            do-rule2-applies?
+            do-rule3-applies?))
   (import std.logic)
   (begin
 
@@ -45,10 +46,7 @@
     ;;@example
     ;; (dag:mutilate-do 'x 'x)
     (defun dag:mutilate-do (dag x-set)
-      (filter (lambda (edge)
-                (not (any? (lambda (x) (eq? (car (cdr (cdr edge))) x))
-                           x-set)))
-              dag))
+      (filter (lambda (edge) (not (any? (lambda (x) (eq? (car (cdr (cdr edge))) x)) x-set))) dag))
 
     ;;@doc (dag:mutilate-see dag z-set)
     ;;@category Do Calculus
@@ -57,10 +55,7 @@
     ;; (dag:mutilate-see 'x 'x)
     ;; G_{Z_}: remove all outgoing edges from Z.
     (defun dag:mutilate-see (dag z-set)
-      (filter (lambda (edge)
-                (not (any? (lambda (z) (eq? (car edge) z))
-                           z-set)))
-              dag))
+      (filter (lambda (edge) (not (any? (lambda (z) (eq? (car edge) z)) z-set))) dag))
 
     ;;@doc (dag:d-separated? dag y-set z-set w-set)
     ;;@category Do Calculus
@@ -81,11 +76,7 @@
     ;; path exists from any Z to any Y without passing through W.  This is
     ;; a sufficient condition for the three rules in common causal structures.
     (defun dag:d-separated? (dag y-set z-set w-set)
-      (every? (lambda (z)
-                (every? (lambda (y)
-                          (not (dag:has-path? dag z y w-set)))
-                        y-set))
-              z-set))
+      (every? (lambda (z) (every? (lambda (y) (not (dag:has-path? dag z y w-set))) y-set)) z-set))
 
     ;;@doc (do-rule1-applies? dag y-set z-set x-set w-set)
     ;;@category Do Calculus
@@ -114,8 +105,7 @@
     ;; Returns #t if Rule 2 applies: do(z) can be replaced by observation z.
     ;; Precondition: Y ⊥ Z | X, W  in  G_{X̄, Z_}
     (defun do-rule2-applies? (dag y-set x-set z-set w-set)
-      (let* ((g-xbar    (dag:mutilate-do  dag x-set))
-             (g-xbar-z_ (dag:mutilate-see g-xbar z-set)))
+      (let* ((g-xbar (dag:mutilate-do dag x-set)) (g-xbar-z_ (dag:mutilate-see g-xbar z-set)))
         (dag:d-separated? g-xbar-z_ y-set z-set (append x-set w-set))))
 
     ;;@doc (do-rule3-applies? dag y-set x-set z-set w-set)
@@ -131,14 +121,10 @@
     ;; Precondition: Y ⊥ Z | X, W  in  G_{X̄, Z̄(W)}
     ;; where Z̄(W) = { z ∈ Z | z is not an ancestor of any w ∈ W in G_{X̄} }
     (defun do-rule3-applies? (dag y-set x-set z-set w-set)
-      (let* ((g-xbar    (dag:mutilate-do dag x-set))
+      (let* ((g-xbar (dag:mutilate-do dag x-set))
              ;; Compute Z̄(W): Z-nodes that are not ancestors of any W in G_{X̄}
-             (anc-w     (foldr (lambda (w acc)
-                                 (append (dag:ancestors g-xbar w) acc))
-                               '() w-set))
-             (z-bar-w   (filter (lambda (z)
-                                  (not (any? (lambda (a) (eq? z a)) anc-w)))
-                                z-set))
+             (anc-w (foldr (lambda (w acc) (append (dag:ancestors g-xbar w) acc)) '() w-set))
+             (z-bar-w (filter (lambda (z) (not (any? (lambda (a) (eq? z a)) anc-w))) z-set))
              (g-xbar-zbar (dag:mutilate-do g-xbar z-bar-w)))
         (dag:d-separated? g-xbar-zbar y-set z-set (append x-set w-set))))
 
@@ -146,16 +132,16 @@
 
     (define win (eq? (platform) 'Win32))
 
-    (println (if win "-- Do-Calculus rules demo ------------------------------"
-                     "── Do-Calculus rules demo ──────────────────────────────"))
+    (println
+      (if win
+        "-- Do-Calculus rules demo ------------------------------"
+        "── Do-Calculus rules demo ──────────────────────────────"))
 
     ;; Finance DAG:
     ;;   sector → market-beta → stock-return
     ;;   sector → stock-return
     (define fin-dag
-      '((sector      -> market-beta)
-        (sector      -> stock-return)
-        (market-beta -> stock-return)))
+      '((sector -> market-beta) (sector -> stock-return) (market-beta -> stock-return)))
 
     (println "")
     (println "Finance DAG:")
@@ -166,32 +152,23 @@
 
     ;; Rule 2 check: can we replace do(market-beta) with observation?
     ;; Y = {stock-return}, X = {}, Z = {market-beta}, W = {}
-    (print (if win "  Rule 2 (exchange do->obs, X={}, Z={market-beta}):  "
-                   "  Rule 2 (exchange do→obs, X={}, Z={market-beta}):  "))
-    (println (do-rule2-applies? fin-dag
-                                '(stock-return)
-                                '()
-                                '(market-beta)
-                                '()))
+    (print
+      (if win
+        "  Rule 2 (exchange do->obs, X={}, Z={market-beta}):  "
+        "  Rule 2 (exchange do→obs, X={}, Z={market-beta}):  "))
+    (println (do-rule2-applies? fin-dag '(stock-return) '() '(market-beta) '()))
 
     ;; Rule 1 check: can we add/drop 'sector' as an observation?
     ;; G_{market-beta bar}: remove incoming edges to market-beta
     (print "  Rule 1 (drop sector obs, X={market-beta}, Z={sector}, W={}):  ")
-    (println (do-rule1-applies? fin-dag
-                                '(stock-return)
-                                '(sector)
-                                '(market-beta)
-                                '()))
+    (println (do-rule1-applies? fin-dag '(stock-return) '(sector) '(market-beta) '()))
 
     ;; ── Weather DAG rules check ───────────────────────────────────────────
 
     (println "")
     (println "Weather DAG:")
     (define wx-dag
-      '((season    -> rain)
-        (season    -> sprinkler)
-        (rain      -> wet-grass)
-        (sprinkler -> wet-grass)))
+      '((season -> rain) (season -> sprinkler) (rain -> wet-grass) (sprinkler -> wet-grass)))
     (println wx-dag)
 
     (println "")
@@ -201,11 +178,4 @@
     ;; G_{sprinkler bar, sprinkler_}: all incoming to sprinkler removed,
     ;; all outgoing from sprinkler removed → wet-grass ⊥ sprinkler | ∅
     (print "  Rule 2 applicable?  ")
-    (println (do-rule2-applies? wx-dag
-                                '(wet-grass)
-                                '()
-                                '(sprinkler)
-                                '()))
-
-  ))
-
+    (println (do-rule2-applies? wx-dag '(wet-grass) '() '(sprinkler) '()))))

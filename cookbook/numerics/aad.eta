@@ -65,25 +65,17 @@
 
     ;; 4. Rosenbrock: f(x,y) = (1-x)² + 100·(y-x²)²
     ;;    At (1,1) the gradient is (0, 0) — the global minimum.
-    (display (if win "Rosenbrock f(x,y) = (1-x)^2 + 100(y-x^2)^2\n"
-                     "Rosenbrock f(x,y) = (1-x)² + 100(y-x²)²\n"))
+    (display
+      (if win
+        "Rosenbrock f(x,y) = (1-x)^2 + 100(y-x^2)^2\n"
+        "Rosenbrock f(x,y) = (1-x)² + 100(y-x²)²\n"))
     (display "  grad at (1,1): ")
-    (println (grad (lambda (x y)
-                     (+ (* (- 1 x) (- 1 x))
-                        (* 100 (* (- y (* x x))
-                                  (- y (* x x))))))
-                   '(1 1)))
+    (println
+      (grad (lambda (x y) (+ (* (- 1 x) (- 1 x)) (* 100 (* (- y (* x x)) (- y (* x x)))))) '(1 1)))
 
     ;; 5. Composition with higher-order functions: dot product
     ;;    f(x,y,z) = x·1 + y·2 + z·3 = x + 2y + 3z
     ;;    grad = (1, 2, 3)
     (display "dot(v, [1,2,3])\n")
     (display "  grad at (1,1,1): ")
-    (println (grad (lambda (x y z)
-                     (foldl + 0
-                       (list (* x 1)
-                             (* y 2)
-                             (* z 3))))
-                   '(1 1 1)))
-
-  ))
+    (println (grad (lambda (x y z) (foldl + 0 (list (* x 1) (* y 2) (* z 3)))) '(1 1 1)))))

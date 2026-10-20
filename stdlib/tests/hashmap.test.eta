@@ -11,7 +11,8 @@
     ;;@example
     ;; (display test-empty-constructor)
     (define test-empty-constructor
-      (make-test "hash-map empty constructor and predicate"
+      (make-test
+        "hash-map empty constructor and predicate"
         (lambda ()
           (let ((m (make-hash-map)))
             (assert-true (hash-map? m))
@@ -19,7 +20,8 @@
             (assert-true (hash-map-empty? m))))))
 
     (define test-assoc-ref-dissoc
-      (make-test "hash-map assoc/ref/dissoc"
+      (make-test
+        "hash-map assoc/ref/dissoc"
         (lambda ()
           (let* ((m0 (make-hash-map))
                  (m1 (hash-map-assoc m0 'a 10))
@@ -33,7 +35,8 @@
             (assert-equal 20 (hash-map-ref m3 'b))))))
 
     (define test-numeric-key-distinction
-      (make-test "hash-map keeps 1 and 1.0 as distinct keys"
+      (make-test
+        "hash-map keeps 1 and 1.0 as distinct keys"
         (lambda ()
           (let* ((m0 (make-hash-map))
                  (m1 (hash-map-assoc m0 1 'int))
@@ -43,7 +46,8 @@
             (assert-equal 'float (hash-map-ref m2 1.0))))))
 
     (define test-roundtrip-list
-      (make-test "hash-map list roundtrip"
+      (make-test
+        "hash-map list roundtrip"
         (lambda ()
           (let* ((m1 (list->hash-map '((a . 1) (b . 2) (c . 3))))
                  (al (hash-map->alist m1))
@@ -52,7 +56,8 @@
             (assert-equal 3 (hash-map-size m2))))))
 
     (define test-merge-update-map-filter
-      (make-test "hash-map merge/update/map/filter wrappers"
+      (make-test
+        "hash-map merge/update/map/filter wrappers"
         (lambda ()
           (let* ((m1 (hash-map 'a 1 'b 2))
                  (m2 (hash-map 'b 20 'c 3))
@@ -72,17 +77,16 @@
             (assert-false (hash-map-contains? filtered 'a))))))
 
     (define test-fold
-      (make-test "hash-map-fold aggregates values"
+      (make-test
+        "hash-map-fold aggregates values"
         (lambda ()
           (let* ((m (hash-map 'x 1 'y 2 'z 3))
-                 (total (hash-map-fold
-                          (lambda (acc _k v) (+ acc v))
-                          0
-                          m)))
+                 (total (hash-map-fold (lambda (acc _k v) (+ acc v)) 0 m)))
             (assert-equal 6 total)))))
 
     (define suite
-      (make-group "std.hashmap"
+      (make-group
+        "std.hashmap"
         (list
           test-empty-constructor
           test-assoc-ref-dissoc

@@ -1,8 +1,7 @@
 ;;; std/hashmap.eta - Hash map helpers over runtime hash-map primitives.
 
 (module std.hashmap
-  (export
-    hash-map-empty?
+  (export hash-map-empty?
     hash-map-contains?
     hash-map-update
     hash-map-update-with-default
@@ -20,8 +19,7 @@
     ;; Hash map helpers over runtime hash-map primitives Uses `hash-map-empty?`.
     ;;@example
     ;; (hash-map-empty? 1)
-    (defun hash-map-empty? (m)
-      (= 0 (hash-map-size m)))
+    (defun hash-map-empty? (m) (= 0 (hash-map-size m)))
 
     ;;@doc (hash-map-contains? m k)
     ;;@category Hashmap
@@ -30,11 +28,7 @@
     ;;@example
     ;; (hash-map-contains? 1 1)
     (defun hash-map-contains? (m k)
-      (hash-map-fold
-        (lambda (found key _value)
-          (or found (equal? key k)))
-        #f
-        m))
+      (hash-map-fold (lambda (found key _value) (or found (equal? key k))) #f m))
 
     ;;@doc (hash-map-update m k fn)
     ;;@category Hashmap
@@ -42,8 +36,7 @@
     ;; Compute `hash-map-update`.
     ;;@example
     ;; (hash-map-update 1 1 (lambda (x) x))
-    (defun hash-map-update (m k fn)
-      (hash-map-assoc m k (fn (hash-map-ref m k))))
+    (defun hash-map-update (m k fn) (hash-map-assoc m k (fn (hash-map-ref m k))))
 
     ;;@doc (hash-map-update-with-default m k fn default)
     ;;@category Hashmap
@@ -61,11 +54,7 @@
     ;; (hash-map-merge 'x 'x)
     ;; Right map wins on key conflicts.
     (defun hash-map-merge (left right)
-      (hash-map-fold
-        (lambda (acc key value)
-          (hash-map-assoc acc key value))
-        left
-        right))
+      (hash-map-fold (lambda (acc key value) (hash-map-assoc acc key value)) left right))
 
     ;;@doc (hash-map-merge-with f left right)
     ;;@category Hashmap
@@ -77,8 +66,8 @@
       (hash-map-fold
         (lambda (acc key value)
           (if (hash-map-contains? acc key)
-              (hash-map-assoc acc key (f (hash-map-ref acc key) value))
-              (hash-map-assoc acc key value)))
+            (hash-map-assoc acc key (f (hash-map-ref acc key) value))
+            (hash-map-assoc acc key value)))
         left
         right))
 
@@ -90,8 +79,7 @@
     ;; (hash-map-map (lambda (x) x) 1)
     (defun hash-map-map (fn m)
       (hash-map-fold
-        (lambda (acc key value)
-          (hash-map-assoc acc key (fn key value)))
+        (lambda (acc key value) (hash-map-assoc acc key (fn key value)))
         (make-hash-map)
         m))
 
@@ -103,10 +91,7 @@
     ;; (hash-map-filter (lambda (x) x) 1)
     (defun hash-map-filter (pred m)
       (hash-map-fold
-        (lambda (acc key value)
-          (if (pred key value)
-              (hash-map-assoc acc key value)
-              acc))
+        (lambda (acc key value) (if (pred key value) (hash-map-assoc acc key value) acc))
         (make-hash-map)
         m))
 
@@ -116,8 +101,7 @@
     ;; Compute `hash-map->alist`.
     ;;@example
     ;; (hash-map->alist 1)
-    (defun hash-map->alist (m)
-      (hash-map->list m))
+    (defun hash-map->alist (m) (hash-map->list m))
 
     ;;@doc (alist->hash-map al)
     ;;@category Hashmap
@@ -125,7 +109,4 @@
     ;; Compute `alist->hash-map`.
     ;;@example
     ;; (alist->hash-map 'x)
-    (defun alist->hash-map (al)
-      (list->hash-map al))
-
-  ))
+    (defun alist->hash-map (al) (list->hash-map al))))

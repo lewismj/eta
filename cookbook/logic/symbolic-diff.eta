@@ -72,31 +72,27 @@
     ;; ── Algebraic simplifier ────────────────────────────────────────
     (defun simplify (e)
       (cond
-        ;; Atoms simplify to themselves
-        ((non-pair? e) e)
+      ;; Atoms simplify to themselves
+      ((non-pair? e) e)
 
         ;; (+ a b)
         ((eq? (op e) '+)
-          (let ((sa (simplify (a1 e)))
-                (sb (simplify (a2 e))))
-            (cond
-              ((and (number? sa) (= sa 0)) sb)           ; 0 + b = b
-              ((and (number? sb) (= sb 0)) sa)           ; a + 0 = a
-              ((and (number? sa) (number? sb)) (+ sa sb)) ; constant fold
-              ((equal? sa sb) (list '* 2 sa))             ; x + x = 2x
-              (#t (list '+ sa sb)))))
+         (let ((sa (simplify (a1 e))) (sb (simplify (a2 e))))
+           (cond ((and (number? sa) (= sa 0)) sb) ; 0 + b = b
+             ((and (number? sb) (= sb 0)) sa) ; a + 0 = a
+             ((and (number? sa) (number? sb)) (+ sa sb)) ; constant fold
+             ((equal? sa sb) (list '* 2 sa)) ; x + x = 2x
+             (#t (list '+ sa sb)))))
 
         ;; (* a b)
         ((eq? (op e) '*)
-          (let ((sa (simplify (a1 e)))
-                (sb (simplify (a2 e))))
-            (cond
-              ((and (number? sa) (= sa 0)) 0)            ; 0 * b = 0
-              ((and (number? sb) (= sb 0)) 0)            ; a * 0 = 0
-              ((and (number? sa) (= sa 1)) sb)           ; 1 * b = b
-              ((and (number? sb) (= sb 1)) sa)           ; a * 1 = a
-              ((and (number? sa) (number? sb)) (* sa sb)) ; constant fold
-              (#t (list '* sa sb)))))
+         (let ((sa (simplify (a1 e))) (sb (simplify (a2 e))))
+           (cond ((and (number? sa) (= sa 0)) 0) ; 0 * b = 0
+             ((and (number? sb) (= sb 0)) 0) ; a * 0 = 0
+             ((and (number? sa) (= sa 1)) sb) ; 1 * b = b
+             ((and (number? sb) (= sb 1)) sa) ; a * 1 = a
+             ((and (number? sa) (number? sb)) (* sa sb)) ; constant fold
+             (#t (list '* sa sb)))))
 
         ;; default: pass through
         (#t e)))
@@ -107,9 +103,7 @@
     ;;@example
     ;; (simplify* 'x)
     ;; Fixed-point simplifier: keep going until stable
-    (defun simplify* (e)
-      (let ((s (simplify e)))
-        (if (equal? s e) s (simplify* s))))
+    (defun simplify* (e) (let ((s (simplify e))) (if (equal? s e) s (simplify* s))))
 
     ;;@doc (diff e v)
     ;;@category Logic
@@ -118,47 +112,32 @@
     ;; (diff 'x 1)
     ;; ── Symbolic differentiator ─────────────────────────────────────
     (defun diff (e v)
-      (cond
-        ((number? e) 0)
+      (cond ((number? e) 0)
         ((symbol? e) (if (eq? e v) 1 0))
 
         ;; Sum rule: d(a+b) = da + db
-        ((eq? (op e) '+)
-          (list '+ (diff (a1 e) v) (diff (a2 e) v)))
+        ((eq? (op e) '+) (list '+ (diff (a1 e) v) (diff (a2 e) v)))
 
         ;; Product rule: d(a·b) = da·b + a·db
         ((eq? (op e) '*)
-          (list '+ (list '* (diff (a1 e) v) (a2 e))
-                   (list '* (a1 e) (diff (a2 e) v))))
+         (list '+ (list '* (diff (a1 e) v) (a2 e)) (list '* (a1 e) (diff (a2 e) v))))
 
         ;; Power rule: d(u^n) = n·u^(n−1)·du
         ((eq? (op e) '^)
-          (let ((u (a1 e))
-                (n (a2 e)))
-            (if (number? n)
-                (list '* n (list '* (list '^ u (- n 1)) (diff u v)))
-                0)))
+         (let ((u (a1 e)) (n (a2 e)))
+           (if (number? n) (list '* n (list '* (list '^ u (- n 1)) (diff u v))) 0)))
 
         ;; Chain rule: d(sin u) = cos(u)·du
-        ((eq? (op e) 'sin)
-          (let ((u (a1 e)))
-            (list '* (list 'cos u) (diff u v))))
+        ((eq? (op e) 'sin) (let ((u (a1 e))) (list '* (list 'cos u) (diff u v))))
 
         ;; Chain rule: d(cos u) = −sin(u)·du
-        ((eq? (op e) 'cos)
-          (let ((u (a1 e)))
-            (list '* -1 (list '* (list 'sin u) (diff u v)))))
+        ((eq? (op e) 'cos) (let ((u (a1 e))) (list '* -1 (list '* (list 'sin u) (diff u v)))))
 
         ;; Chain rule: d(exp u) = exp(u)·du
-        ((eq? (op e) 'exp)
-          (let ((u (a1 e)))
-            (list '* (list 'exp u) (diff u v))))
+        ((eq? (op e) 'exp) (let ((u (a1 e))) (list '* (list 'exp u) (diff u v))))
 
         ;; Chain rule: d(log u) = (1/u)·du
-        ((eq? (op e) 'log)
-          (let ((u (a1 e)))
-            (list '* (list '/ 1 u) (diff u v))))
-
+        ((eq? (op e) 'log) (let ((u (a1 e))) (list '* (list '/ 1 u) (diff u v))))
         (#t 0)))
 
     ;;@doc (D expr var)
@@ -167,8 +146,7 @@
     ;;@example
     ;; (D 'x 'x)
     ;; ── Helper: differentiate and simplify ──────────────────────────
-    (defun D (expr var)
-      (simplify* (diff expr var)))
+    (defun D (expr var) (simplify* (diff expr var)))
 
     ;; ── Demonstrations ──────────────────────────────────────────────
 
@@ -204,7 +182,6 @@
 
     (display "d/dx y (wrt x)     = ")
     (println (D 'y 'x))
-    ;; => 0
+  ;; => 0
 
   ))
-

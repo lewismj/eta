@@ -18,13 +18,13 @@
     (println "-- Basic catch / raise --")
 
     ;; Body completes normally — catch returns the body result unchanged.
-    (println (catch 'err 42))                        ; => 42
+    (println (catch 'err 42)) ; => 42
 
     ;; Body raises — catch intercepts it and returns the raised value.
-    (println (catch 'err (raise 'err "oops!")))      ; => oops!
+    (println (catch 'err (raise 'err "oops!"))) ; => oops!
 
     ;; Raise with a numeric payload.
-    (println (catch 'math-error (raise 'math-error 404)))  ; => 404
+    (println (catch 'math-error (raise 'math-error 404))) ; => 404
 
 
     ;; ── 2. Catch-all (no tag) ────────────────────────────────────────────────
@@ -32,8 +32,7 @@
     (println "-- Catch-all --")
 
     ;; (catch body) intercepts ANY raise, whatever its tag.
-    (let ((result (catch (raise 'anything "caught by catch-all"))))
-      (println result))                              ; => caught by catch-all
+    (let ((result (catch (raise 'anything "caught by catch-all")))) (println result)) ; => caught by catch-all
 
 
     ;; ── 3. Tag specificity ───────────────────────────────────────────────────
@@ -41,19 +40,12 @@
     (println "-- Tag specificity --")
 
     ;; Inner catch handles 'inner-err; outer catch never fires.
-    (let ((result
-           (catch 'outer-err
-             (+ 10 (catch 'inner-err
-                     (raise 'inner-err 5))))))
-      (println result))                              ; => 15
+    (let ((result (catch 'outer-err (+ 10 (catch 'inner-err (raise 'inner-err 5))))))
+      (println result)) ; => 15
 
     ;; A catch for 'other-tag does NOT intercept 'real-tag —
     ;; the outer catch-all picks it up instead.
-    (let ((result
-           (catch
-             (catch 'other-tag
-               (raise 'real-tag "bypassed inner")))))
-      (println result))                              ; => bypassed inner
+    (let ((result (catch (catch 'other-tag (raise 'real-tag "bypassed inner"))))) (println result)) ; => bypassed inner
 
 
     ;; ── 4. Exceptions propagate through function calls ───────────────────────
@@ -67,13 +59,10 @@
     ;; matching (catch), just like a non-local exit.
     ;;@example
     ;; (safe-divide 1 1)
-    (defun safe-divide (a b)
-      (if (= b 0)
-          (raise 'division-by-zero 'undefined)
-          (/ a b)))
+    (defun safe-divide (a b) (if (= b 0) (raise 'division-by-zero 'undefined) (/ a b)))
 
-    (println (catch 'division-by-zero (safe-divide 10 2)))   ; => 5
-    (println (catch 'division-by-zero (safe-divide 10 0)))   ; => undefined
+    (println (catch 'division-by-zero (safe-divide 10 2))) ; => 5
+    (println (catch 'division-by-zero (safe-divide 10 0))) ; => undefined
 
 
     ;; ── 5. Exceptions with structured payloads ────────────────────────────────
@@ -87,21 +76,19 @@
     ;; (validate-age 'x)
     ;; The raised value can be any Lisp value — here we pass a pair (code . value).
     (defun validate-age (age)
-      (cond
-        ((< age 0)   (raise 'validation-error (cons 'negative age)))
+      (cond ((< age 0) (raise 'validation-error (cons 'negative age)))
         ((> age 150) (raise 'validation-error (cons 'too-large age)))
-        (#t          age)))
+        (#t age)))
 
-    (let ((result (catch 'validation-error (validate-age 25))))
-      (println result))                              ; => 25
+    (let ((result (catch 'validation-error (validate-age 25)))) (println result)) ; => 25
 
     (let ((err (catch 'validation-error (validate-age -5))))
-      (println (car err))                            ; => negative
-      (println (cdr err)))                           ; => -5
+      (println (car err)) ; => negative
+      (println (cdr err))) ; => -5
 
     (let ((err (catch 'validation-error (validate-age 200))))
-      (println (car err))                            ; => too-large
-      (println (cdr err)))                           ; => 200
+      (println (car err)) ; => too-large
+      (println (cdr err))) ; => 200
 
 
     ;; ── 6. Using exceptions for early exit from search ────────────────────────
@@ -116,16 +103,17 @@
     ;; Find the first negative number in a list, or #f if none.
     ;; Raising 'found short-circuits the rest of the traversal.
     (defun first-negative (lst)
-      (catch 'found
-        (letrec ((loop (lambda (xs)
-                         (cond
-                           ((null? xs)     #f)
-                           ((< (car xs) 0) (raise 'found (car xs)))
-                           (#t             (loop (cdr xs)))))))
+      (catch
+        'found
+        (letrec ((loop
+                   (lambda (xs)
+                     (cond ((null? xs) #f)
+                       ((< (car xs) 0) (raise 'found (car xs)))
+                       (#t (loop (cdr xs)))))))
           (loop lst))))
 
-    (println (first-negative '(3 1 4 1 5)))          ; => #f
-    (println (first-negative '(3 1 -4 2 -1)))        ; => -4
+    (println (first-negative '(3 1 4 1 5))) ; => #f
+    (println (first-negative '(3 1 -4 2 -1))) ; => -4
 
 
     ;; ── 7. Exception-based resource cleanup ──────────────────────────────────
@@ -136,13 +124,14 @@
     ;; escapes from the body — enabling reliable resource cleanup.
     (define cleanup-called #f)
 
-    (catch 'resource-error
+    (catch
+      'resource-error
       (dynamic-wind
-        (lambda () (set! cleanup-called #f))           ; before: reset flag
-        (lambda () (raise 'resource-error "boom"))     ; body: raises
-        (lambda () (set! cleanup-called #t))))         ; after: always runs
+        (lambda () (set! cleanup-called #f)) ; before: reset flag
+        (lambda () (raise 'resource-error "boom")) ; body: raises
+        (lambda () (set! cleanup-called #t)))) ; after: always runs
 
-    (println cleanup-called)                           ; => #t
+    (println cleanup-called) ; => #t
 
 
     ;; ── 8. Re-raising (exception chaining) ───────────────────────────────────
@@ -157,18 +146,15 @@
     ;; An inner handler can inspect, wrap, and re-raise with a new tag/value,
     ;; giving callers a higher-level view of the error.
     (defun process (x)
-      (catch 'low-level
-        (if (< x 0)
-            (raise 'low-level (list 'bad-input x))
-            (* x 2))))
+      (catch 'low-level (if (< x 0) (raise 'low-level (list 'bad-input x)) (* x 2))))
 
     (let ((result
-           (catch 'high-level
-             (let ((v (process -3)))
-               ;; v is the intercepted low-level value; wrap and re-raise
-               (raise 'high-level (cons 'wrapped v))))))
-      (println (car result))           ; => wrapped
-      (println (car (cdr result))))    ; => bad-input
+            (catch
+              'high-level
+              (let ((v (process -3)))
+                ;; v is the intercepted low-level value; wrap and re-raise
+                (raise 'high-level (cons 'wrapped v))))))
+      (println (car result)) ; => wrapped
+      (println (car (cdr result)))) ; => bad-input
 
   ))
-

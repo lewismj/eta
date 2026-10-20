@@ -17,6 +17,6 @@
               (cons 'header-status (status header-response))
               (cons 'header-body (body-string header-response)))))))
 
-    ;; Example for public internet usage:
-    ;; (run-http-quickstart "https://example.com")
-    ))
+  ;; Example for public internet usage:
+  ;; (run-http-quickstart "https://example.com")
+  ))

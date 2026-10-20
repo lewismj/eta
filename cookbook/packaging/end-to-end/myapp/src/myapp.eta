@@ -8,5 +8,4 @@
     ;; Documented symbol `main`.
     ;;@example
     ;; (main)
-    (defun main ()
-      (println (square 7)))))
+    (defun main () (println (square 7)))))

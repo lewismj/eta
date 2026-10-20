@@ -17,10 +17,7 @@
   (import report)
   (begin
 
-    (define default-queries
-      '((oil -0.30 0.30)
-        (usd-10y -0.01 0.01)
-        (eur-usd -0.15 0.15)))
+    (define default-queries '((oil -0.30 0.30) (usd-10y -0.01 0.01) (eur-usd -0.15 0.15)))
 
     ;;@doc (ml-trace->fact-table trace)
     ;;@category Xva Wwr
@@ -31,10 +28,7 @@
     (defun ml-trace->fact-table (trace)
       (let ((ft (make-fact-table 'epoch 'loss)))
         (for-each
-          (lambda (row)
-            (fact-table-insert! ft
-                                (assoc-ref 'epoch row)
-                                (assoc-ref 'loss row)))
+          (lambda (row) (fact-table-insert! ft (assoc-ref 'epoch row) (assoc-ref 'loss row)))
           trace)
         ft))
 
@@ -75,6 +69,8 @@
         (println "")
         (print-ml-trace-table (assoc-ref 'training-trace artifact))))
 
+    ;; eta-lint:disable=ETA501
+
     ;;@doc (run-demo ...)
     ;;@category Xva Wwr
     ;;@module main
@@ -93,8 +89,7 @@
              (training-trace (assoc-ref 'trace fit))
              (learned-betas (learned-cp-sensitivity model))
              (recovery (beta-recovery-report learned-betas))
-             (ee (simulate-paths baseline-curves '() factor-correlation
-                                 5000 12 0.25 20260427))
+             (ee (simulate-paths baseline-curves '() factor-correlation 5000 12 0.25 20260427))
              (baseline-table (cva-table ee hazard-rates recovery-rates 0.0 0.0))
              (baseline-total (total-cva baseline-table))
              (greeks (cva-with-greeks ee '(0.0 0.0 0.0 0.0)))
@@ -107,46 +102,40 @@
              (sigma3 (matrix-prefix simm-ir-delta-covariance 3))
              (preview-obj (objective-value '(0.10 -0.20 0.05) sigma3 0.15))
              ;; --- Hedge solve: actual unwind set from the convex QP ----
-             (hedge-dv01      '(0.10 -0.20 0.05))
-             (hedge-lambda    0.15)
-             (hedge-result    (solve-compression-qp hedge-dv01 hedge-lambda))
-             (hedge-objective (car  hedge-result))
-             (hedge-witness   (cadr hedge-result))
+             (hedge-dv01 '(0.10 -0.20 0.05))
+             (hedge-lambda 0.15)
+             (hedge-result (solve-compression-qp hedge-dv01 hedge-lambda))
+             (hedge-objective (car hedge-result))
+             (hedge-witness (cadr hedge-result))
              (hedge
                (list
-                 (cons 'dv01      hedge-dv01)
-                 (cons 'lambda    hedge-lambda)
+                 (cons 'dv01 hedge-dv01)
+                 (cons 'lambda hedge-lambda)
                  (cons 'objective hedge-objective)
-                 (cons 'delta     hedge-witness)))
+                 (cons 'delta hedge-witness)))
              (shard-check (rerun-shard-and-check 2))
              (stage-report
                (list
-                 (cons 'book
-                       (list
-                         (cons 'book-size (fact-table-row-count trades))))
-                 (cons 'ml-training
-                       (list
-                         (cons 'epochs (assoc-ref 'epochs fit))
-                         (cons 'lr (assoc-ref 'lr fit))
-                         (cons 'report-every (assoc-ref 'report-every fit))
-                         (cons 'final-loss final-loss)
-                         (cons 'checkpoints (length training-trace))))
+                 (cons 'book (list (cons 'book-size (fact-table-row-count trades))))
+                 (cons
+                   'ml-training
+                   (list
+                     (cons 'epochs (assoc-ref 'epochs fit))
+                     (cons 'lr (assoc-ref 'lr fit))
+                     (cons 'report-every (assoc-ref 'report-every fit))
+                     (cons 'final-loss final-loss)
+                     (cons 'checkpoints (length training-trace))))
                  (cons 'ml-recovery recovery)
-                 (cons 'baseline
-                       (list
-                         (cons 'baseline-cva baseline-total)
-                         (cons 'top3 (top-contributors baseline-table 3))
-                         (cons 'greeks greeks)))
+                 (cons
+                   'baseline
+                   (list
+                     (cons 'baseline-cva baseline-total)
+                     (cons 'top3 (top-contributors baseline-table 3))
+                     (cons 'greeks greeks)))
                  (cons 'causal-audit causal-audit)
                  (cons 'counterfactual sweep)
-                 (cons 'symbolic
-                       (list
-                         (cons 'nodes (node-count dexpr))
-                         (cons 'value kernel-value)))
-                 (cons 'compression
-                       (list
-                         (cons 'preview preview-obj)
-                         (cons 'hedge   hedge)))
+                 (cons 'symbolic (list (cons 'nodes (node-count dexpr)) (cons 'value kernel-value)))
+                 (cons 'compression (list (cons 'preview preview-obj) (cons 'hedge hedge)))
                  (cons 'determinism shard-check))))
         (list
           (cons 'book-size (fact-table-row-count trades))
@@ -171,9 +160,4 @@
     ;;@example
     ;; (main)
     ;; Optional CLI hook: etai auto-invokes (defun main ...).
-    (defun main ()
-      (let ((out (run-demo)))
-        (print-friendly-report out)
-        out))
-
-  ))
+    (defun main () (let ((out (run-demo))) (print-friendly-report out) out))))

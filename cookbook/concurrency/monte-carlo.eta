@@ -8,28 +8,26 @@
   (begin
 
     (defun %vector->list (vec)
-      (let loop ((i 0) (acc '()))
-        (if (= i (vector-length vec))
-            (reverse acc)
-            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
+      (let
+        loop
+        ((i 0) (acc '()))
+        (if (= i (vector-length vec)) (reverse acc) (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
     (defun %list-ref-or-false (xs index)
-      (let loop ((cursor xs) (remaining index))
+      (let
+        loop
+        ((cursor xs) (remaining index))
         (if (= remaining 0)
-            (if (non-pair? cursor) #f (car cursor))
-            (if (non-pair? cursor)
-                #f
-                (loop (cdr cursor) (- remaining 1))))))
+          (if (non-pair? cursor) #f (car cursor))
+          (if (non-pair? cursor) #f (loop (cdr cursor) (- remaining 1))))))
 
     (define %lcg-modulus 1024)
     (define %unit-radius 1023)
     (define %unit-radius-squared (* %unit-radius %unit-radius))
 
-    (defun %lcg-next (state)
-      (modulo (+ (* 25173 state) 13849) %lcg-modulus))
+    (defun %lcg-next (state) (modulo (+ (* 25173 state) 13849) %lcg-modulus))
 
-    (defun %hit (x y)
-      (if (<= (+ (* x x) (* y y)) %unit-radius-squared) 1 0))
+    (defun %hit (x y) (if (<= (+ (* x x) (* y y)) %unit-radius-squared) 1 0))
 
     (defun %count-inside-8 (seed)
       (let* ((s1 (%lcg-next seed))
@@ -70,57 +68,51 @@
                         (index (%list-ref-or-false msg 2))
                         (seed (%list-ref-or-false msg 3))
                         (count (%list-ref-or-false msg 4)))
-                    (if (and (pid? reply-to)
-                             (number? index)
-                             (number? seed)
-                             (number? count))
-                        (send reply-to
-                              (list 'estimate
-                                    index
-                                    (%count-inside-8 seed)
-                                    count))
-                        '())))))
+                    (if (and (pid? reply-to) (number? index) (number? seed) (number? count))
+                      (send reply-to (list 'estimate index (%count-inside-8 seed) count))
+                      '())))))
             'wait))))
 
     (defun %spawn-workers (remaining acc)
-      (if (= remaining 0)
-          (reverse acc)
-          (%spawn-workers (- remaining 1) (cons (%spawn-worker) acc))))
+      (if (= remaining 0) (reverse acc) (%spawn-workers (- remaining 1) (cons (%spawn-worker) acc))))
 
     (define n-workers 4)
     (define samples-per-worker 8)
     (define indices (range 0 n-workers))
     (define workers (%spawn-workers n-workers '()))
 
-    (let dispatch ((rest-workers workers) (rest-indices indices))
+    (let
+      dispatch
+      ((rest-workers workers) (rest-indices indices))
       (when (and (pair? rest-workers) (pair? rest-indices))
-        (send (car rest-workers)
-              (list 'sample
-                    (self)
-                    (car rest-indices)
-                    (+ 1000 (* (car rest-indices) 97))
-                    samples-per-worker))
+        (send
+          (car rest-workers)
+          (list
+            'sample
+            (self)
+            (car rest-indices)
+            (+ 1000 (* (car rest-indices) 97))
+            samples-per-worker))
         (dispatch (cdr rest-workers) (cdr rest-indices))))
 
     (define estimates (make-vector n-workers 0.0))
-    (let loop ((remaining n-workers))
+    (let
+      loop
+      ((remaining n-workers))
       (when (> remaining 0)
         (let ((msg (receive-match (match-list 'estimate 3) 5000)))
           (if (non-pair? msg)
-              (error "monte-carlo: timed out waiting for estimate")
-              (let ((index (%list-ref-or-false msg 1))
-                    (inside (%list-ref-or-false msg 2))
-                    (count (%list-ref-or-false msg 3)))
-                (if (and (number? index) (number? inside) (number? count) (> count 0))
-                    (begin
-                      (vector-set! estimates
-                                   index
-                                   (* 4.0 (/ (* 1.0 inside) (* 1.0 count))))
-                      (loop (- remaining 1)))
-                    (error "monte-carlo: malformed estimate message")))))))
+            (error "monte-carlo: timed out waiting for estimate")
+            (let ((index (%list-ref-or-false msg 1))
+                  (inside (%list-ref-or-false msg 2))
+                  (count (%list-ref-or-false msg 3)))
+              (if (and (number? index) (number? inside) (number? count) (> count 0))
+                (begin
+                  (vector-set! estimates index (* 4.0 (/ (* 1.0 inside) (* 1.0 count))))
+                  (loop (- remaining 1)))
+                (error "monte-carlo: malformed estimate message")))))))
 
-    (define mean-estimate
-      (/ (apply + (%vector->list estimates)) n-workers))
+    (define mean-estimate (/ (apply + (%vector->list estimates)) n-workers))
 
     (println (%vector->list estimates))
     (println (string-append "pi estimate: " (number->string mean-estimate)))

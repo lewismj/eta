@@ -7,8 +7,7 @@
 ;;;   %time-format-iso8601-utc  %time-format-iso8601-local
 
 (module std.time
-  (export
-    time:now-ms
+  (export time:now-ms
     time:now-us
     time:now-ns
     time:monotonic-ms
@@ -55,8 +54,7 @@
     ;; Compute `time:sleep-ms`.
     ;;@example
     ;; (time:sleep-ms 'x)
-    (defun time:sleep-ms (ms)
-      (%time-sleep-ms ms))
+    (defun time:sleep-ms (ms) (%time-sleep-ms ms))
 
     ;;@doc (time:utc-parts epoch-ms)
     ;;@category Time
@@ -64,8 +62,7 @@
     ;; Compute `time:utc-parts`.
     ;;@example
     ;; (time:utc-parts 'x)
-    (defun time:utc-parts (epoch-ms)
-      (%time-utc-parts epoch-ms))
+    (defun time:utc-parts (epoch-ms) (%time-utc-parts epoch-ms))
 
     ;;@doc (time:local-parts epoch-ms)
     ;;@category Time
@@ -73,8 +70,7 @@
     ;; Compute `time:local-parts`.
     ;;@example
     ;; (time:local-parts 'x)
-    (defun time:local-parts (epoch-ms)
-      (%time-local-parts epoch-ms))
+    (defun time:local-parts (epoch-ms) (%time-local-parts epoch-ms))
 
     ;;@doc (time:format-iso8601-utc epoch-ms)
     ;;@category Time
@@ -82,8 +78,7 @@
     ;; Compute `time:format-iso8601-utc`.
     ;;@example
     ;; (time:format-iso8601-utc 'x)
-    (defun time:format-iso8601-utc (epoch-ms)
-      (%time-format-iso8601-utc epoch-ms))
+    (defun time:format-iso8601-utc (epoch-ms) (%time-format-iso8601-utc epoch-ms))
 
     ;;@doc (time:format-iso8601-local epoch-ms)
     ;;@category Time
@@ -91,8 +86,7 @@
     ;; Compute `time:format-iso8601-local`.
     ;;@example
     ;; (time:format-iso8601-local 'x)
-    (defun time:format-iso8601-local (epoch-ms)
-      (%time-format-iso8601-local epoch-ms))
+    (defun time:format-iso8601-local (epoch-ms) (%time-format-iso8601-local epoch-ms))
 
     ;;@doc (time:elapsed-ms start-monotonic end-monotonic)
     ;;@category Time
@@ -101,7 +95,4 @@
     ;; (time:elapsed-ms 'x 'x)
     ;; Returns a non-negative monotonic delta in milliseconds.
     (defun time:elapsed-ms (start-monotonic end-monotonic)
-      (let ((delta (- end-monotonic start-monotonic)))
-        (if (< delta 0) 0 delta)))
-
-  ))
+      (let ((delta (- end-monotonic start-monotonic))) (if (< delta 0) 0 delta)))))

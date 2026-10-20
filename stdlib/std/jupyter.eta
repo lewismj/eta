@@ -5,8 +5,7 @@
 ;;; the values as ordinary data.
 
 (module std.jupyter
-  (export
-    jupyter:display
+  (export jupyter:display
     jupyter:html
     jupyter:markdown
     jupyter:latex
@@ -29,8 +28,7 @@
     ;; Compute `%jupyter-wrap`.
     ;;@example
     ;; (%jupyter-wrap 'x 'x)
-    (defun %jupyter-wrap (mime payload)
-      (vector 'jupyter-display mime payload))
+    (defun %jupyter-wrap (mime payload) (vector 'jupyter-display mime payload))
 
     ;;@doc (jupyter:display obj)
     ;;@category Jupyter
@@ -38,8 +36,7 @@
     ;; notebook-focused display helpers Uses `jupyter:display`.
     ;;@example
     ;; (jupyter:display 'x)
-    (defun jupyter:display (obj)
-      obj)
+    (defun jupyter:display (obj) obj)
 
     ;;@doc (jupyter:html text)
     ;;@category Jupyter
@@ -47,8 +44,7 @@
     ;; Compute `jupyter:html`.
     ;;@example
     ;; (jupyter:html "sample")
-    (defun jupyter:html (text)
-      (%jupyter-wrap "text/html" text))
+    (defun jupyter:html (text) (%jupyter-wrap "text/html" text))
 
     ;;@doc (jupyter:markdown text)
     ;;@category Jupyter
@@ -56,8 +52,7 @@
     ;; Compute `jupyter:markdown`.
     ;;@example
     ;; (jupyter:markdown "sample")
-    (defun jupyter:markdown (text)
-      (%jupyter-wrap "text/markdown" text))
+    (defun jupyter:markdown (text) (%jupyter-wrap "text/markdown" text))
 
     ;;@doc (jupyter:latex text)
     ;;@category Jupyter
@@ -65,8 +60,7 @@
     ;; Compute `jupyter:latex`.
     ;;@example
     ;; (jupyter:latex "sample")
-    (defun jupyter:latex (text)
-      (%jupyter-wrap "text/latex" text))
+    (defun jupyter:latex (text) (%jupyter-wrap "text/latex" text))
 
     ;;@doc (jupyter:svg svg)
     ;;@category Jupyter
@@ -74,8 +68,7 @@
     ;; Compute `jupyter:svg`.
     ;;@example
     ;; (jupyter:svg 'x)
-    (defun jupyter:svg (svg)
-      (%jupyter-wrap "image/svg+xml" svg))
+    (defun jupyter:svg (svg) (%jupyter-wrap "image/svg+xml" svg))
 
     ;;@doc (jupyter:png bytes)
     ;;@category Jupyter
@@ -83,8 +76,7 @@
     ;; Compute `jupyter:png`.
     ;;@example
     ;; (jupyter:png 'x)
-    (defun jupyter:png (bytes)
-      (%jupyter-wrap "image/png" bytes))
+    (defun jupyter:png (bytes) (%jupyter-wrap "image/png" bytes))
 
     ;;@doc (jupyter:vega spec)
     ;;@category Jupyter
@@ -92,8 +84,7 @@
     ;; Compute `jupyter:vega`.
     ;;@example
     ;; (jupyter:vega 'x)
-    (defun jupyter:vega (spec)
-      (%jupyter-wrap "application/vnd.vegalite.v5+json" spec))
+    (defun jupyter:vega (spec) (%jupyter-wrap "application/vnd.vegalite.v5+json" spec))
 
     ;;@doc (jupyter:table fact-table)
     ;;@category Jupyter
@@ -110,8 +101,7 @@
     ;; Compute `jupyter:tensor`.
     ;;@example
     ;; (jupyter:tensor 'x)
-    (defun jupyter:tensor (tensor)
-      (%jupyter-wrap "application/vnd.eta.tensor+json" tensor))
+    (defun jupyter:tensor (tensor) (%jupyter-wrap "application/vnd.eta.tensor+json" tensor))
 
     ;;@doc (jupyter:heap)
     ;;@category Jupyter
@@ -119,8 +109,7 @@
     ;; Compute `jupyter:heap`.
     ;;@example
     ;; (jupyter:heap)
-    (defun jupyter:heap ()
-      (%jupyter-wrap "application/vnd.eta.heap+json" '()))
+    (defun jupyter:heap () (%jupyter-wrap "application/vnd.eta.heap+json" '()))
 
     ;;@doc (jupyter:disasm query)
     ;;@category Jupyter
@@ -128,8 +117,7 @@
     ;; Compute `jupyter:disasm`.
     ;;@example
     ;; (jupyter:disasm 'x)
-    (defun jupyter:disasm (query)
-      (%jupyter-wrap "application/vnd.eta.disasm+json" query))
+    (defun jupyter:disasm (query) (%jupyter-wrap "application/vnd.eta.disasm+json" query))
 
     ;;@doc (jupyter:actors)
     ;;@category Jupyter
@@ -137,8 +125,7 @@
     ;; Compute `jupyter:actors`.
     ;;@example
     ;; (jupyter:actors)
-    (defun jupyter:actors ()
-      (%jupyter-wrap "application/vnd.eta.actors+json" '()))
+    (defun jupyter:actors () (%jupyter-wrap "application/vnd.eta.actors+json" '()))
 
     ;;@doc (%dag-edge? edge)
     ;;@category Jupyter
@@ -149,13 +136,14 @@
     ;;   1) canonical graph-json object/alist shape
     ;;   2) edge list shape: '((a -> b) (b -> c) ...)
     (defun %dag-edge? (edge)
-      (and (pair? edge)
-           (pair? (cdr edge))
-           (pair? (cdr (cdr edge)))
-           (null? (cdr (cdr (cdr edge))))
-           (symbol? (car edge))
-           (eq? (car (cdr edge)) '->)
-           (symbol? (car (cdr (cdr edge))))))
+      (and
+        (pair? edge)
+        (pair? (cdr edge))
+        (pair? (cdr (cdr edge)))
+        (null? (cdr (cdr (cdr edge))))
+        (symbol? (car edge))
+        (eq? (car (cdr edge)) '->)
+        (symbol? (car (cdr (cdr edge))))))
 
     ;;@doc (%dag-edge-list? graph)
     ;;@category Jupyter
@@ -164,12 +152,9 @@
     ;;@example
     ;; (%dag-edge-list? 'x)
     (defun %dag-edge-list? (graph)
-      (letrec ((loop (lambda (xs)
-                       (if (null? xs)
-                           #t
-                           (and (pair? xs)
-                                (%dag-edge? (car xs))
-                                (loop (cdr xs)))))))
+      (letrec ((loop
+                 (lambda (xs)
+                   (if (null? xs) #t (and (pair? xs) (%dag-edge? (car xs)) (loop (cdr xs)))))))
         (loop graph)))
 
     ;;@doc (%dag-member? x xs)
@@ -178,11 +163,7 @@
     ;; Return whether `%dag-member?` holds.
     ;;@example
     ;; (%dag-member? 1 '())
-    (defun %dag-member? (x xs)
-      (if (null? xs)
-          #f
-          (or (eq? x (car xs))
-              (%dag-member? x (cdr xs)))))
+    (defun %dag-member? (x xs) (if (null? xs) #f (or (eq? x (car xs)) (%dag-member? x (cdr xs)))))
 
     ;;@doc (%dag-adjoin-rev x xs)
     ;;@category Jupyter
@@ -190,8 +171,7 @@
     ;; Compute `%dag-adjoin-rev`.
     ;;@example
     ;; (%dag-adjoin-rev 1 '())
-    (defun %dag-adjoin-rev (x xs)
-      (if (%dag-member? x xs) xs (cons x xs)))
+    (defun %dag-adjoin-rev (x xs) (if (%dag-member? x xs) xs (cons x xs)))
 
     ;;@doc (%dag-collect-nodes-rev edges acc)
     ;;@category Jupyter
@@ -201,13 +181,9 @@
     ;; (%dag-collect-nodes-rev 'x 'x)
     (defun %dag-collect-nodes-rev (edges acc)
       (if (null? edges)
-          acc
-          (let* ((e (car edges))
-                 (from (car e))
-                 (to (car (cdr (cdr e)))))
-            (%dag-collect-nodes-rev
-              (cdr edges)
-              (%dag-adjoin-rev to (%dag-adjoin-rev from acc))))))
+        acc
+        (let* ((e (car edges)) (from (car e)) (to (car (cdr (cdr e)))))
+          (%dag-collect-nodes-rev (cdr edges) (%dag-adjoin-rev to (%dag-adjoin-rev from acc))))))
 
     ;;@doc (%dag-node-objects nodes)
     ;;@category Jupyter
@@ -215,11 +191,7 @@
     ;; Compute `%dag-node-objects`.
     ;;@example
     ;; (%dag-node-objects 'x)
-    (defun %dag-node-objects (nodes)
-      (map (lambda (n)
-             (list (list 'id n)
-                   (list 'label n)))
-           nodes))
+    (defun %dag-node-objects (nodes) (map (lambda (n) (list (list 'id n) (list 'label n))) nodes))
 
     ;;@doc (%dag-edge-objects edges)
     ;;@category Jupyter
@@ -228,12 +200,10 @@
     ;;@example
     ;; (%dag-edge-objects 'x)
     (defun %dag-edge-objects (edges)
-      (map (lambda (e)
-             (let ((from (car e))
-                   (to (car (cdr (cdr e)))))
-               (list (list 'from from)
-                     (list 'to to))))
-           edges))
+      (map
+        (lambda (e)
+          (let ((from (car e)) (to (car (cdr (cdr e))))) (list (list 'from from) (list 'to to))))
+        edges))
 
     ;;@doc (%dag-edges->graph-json edges)
     ;;@category Jupyter
@@ -243,9 +213,7 @@
     ;; (%dag-edges->graph-json 'x)
     (defun %dag-edges->graph-json (edges)
       (let ((nodes (reverse (%dag-collect-nodes-rev edges '()))))
-        (list
-          (list 'nodes (%dag-node-objects nodes))
-          (list 'edges (%dag-edge-objects edges)))))
+        (list (list 'nodes (%dag-node-objects nodes)) (list 'edges (%dag-edge-objects edges)))))
 
     ;;@doc (jupyter:dag graph)
     ;;@category Jupyter
@@ -254,10 +222,9 @@
     ;;@example
     ;; (jupyter:dag 'x)
     (defun jupyter:dag (graph)
-      (%jupyter-wrap "application/vnd.eta.dag+json"
-                     (if (%dag-edge-list? graph)
-                         (%dag-edges->graph-json graph)
-                         graph)))
+      (%jupyter-wrap
+        "application/vnd.eta.dag+json"
+        (if (%dag-edge-list? graph) (%dag-edges->graph-json graph) graph)))
 
     ;;@doc (jupyter:tensor-explorer tensor)
     ;;@category Jupyter
@@ -276,10 +243,8 @@
     ;; (%zip-xy '() '())
     (defun %zip-xy (xs ys)
       (if (or (null? xs) (null? ys))
-          '()
-          (cons
-            (list (cons 'x (car xs)) (cons 'y (car ys)))
-            (%zip-xy (cdr xs) (cdr ys)))))
+        '()
+        (cons (list (cons 'x (car xs)) (cons 'y (car ys))) (%zip-xy (cdr xs) (cdr ys)))))
 
     ;;@doc (jupyter:plot kind xs ys)
     ;;@category Jupyter
@@ -294,9 +259,8 @@
           (cons 'description "Eta plot")
           (cons 'mark (if (eq? kind 'scatter) "point" "line"))
           (cons 'data (list (cons 'values (%zip-xy xs ys))))
-          (cons 'encoding
-                (list
-                  (cons 'x (list (cons 'field "x") (cons 'type "quantitative")))
-                  (cons 'y (list (cons 'field "y") (cons 'type "quantitative"))))))))
-
-  ))
+          (cons
+            'encoding
+            (list
+              (cons 'x (list (cons 'field "x") (cons 'type "quantitative")))
+              (cons 'y (list (cons 'field "y") (cons 'type "quantitative"))))))))))

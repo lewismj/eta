@@ -11,7 +11,8 @@
     ;;@example
     ;; (display test-empty-constructor)
     (define test-empty-constructor
-      (make-test "hash-set empty constructor and predicate"
+      (make-test
+        "hash-set empty constructor and predicate"
         (lambda ()
           (let ((s (make-hash-set)))
             (assert-true (hash-set? s))
@@ -19,7 +20,8 @@
             (assert-equal 0 (hash-set-size s))))))
 
     (define test-add-remove-contains
-      (make-test "hash-set add/remove/contains"
+      (make-test
+        "hash-set add/remove/contains"
         (lambda ()
           (let* ((s0 (make-hash-set))
                  (s1 (hash-set-add s0 'a))
@@ -32,7 +34,8 @@
             (assert-equal 1 (hash-set-size s3))))))
 
     (define test-algebra
-      (make-test "hash-set union/intersect/diff"
+      (make-test
+        "hash-set union/intersect/diff"
         (lambda ()
           (let* ((a (hash-set 1 2 3))
                  (b (hash-set 3 4))
@@ -49,24 +52,25 @@
             (assert-false (hash-set-contains? d 3))))))
 
     (define test-roundtrip-and-equality
-      (make-test "hash-set list roundtrip and equality"
+      (make-test
+        "hash-set list roundtrip and equality"
         (lambda ()
-          (let* ((s1 (hash-set 'x 'y 'z))
-                 (s2 (list->hash-set (hash-set->list s1))))
+          (let* ((s1 (hash-set 'x 'y 'z)) (s2 (list->hash-set (hash-set->list s1))))
             (assert-true (hash-set-equal? s1 s2))
             (assert-true (hash-set-subset? s2 s1))
             (assert-true (hash-set-subset? s1 s2))))))
 
     (define test-subset
-      (make-test "hash-set subset relation"
+      (make-test
+        "hash-set subset relation"
         (lambda ()
-          (let* ((a (hash-set 1 2))
-                 (b (hash-set 1 2 3)))
+          (let* ((a (hash-set 1 2)) (b (hash-set 1 2 3)))
             (assert-true (hash-set-subset? a b))
             (assert-false (hash-set-subset? b a))))))
 
     (define suite
-      (make-group "std.hashset"
+      (make-group
+        "std.hashset"
         (list
           test-empty-constructor
           test-add-remove-contains

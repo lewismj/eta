@@ -11,13 +11,16 @@
   (import std.core)
   (import std.collections)
   (import std.causal)
-  (export
-    admg:directed admg:bidirected admg:nodes
-    admg:district admg:districts
+  (export admg:directed
+    admg:bidirected
+    admg:nodes
+    admg:district
+    admg:districts
     admg:project
     admg:moralize
     admg:ancestors
-    admg:c-component admg:c-components)
+    admg:c-component
+    admg:c-components)
   (begin
 
     ;; -- Edge helpers -----------------------------------------------------
@@ -50,7 +53,7 @@
     ;; Return whether `%directed-edge?` holds.
     ;;@example
     ;; (%directed-edge? 'x)
-    (defun %directed-edge? (e)   (eq? (%edge-kind e) '->))
+    (defun %directed-edge? (e) (eq? (%edge-kind e) '->))
     ;;@doc (%bidirected-edge? e)
     ;;@category Causal
     ;;@module std.causal.admg
@@ -65,8 +68,7 @@
     ;; Return whether `%symbol<?` holds.
     ;;@example
     ;; (%symbol<? 1 1)
-    (defun %symbol<? (a b)
-      (string<? (symbol->string a) (symbol->string b)))
+    (defun %symbol<? (a b) (string<? (symbol->string a) (symbol->string b)))
 
     ;;@doc (%district<? a b)
     ;;@category Causal
@@ -77,9 +79,7 @@
     (defun %district<? (a b)
       (let ((ha (if (null? a) "" (symbol->string (car a))))
             (hb (if (null? b) "" (symbol->string (car b)))))
-        (if (string=? ha hb)
-            (< (length a) (length b))
-            (string<? ha hb))))
+        (if (string=? ha hb) (< (length a) (length b)) (string<? ha hb))))
 
     ;;@doc (%edge<? a b)
     ;;@category Causal
@@ -94,8 +94,7 @@
              (bk (symbol->string (%edge-kind b)))
              (at (symbol->string (%edge-to a)))
              (bt (symbol->string (%edge-to b))))
-        (cond
-          ((string<? af bf) #t)
+        (cond ((string<? af bf) #t)
           ((string<? bf af) #f)
           ((string<? ak bk) #t)
           ((string<? bk ak) #f)
@@ -107,8 +106,7 @@
     ;; Compute `%set->sorted-symbol-list`.
     ;;@example
     ;; (%set->sorted-symbol-list "sample")
-    (defun %set->sorted-symbol-list (s)
-      (sort %symbol<? (hash-set->list s)))
+    (defun %set->sorted-symbol-list (s) (sort %symbol<? (hash-set->list s)))
 
     ;;@doc (%set->sorted-edge-list s)
     ;;@category Causal
@@ -116,8 +114,7 @@
     ;; Compute `%set->sorted-edge-list`.
     ;;@example
     ;; (%set->sorted-edge-list "sample")
-    (defun %set->sorted-edge-list (s)
-      (sort %edge<? (hash-set->list s)))
+    (defun %set->sorted-edge-list (s) (sort %edge<? (hash-set->list s)))
 
     ;;@doc (%map-set-add m k v)
     ;;@category Causal
@@ -126,9 +123,7 @@
     ;;@example
     ;; (%map-set-add 1 1 1)
     (defun %map-set-add (m k v)
-      (hash-map-assoc m k
-                      (hash-set-add (hash-map-ref m k (make-hash-set))
-                                    v)))
+      (hash-map-assoc m k (hash-set-add (hash-map-ref m k (make-hash-set)) v)))
 
     ;;@doc (%map-set-values m k)
     ;;@category Causal
@@ -136,8 +131,7 @@
     ;; Compute `%map-set-values`.
     ;;@example
     ;; (%map-set-values 1 1)
-    (defun %map-set-values (m k)
-      (hash-set->list (hash-map-ref m k (make-hash-set))))
+    (defun %map-set-values (m k) (hash-set->list (hash-map-ref m k (make-hash-set))))
 
     ;;@doc (%push-all xs stack)
     ;;@category Causal
@@ -145,8 +139,7 @@
     ;; Compute `%push-all`.
     ;;@example
     ;; (%push-all '() 'x)
-    (defun %push-all (xs stack)
-      (foldl (lambda (acc x) (cons x acc)) stack xs))
+    (defun %push-all (xs stack) (foldl (lambda (acc x) (cons x acc)) stack xs))
 
     ;;@doc (%closure-set next seeds)
     ;;@category Causal
@@ -155,14 +148,15 @@
     ;;@example
     ;; (%closure-set 'x 'x)
     (defun %closure-set (next seeds)
-      (let loop ((stack seeds) (seen (make-hash-set)))
+      (let
+        loop
+        ((stack seeds) (seen (make-hash-set)))
         (if (null? stack)
-            seen
-            (let ((v (car stack)))
-              (if (hash-set-contains? seen v)
-                  (loop (cdr stack) seen)
-                  (loop (%push-all (next v) (cdr stack))
-                        (hash-set-add seen v)))))))
+          seen
+          (let ((v (car stack)))
+            (if (hash-set-contains? seen v)
+              (loop (cdr stack) seen)
+              (loop (%push-all (next v) (cdr stack)) (hash-set-add seen v)))))))
 
     ;;@doc (%admg-build-index g)
     ;;@category Causal
@@ -172,23 +166,19 @@
     ;; ADMG index tuple:
     ;;   (nodes-set bidirected-neighbors-map directed-parents-map)
     (defun %admg-build-index (g)
-      (let loop ((rest g)
-                 (nodes (make-hash-set))
-                 (bidir (make-hash-map))
-                 (parents (make-hash-map)))
+      (let
+        loop
+        ((rest g) (nodes (make-hash-set)) (bidir (make-hash-map)) (parents (make-hash-map)))
         (if (null? rest)
-            (list nodes bidir parents)
-            (let* ((e (car rest))
-                   (u (%edge-from e))
-                   (v (%edge-to e))
-                   (nodes2 (hash-set-add (hash-set-add nodes u) v))
-                   (bidir2 (if (%bidirected-edge? e)
-                               (%map-set-add (%map-set-add bidir u v) v u)
-                               bidir))
-                   (parents2 (if (%directed-edge? e)
-                                 (%map-set-add parents v u)
-                                 parents)))
-              (loop (cdr rest) nodes2 bidir2 parents2)))))
+          (list nodes bidir parents)
+          (let* ((e (car rest))
+                 (u (%edge-from e))
+                 (v (%edge-to e))
+                 (nodes2 (hash-set-add (hash-set-add nodes u) v))
+                 (bidir2
+                   (if (%bidirected-edge? e) (%map-set-add (%map-set-add bidir u v) v u) bidir))
+                 (parents2 (if (%directed-edge? e) (%map-set-add parents v u) parents)))
+            (loop (cdr rest) nodes2 bidir2 parents2)))))
 
     ;;@doc (%index-nodes idx)
     ;;@category Causal
@@ -196,14 +186,14 @@
     ;; Compute `%index-nodes`.
     ;;@example
     ;; (%index-nodes 1)
-    (defun %index-nodes (idx)   (car idx))
+    (defun %index-nodes (idx) (car idx))
     ;;@doc (%index-bidir idx)
     ;;@category Causal
     ;;@module std.causal.admg
     ;; Compute `%index-bidir`.
     ;;@example
     ;; (%index-bidir 1)
-    (defun %index-bidir (idx)   (cadr idx))
+    (defun %index-bidir (idx) (cadr idx))
     ;;@doc (%index-parents idx)
     ;;@category Causal
     ;;@module std.causal.admg
@@ -219,10 +209,7 @@
     ;; (%dag-build-children-index 'x)
     ;; DAG children adjacency map built once per call.
     (defun %dag-build-children-index (dag)
-      (foldl (lambda (acc e)
-               (%map-set-add acc (%edge-from e) (%edge-to e)))
-             (make-hash-map)
-             dag))
+      (foldl (lambda (acc e) (%map-set-add acc (%edge-from e) (%edge-to e))) (make-hash-map) dag))
 
     ;;@doc (admg:directed g)
     ;;@category Causal
@@ -230,8 +217,7 @@
     ;; ADMG helpers and latent projection Uses `admg:directed`.
     ;;@example
     ;; (admg:directed 'x)
-    (defun admg:directed (g)
-      (filter %directed-edge? g))
+    (defun admg:directed (g) (filter %directed-edge? g))
 
     ;;@doc (admg:bidirected g)
     ;;@category Causal
@@ -239,8 +225,7 @@
     ;; Compute `admg:bidirected`.
     ;;@example
     ;; (admg:bidirected 'x)
-    (defun admg:bidirected (g)
-      (filter %bidirected-edge? g))
+    (defun admg:bidirected (g) (filter %bidirected-edge? g))
 
     ;;@doc (admg:nodes g)
     ;;@category Causal
@@ -248,8 +233,7 @@
     ;; Compute `admg:nodes`.
     ;;@example
     ;; (admg:nodes 'x)
-    (defun admg:nodes (g)
-      (%set->sorted-symbol-list (%index-nodes (%admg-build-index g))))
+    (defun admg:nodes (g) (%set->sorted-symbol-list (%index-nodes (%admg-build-index g))))
 
     ;; -- Districts (c-components) ----------------------------------------
 
@@ -260,14 +244,10 @@
     ;; (admg:district 'x 1)
     ;; Bidirected-connected component containing `v`.
     (defun admg:district (g v)
-      (let* ((idx (%admg-build-index g))
-             (nodes-set (%index-nodes idx))
-             (bidir (%index-bidir idx)))
+      (let* ((idx (%admg-build-index g)) (nodes-set (%index-nodes idx)) (bidir (%index-bidir idx)))
         (if (hash-set-contains? nodes-set v)
-            (%set->sorted-symbol-list
-              (%closure-set (lambda (u) (%map-set-values bidir u))
-                            (list v)))
-            (error 'unknown-variable v))))
+          (%set->sorted-symbol-list (%closure-set (lambda (u) (%map-set-values bidir u)) (list v)))
+          (error 'unknown-variable v))))
 
     ;;@doc (admg:districts g)
     ;;@category Causal
@@ -280,19 +260,17 @@
              (nodes-set (%index-nodes idx))
              (bidir (%index-bidir idx))
              (todo (%set->sorted-symbol-list nodes-set)))
-        (let loop ((rest todo) (remaining nodes-set) (acc '()))
+        (let
+          loop
+          ((rest todo) (remaining nodes-set) (acc '()))
           (if (null? rest)
-              (sort %district<? (reverse acc))
-              (let ((n (car rest)))
-                (if (not (hash-set-contains? remaining n))
-                    (loop (cdr rest) remaining acc)
-                    (let* ((d-set (%closure-set
-                                    (lambda (u) (%map-set-values bidir u))
-                                    (list n)))
-                           (remaining2 (hash-set-diff remaining d-set)))
-                      (loop (cdr rest)
-                            remaining2
-                            (cons (%set->sorted-symbol-list d-set) acc)))))))))
+            (sort %district<? (reverse acc))
+            (let ((n (car rest)))
+              (if (not (hash-set-contains? remaining n))
+                (loop (cdr rest) remaining acc)
+                (let* ((d-set (%closure-set (lambda (u) (%map-set-values bidir u)) (list n)))
+                       (remaining2 (hash-set-diff remaining d-set)))
+                  (loop (cdr rest) remaining2 (cons (%set->sorted-symbol-list d-set) acc)))))))))
 
     ;;@doc (admg:c-component g v)
     ;;@category Causal
@@ -300,14 +278,14 @@
     ;; Compute `admg:c-component`.
     ;;@example
     ;; (admg:c-component 'x 1)
-    (defun admg:c-component  (g v) (admg:district g v))
+    (defun admg:c-component (g v) (admg:district g v))
     ;;@doc (admg:c-components g)
     ;;@category Causal
     ;;@module std.causal.admg
     ;; Compute `admg:c-components`.
     ;;@example
     ;; (admg:c-components 'x)
-    (defun admg:c-components (g)   (admg:districts g))
+    (defun admg:c-components (g) (admg:districts g))
 
     ;; -- Ancestors --------------------------------------------------------
 
@@ -318,8 +296,7 @@
     ;;@example
     ;; (%as-node-set 1)
     (defun %as-node-set (x)
-      (cond
-        ((null? x) '())
+      (cond ((null? x) '())
         ((symbol? x) (list x))
         ((list? x) x)
         (else (error "admg: expected symbol or list"))))
@@ -332,12 +309,10 @@
     ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes-set vs)
       (if (null? vs)
-          '()
-          (begin
-            (if (hash-set-contains? nodes-set (car vs))
-                'ok
-                (error 'unknown-variable (car vs)))
-            (%assert-vars nodes-set (cdr vs)))))
+        '()
+        (begin
+          (if (hash-set-contains? nodes-set (car vs)) 'ok (error 'unknown-variable (car vs)))
+          (%assert-vars nodes-set (cdr vs)))))
 
     ;;@doc (admg:ancestors g v)
     ;;@category Causal
@@ -351,14 +326,17 @@
              (parents (%index-parents idx))
              (vs (%as-node-set v)))
         (%assert-vars nodes-set vs)
-        (let loop ((rest vs) (acc (make-hash-set)))
+        (let
+          loop
+          ((rest vs) (acc (make-hash-set)))
           (if (null? rest)
-              (%set->sorted-symbol-list acc)
-              (let* ((node (car rest))
-                     (anc (%closure-set
-                           (lambda (u) (%map-set-values parents u))
-                           (%map-set-values parents node))))
-                (loop (cdr rest) (hash-set-union acc anc)))))))
+            (%set->sorted-symbol-list acc)
+            (let* ((node (car rest))
+                   (anc
+                     (%closure-set
+                       (lambda (u) (%map-set-values parents u))
+                       (%map-set-values parents node))))
+              (loop (cdr rest) (hash-set-union acc anc)))))))
 
     ;; -- Latent projection ------------------------------------------------
 
@@ -369,9 +347,7 @@
     ;;@example
     ;; (%ordered-pair 1 1)
     (defun %ordered-pair (a b)
-      (if (string<? (symbol->string a) (symbol->string b))
-          (list a b)
-          (list b a)))
+      (if (string<? (symbol->string a) (symbol->string b)) (list a b) (list b a)))
 
     ;;@doc (%projected-directed-targets children-map latents-set src)
     ;;@category Causal
@@ -381,19 +357,22 @@
     ;; Observed targets reachable from observed source via latent-only
     ;; internal nodes.
     (defun %projected-directed-targets (children-map latents-set src)
-      (let loop ((stack (%map-set-values children-map src))
-                 (seen-lat (make-hash-set))
-                 (targets (make-hash-set)))
+      (let
+        loop
+        ((stack (%map-set-values children-map src))
+         (seen-lat (make-hash-set))
+         (targets (make-hash-set)))
         (if (null? stack)
-            targets
-            (let ((n (car stack)))
-              (if (hash-set-contains? latents-set n)
-                  (if (hash-set-contains? seen-lat n)
-                      (loop (cdr stack) seen-lat targets)
-                      (loop (%push-all (%map-set-values children-map n) (cdr stack))
-                            (hash-set-add seen-lat n)
-                            targets))
-                  (loop (cdr stack) seen-lat (hash-set-add targets n)))))))
+          targets
+          (let ((n (car stack)))
+            (if (hash-set-contains? latents-set n)
+              (if (hash-set-contains? seen-lat n)
+                (loop (cdr stack) seen-lat targets)
+                (loop
+                  (%push-all (%map-set-values children-map n) (cdr stack))
+                  (hash-set-add seen-lat n)
+                  targets))
+              (loop (cdr stack) seen-lat (hash-set-add targets n)))))))
 
     ;;@doc (admg:%project-directed children-map latents-set obs-set obs-list)
     ;;@category Causal
@@ -403,17 +382,16 @@
     ;; (admg:%project-directed 'x 'x 'x 'x)
     (defun admg:%project-directed (children-map latents-set obs-set obs-list)
       (foldl
-       (lambda (acc src)
-         (foldl (lambda (acc2 dst)
-                  (if (or (eq? src dst)
-                          (not (hash-set-contains? obs-set dst)))
-                      acc2
-                      (hash-set-add acc2 (list src '-> dst))))
-                acc
-                (hash-set->list
-                  (%projected-directed-targets children-map latents-set src))))
-       (make-hash-set)
-       obs-list))
+        (lambda (acc src)
+          (foldl
+            (lambda (acc2 dst)
+              (if (or (eq? src dst) (not (hash-set-contains? obs-set dst)))
+                acc2
+                (hash-set-add acc2 (list src '-> dst))))
+            acc
+            (hash-set->list (%projected-directed-targets children-map latents-set src))))
+        (make-hash-set)
+        obs-list))
 
     ;;@doc (%latent-observed-descendants children-map latents-set latent-root)
     ;;@category Causal
@@ -422,23 +400,19 @@
     ;; (%latent-observed-descendants 'x 'x 'x)
     ;; Observed descendants of a latent source through latent-only chains.
     (defun %latent-observed-descendants (children-map latents-set latent-root)
-      (let loop ((stack (list latent-root))
-                 (seen-lat (make-hash-set))
-                 (targets (make-hash-set)))
+      (let
+        loop
+        ((stack (list latent-root)) (seen-lat (make-hash-set)) (targets (make-hash-set)))
         (if (null? stack)
-            targets
-            (let ((n (car stack)))
-              (if (hash-set-contains? seen-lat n)
-                  (loop (cdr stack) seen-lat targets)
-                  (let* ((kids (%map-set-values children-map n))
-                         (next-lat (filter (lambda (k) (hash-set-contains? latents-set k)) kids))
-                         (obs-kids (filter (lambda (k) (not (hash-set-contains? latents-set k))) kids))
-                         (targets2 (foldl (lambda (acc x) (hash-set-add acc x))
-                                          targets
-                                          obs-kids)))
-                    (loop (%push-all next-lat (cdr stack))
-                          (hash-set-add seen-lat n)
-                          targets2)))))))
+          targets
+          (let ((n (car stack)))
+            (if (hash-set-contains? seen-lat n)
+              (loop (cdr stack) seen-lat targets)
+              (let* ((kids (%map-set-values children-map n))
+                     (next-lat (filter (lambda (k) (hash-set-contains? latents-set k)) kids))
+                     (obs-kids (filter (lambda (k) (not (hash-set-contains? latents-set k))) kids))
+                     (targets2 (foldl (lambda (acc x) (hash-set-add acc x)) targets obs-kids)))
+                (loop (%push-all next-lat (cdr stack)) (hash-set-add seen-lat n) targets2)))))))
 
     ;;@doc (%pairs xs)
     ;;@category Causal
@@ -447,10 +421,7 @@
     ;;@example
     ;; (%pairs '())
     (defun %pairs (xs)
-      (if (null? xs)
-          '()
-          (append (map* (lambda (y) (list (car xs) y)) (cdr xs))
-                  (%pairs (cdr xs)))))
+      (if (null? xs) '() (append (map* (lambda (y) (list (car xs) y)) (cdr xs)) (%pairs (cdr xs)))))
 
     ;;@doc (admg:%project-bidirected children-map all-set latents-set obs-set latents-list)
     ;;@category Causal
@@ -459,25 +430,22 @@
     ;;@example
     ;; (admg:%project-bidirected 'x 'x 'x 'x 'x)
     (defun admg:%project-bidirected (children-map all-set latents-set obs-set latents-list)
-      (let ((present-latents (filter (lambda (l) (hash-set-contains? all-set l))
-                                     latents-list)))
+      (let ((present-latents (filter (lambda (l) (hash-set-contains? all-set l)) latents-list)))
         (foldl
-         (lambda (acc latent)
-           (let* ((targets (hash-set-intersect
-                             (%latent-observed-descendants
-                               children-map latents-set latent)
-                             obs-set))
-                  (edges (map* (lambda (p)
-                                 (let* ((u (car p))
-                                        (v (cadr p))
-                                        (ord (%ordered-pair u v)))
-                                   (list (car ord) '<-> (cadr ord))))
-                               (%pairs (hash-set->list targets)))))
-             (foldl (lambda (acc2 e) (hash-set-add acc2 e))
-                    acc
-                    edges)))
-         (make-hash-set)
-         present-latents)))
+          (lambda (acc latent)
+            (let* ((targets
+                     (hash-set-intersect
+                       (%latent-observed-descendants children-map latents-set latent)
+                       obs-set))
+                   (edges
+                     (map*
+                       (lambda (p)
+                         (let* ((u (car p)) (v (cadr p)) (ord (%ordered-pair u v)))
+                           (list (car ord) '<-> (cadr ord))))
+                       (%pairs (hash-set->list targets)))))
+              (foldl (lambda (acc2 e) (hash-set-add acc2 e)) acc edges)))
+          (make-hash-set)
+          present-latents)))
 
     ;;@doc (admg:project dag latents)
     ;;@category Causal
@@ -507,10 +475,10 @@
     ;; (%marriage-links 'x)
     (defun %marriage-links (parents)
       (if (null? parents)
-          '()
-          (append (map* (lambda (p2) (list (car parents) '-> p2))
-                        (cdr parents))
-                  (%marriage-links (cdr parents)))))
+        '()
+        (append
+          (map* (lambda (p2) (list (car parents) '-> p2)) (cdr parents))
+          (%marriage-links (cdr parents)))))
 
     ;;@doc (admg:%add-marriages subg parents-map nodes-set)
     ;;@category Causal
@@ -519,12 +487,14 @@
     ;;@example
     ;; (admg:%add-marriages 'x 'x 'x)
     (defun admg:%add-marriages (subg parents-map nodes-set)
-      (foldl (lambda (acc node)
-               (append (%marriage-links (%set->sorted-symbol-list
-                                          (hash-map-ref parents-map node (make-hash-set))))
-                       acc))
-             subg
-             (%set->sorted-symbol-list nodes-set)))
+      (foldl
+        (lambda (acc node)
+          (append
+            (%marriage-links
+              (%set->sorted-symbol-list (hash-map-ref parents-map node (make-hash-set))))
+            acc))
+        subg
+        (%set->sorted-symbol-list nodes-set)))
 
     ;;@doc (admg:%undirected g)
     ;;@category Causal
@@ -534,16 +504,15 @@
     ;; (admg:%undirected 'x)
     (defun admg:%undirected (g)
       (let ((out
-              (foldl (lambda (acc e)
-                       (let* ((u (%edge-from e))
-                              (v (%edge-to e))
-                              (ord (%ordered-pair u v))
-                              (edge (list (car ord) '-- (cadr ord))))
-                         (if (eq? u v)
-                             acc
-                             (hash-set-add acc edge))))
-                     (make-hash-set)
-                     g)))
+              (foldl
+                (lambda (acc e)
+                  (let* ((u (%edge-from e))
+                         (v (%edge-to e))
+                         (ord (%ordered-pair u v))
+                         (edge (list (car ord) '-- (cadr ord))))
+                    (if (eq? u v) acc (hash-set-add acc edge))))
+                (make-hash-set)
+                g)))
         (%set->sorted-edge-list out)))
 
     ;;@doc (admg:moralize g s)
@@ -558,22 +527,25 @@
              (parents (%index-parents idx))
              (target (%as-node-set s)))
         (%assert-vars nodes-set target)
-        (let loop ((rest target) (anc (make-hash-set)))
+        (let
+          loop
+          ((rest target) (anc (make-hash-set)))
           (if (null? rest)
-              (let* ((subg (filter (lambda (e)
-                                     (and (hash-set-contains? anc (%edge-from e))
-                                          (hash-set-contains? anc (%edge-to e))))
-                                   g))
-                     (sub-idx (%admg-build-index subg))
-                     (moral (admg:%add-marriages subg
-                                                 (%index-parents sub-idx)
-                                                 (%index-nodes sub-idx))))
-                (admg:%undirected moral))
-              (let* ((v (car rest))
-                     (anc-v (%closure-set
-                             (lambda (u) (%map-set-values parents u))
-                             (%map-set-values parents v)))
-                     (anc2 (hash-set-union anc (hash-set-add anc-v v))))
-                (loop (cdr rest) anc2)))))
-
-  )))
+            (let* ((subg
+                     (filter
+                       (lambda (e)
+                         (and
+                           (hash-set-contains? anc (%edge-from e))
+                           (hash-set-contains? anc (%edge-to e))))
+                       g))
+                   (sub-idx (%admg-build-index subg))
+                   (moral
+                     (admg:%add-marriages subg (%index-parents sub-idx) (%index-nodes sub-idx))))
+              (admg:%undirected moral))
+            (let* ((v (car rest))
+                   (anc-v
+                     (%closure-set
+                       (lambda (u) (%map-set-values parents u))
+                       (%map-set-values parents v)))
+                   (anc2 (hash-set-union anc (hash-set-add anc-v v))))
+              (loop (cdr rest) anc2))))))))

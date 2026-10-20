@@ -18,17 +18,26 @@
 (module std.test
   (import std.core)
   (export
-    ;; Constructors
-    make-test make-group
+  ;; Constructors
+  make-test
+    make-group
     ;; Runner
-    run summary
+    run
+    summary
     ;; Summary accessors
-    summary-total summary-passed summary-failed
+    summary-total
+    summary-passed
+    summary-failed
     ;; Assertions
-    assert-true assert-false assert-equal assert-not-equal
+    assert-true
+    assert-false
+    assert-equal
+    assert-not-equal
     assert-approx-equal
     ;; Output
-    print-summary print-tap print-junit)
+    print-summary
+    print-tap
+    print-junit)
   (begin
 
     ;;  Data (tagged vectors via define-record-type) 
@@ -74,10 +83,7 @@
     ;; Apply `f` to each element of `xs` and return the mapped list.
     ;;@example
     ;; (%map (lambda (x) (+ x 1)) '(1 2 3))
-    (defun %map (f xs)
-      (if (null? xs)
-          '()
-          (cons (f (car xs)) (%map f (cdr xs)))))
+    (defun %map (f xs) (if (null? xs) '() (cons (f (car xs)) (%map f (cdr xs)))))
 
     ;;@doc (%foldl f acc xs)
     ;;@category Helpers
@@ -85,10 +91,7 @@
     ;; Left-fold `xs` using reducer `f` and initial accumulator `acc`.
     ;;@example
     ;; (%foldl (lambda (acc x) (+ acc x)) 0 '(1 2 3))
-    (defun %foldl (f acc xs)
-      (if (null? xs)
-          acc
-          (%foldl f (f acc (car xs)) (cdr xs))))
+    (defun %foldl (f acc xs) (if (null? xs) acc (%foldl f (f acc (car xs)) (cdr xs))))
 
     ;;  Assertions 
 
@@ -99,8 +102,7 @@
     ;;@example
     ;; (assert-true (> 3 1))
     (defun assert-true (x . rest)
-      (let ((msg (if (null? rest) "expected true" (car rest))))
-        (if x 'ok (error msg))))
+      (let ((msg (if (null? rest) "expected true" (car rest)))) (if x 'ok (error msg))))
 
     ;;@doc (assert-false x . rest)
     ;;@category Assertions
@@ -109,8 +111,7 @@
     ;;@example
     ;; (assert-false (= 1 2))
     (defun assert-false (x . rest)
-      (let ((msg (if (null? rest) "expected false" (car rest))))
-        (if x (error msg) 'ok)))
+      (let ((msg (if (null? rest) "expected false" (car rest)))) (if x (error msg) 'ok)))
 
     ;;@doc (%val->string x)
     ;;@category Helpers
@@ -118,10 +119,7 @@
     ;; Render `x` to a string using `display`.
     ;;@example
     ;; (%val->string 1)
-    (defun %val->string (x)
-      (let ((p (open-output-string)))
-        (display x p)
-        (get-output-string p)))
+    (defun %val->string (x) (let ((p (open-output-string))) (display x p) (get-output-string p)))
 
     ;;@doc (assert-equal expected actual . rest)
     ;;@category Assertions
@@ -130,15 +128,15 @@
     ;;@example
     ;; (assert-equal 4 (+ 2 2))
     (defun assert-equal (expected actual . rest)
-      (let ((msg (if (null? rest)
-                     (string-append "expected "
-                       (%val->string expected)
-                       " but got "
-                       (%val->string actual))
-                     (car rest))))
-        (if (equal? expected actual)
-            'ok
-            (error msg))))
+      (let ((msg
+              (if (null? rest)
+                (string-append
+                  "expected "
+                  (%val->string expected)
+                  " but got "
+                  (%val->string actual))
+                (car rest))))
+        (if (equal? expected actual) 'ok (error msg))))
 
     ;;@doc (assert-not-equal a b . rest)
     ;;@category Assertions
@@ -158,18 +156,18 @@
     ;; (assert-approx-equal 3.14 3.1400000001)
     (defun assert-approx-equal (expected actual . rest)
       (let ((tol (if (null? rest) 1e-9 (car rest))))
-        (let ((diff (if (> expected actual)
-                        (- expected actual)
-                        (- actual expected))))
+        (let ((diff (if (> expected actual) (- expected actual) (- actual expected))))
           (if (> diff tol)
-              (error (string-append "expected approx "
-                       (%val->string expected)
-                       " but got "
-                       (%val->string actual)
-                       " (diff="
-                       (%val->string diff)
-                       ")"))
-              'ok))))
+            (error
+              (string-append
+                "expected approx "
+                (%val->string expected)
+                " but got "
+                (%val->string actual)
+                " (diff="
+                (%val->string diff)
+                ")"))
+            'ok))))
 
     ;;  Runner 
 
@@ -183,9 +181,7 @@
       ;; Execute the thunk; on success return pass, on error return fail.
       ;; NOTE: Until try/catch exists, a failing assertion (error) will
       ;; propagate up. For now, tests either all pass or abort on first failure.
-      (begin
-        ((test-thunk t))
-        (%make-result (test-name t) 'pass '())))
+      (begin ((test-thunk t)) (%make-result (test-name t) 'pass '())))
 
     ;;@doc (%all-pass? rs)
     ;;@category Runner
@@ -195,13 +191,9 @@
     ;; (%all-pass? '())
     (defun %all-pass? (rs)
       (if (null? rs)
-          #t
-          (let ((st (if (test-result? (car rs))
-                        (result-status (car rs))
-                        (gresult-status (car rs)))))
-            (if (eq? st 'pass)
-                (%all-pass? (cdr rs))
-                #f))))
+        #t
+        (let ((st (if (test-result? (car rs)) (result-status (car rs)) (gresult-status (car rs)))))
+          (if (eq? st 'pass) (%all-pass? (cdr rs)) #f))))
 
     ;;@doc (%run-group g)
     ;;@category Runner
@@ -220,10 +212,7 @@
     ;; Run a test node (`test-case` or `test-group`) and return a result tree.
     ;;@example
     ;; (run (make-test "ok" (lambda () (assert-true #t))))
-    (defun run (node)
-      (if (test-case? node)
-          (%run-test node)
-          (%run-group node)))
+    (defun run (node) (if (test-case? node) (%run-test node) (%run-group node)))
 
     ;;  Summary 
 
@@ -235,7 +224,7 @@
     ;; (%add-summary (%make-summary 1 1 0) (%make-summary 2 1 1))
     (defun %add-summary (a b)
       (%make-summary
-        (+ (summary-total a)  (summary-total b))
+        (+ (summary-total a) (summary-total b))
         (+ (summary-passed a) (summary-passed b))
         (+ (summary-failed a) (summary-failed b))))
 
@@ -247,13 +236,9 @@
     ;; (%count-results (run (make-test "ok" (lambda () (assert-true #t)))))
     (defun %count-results (res)
       (if (test-result? res)
-          (if (eq? (result-status res) 'pass)
-              (%make-summary 1 1 0)
-              (%make-summary 1 0 1))
-          ;; group result  fold children
-          (%foldl %add-summary
-                   (%make-summary 0 0 0)
-                   (%map %count-results (gresult-children res)))))
+        (if (eq? (result-status res) 'pass) (%make-summary 1 1 0) (%make-summary 1 0 1))
+        ;; group result  fold children
+        (%foldl %add-summary (%make-summary 0 0 0) (%map %count-results (gresult-children res)))))
 
     ;;@doc (summary res)
     ;;@category Summary
@@ -261,8 +246,7 @@
     ;; Build a `test-summary` for the result tree returned by `(run ...)`.
     ;;@example
     ;; (summary (run (make-test "ok" (lambda () (assert-true #t)))))
-    (defun summary (res)
-      (%count-results res))
+    (defun summary (res) (%count-results res))
 
     ;;@doc (print-summary s)
     ;;@category Summary
@@ -302,11 +286,9 @@
     (defun %tap-collect-results (res acc)
       ;; Flatten all test-results from nested group-results into a list.
       (if (test-result? res)
-          (cons res acc)
-          ;; group result  recurse children
-          (%foldl (lambda (a child) (%tap-collect-results child a))
-                   acc
-                   (gresult-children res))))
+        (cons res acc)
+        ;; group result  recurse children
+        (%foldl (lambda (a child) (%tap-collect-results child a)) acc (gresult-children res))))
 
     ;;@doc (%tap-print-result idx r)
     ;;@category Output
@@ -316,25 +298,20 @@
     ;; (%tap-print-result 1 (%make-result "ok" 'pass '()))
     (defun %tap-print-result (idx r)
       (if (eq? (result-status r) 'pass)
-          (begin
-            (display "ok ")
-            (display idx)
-            (display " - ")
-            (display (result-name r))
-            (newline))
-          (begin
-            (display "not ok ")
-            (display idx)
-            (display " - ")
-            (display (result-name r))
-            (newline)
-            (display "  ---")
-            (newline)
-            (display "  message: ")
-            (display (result-error r))
-            (newline)
-            (display "  ...")
-            (newline))))
+        (begin (display "ok ") (display idx) (display " - ") (display (result-name r)) (newline))
+        (begin
+          (display "not ok ")
+          (display idx)
+          (display " - ")
+          (display (result-name r))
+          (newline)
+          (display "  ---")
+          (newline)
+          (display "  message: ")
+          (display (result-error r))
+          (newline)
+          (display "  ...")
+          (newline))))
 
     ;;@doc (%tap-print-all results idx)
     ;;@category Output
@@ -344,10 +321,8 @@
     ;; (%tap-print-all (list (%make-result "ok" 'pass '())) 1)
     (defun %tap-print-all (results idx)
       (if (null? results)
-          'done
-          (begin
-            (%tap-print-result idx (car results))
-            (%tap-print-all (cdr results) (+ idx 1)))))
+        'done
+        (begin (%tap-print-result idx (car results)) (%tap-print-all (cdr results) (+ idx 1)))))
 
     ;;@doc (print-tap res)
     ;;@category Output
@@ -382,20 +357,20 @@
     (defun %xml-escape (s)
       ;; Minimal XML escaping for attribute/text values.
       ;; Uses string-ref / string-length and eqv? to avoid char=? / string->list.
-      (let ((p (open-output-string))
-            (n (string-length s)))
-        (let loop ((i 0))
+      (let ((p (open-output-string)) (n (string-length s)))
+        (let
+          loop
+          ((i 0))
           (if (= i n)
-              (get-output-string p)
-              (begin
-                (let ((c (string-ref s i)))
-                  (cond
-                    ((eqv? c #\&)  (display "&amp;"  p))
-                    ((eqv? c #\<)  (display "&lt;"   p))
-                    ((eqv? c #\>)  (display "&gt;"   p))
-                    ((eqv? c #\")  (display "&quot;" p))
-                    (else          (display c p))))
-                (loop (+ i 1)))))))
+            (get-output-string p)
+            (begin
+              (let ((c (string-ref s i)))
+                (cond ((eqv? c #\&) (display "&amp;" p))
+                  ((eqv? c #\<) (display "&lt;" p))
+                  ((eqv? c #\>) (display "&gt;" p))
+                  ((eqv? c #\") (display "&quot;" p))
+                  (else (display c p))))
+              (loop (+ i 1)))))))
 
     ;;@doc (%junit-print-result r)
     ;;@category Output
@@ -405,22 +380,22 @@
     ;; (%junit-print-result (%make-result "ok" 'pass '()))
     (defun %junit-print-result (r)
       (if (eq? (result-status r) 'pass)
-          (begin
-            (display "    <testcase name=\"")
-            (display (%xml-escape (result-name r)))
-            (display "\"/>")
-            (newline))
-          (begin
-            (display "    <testcase name=\"")
-            (display (%xml-escape (result-name r)))
-            (display "\">")
-            (newline)
-            (display "      <failure message=\"")
-            (display (%xml-escape (%val->string (result-error r))))
-            (display "\"/>")
-            (newline)
-            (display "    </testcase>")
-            (newline))))
+        (begin
+          (display "    <testcase name=\"")
+          (display (%xml-escape (result-name r)))
+          (display "\"/>")
+          (newline))
+        (begin
+          (display "    <testcase name=\"")
+          (display (%xml-escape (result-name r)))
+          (display "\">")
+          (newline)
+          (display "      <failure message=\"")
+          (display (%xml-escape (%val->string (result-error r))))
+          (display "\"/>")
+          (newline)
+          (display "    </testcase>")
+          (newline))))
 
     ;;@doc (%junit-print-all results)
     ;;@category Output
@@ -430,10 +405,8 @@
     ;; (%junit-print-all (list (%make-result "ok" 'pass '())))
     (defun %junit-print-all (results)
       (if (null? results)
-          'done
-          (begin
-            (%junit-print-result (car results))
-            (%junit-print-all (cdr results)))))
+        'done
+        (begin (%junit-print-result (car results)) (%junit-print-all (cdr results)))))
 
     ;;@doc (print-junit res . suite-name-rest)
     ;;@category Output
@@ -457,6 +430,4 @@
             (newline)
             (%junit-print-all flat)
             (display "</testsuite>")
-            (newline)))))
-
-  ))
+            (newline)))))))

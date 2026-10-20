@@ -13,15 +13,16 @@
     (defun make-repeated-csv (n)
       (let ((p (open-output-string)))
         (display "i,val\n" p)
-        (letrec ((loop (lambda (i)
-                         (if (= i n)
-                             (get-output-string p)
-                             (begin
-                               (display i p)
-                               (display "," p)
-                               (display 1 p)
-                               (display "\n" p)
-                               (loop (+ i 1)))))))
+        (letrec ((loop
+                   (lambda (i)
+                     (if (= i n)
+                       (get-output-string p)
+                       (begin
+                         (display i p)
+                         (display "," p)
+                         (display 1 p)
+                         (display "\n" p)
+                         (loop (+ i 1)))))))
           (loop 0))))
 
     ;;@doc (csv:test-assq key alist)
@@ -31,15 +32,14 @@
     ;;@example
     ;; (csv:test-assq 'x 'x)
     (defun csv:test-assq (key alist)
-      (letrec ((loop (lambda (xs)
-                       (if (null? xs)
-                           #f
-                           (if (pair? xs)
-                               (let ((entry (car xs)))
-                                 (if (and (pair? entry) (eq? (car entry) key))
-                                     entry
-                                     (loop (cdr xs))))
-                               #f)))))
+      (letrec ((loop
+                 (lambda (xs)
+                   (if (null? xs)
+                     #f
+                     (if (pair? xs)
+                       (let ((entry (car xs)))
+                         (if (and (pair? entry) (eq? (car entry) key)) entry (loop (cdr xs))))
+                       #f)))))
         (loop alist)))
 
     ;;@doc (csv:test-ref key alist)
@@ -49,14 +49,13 @@
     ;;@example
     ;; (csv:test-ref 'x 'x)
     (defun csv:test-ref (key alist)
-      (let ((entry (csv:test-assq key alist)))
-        (if entry (cdr entry) #f)))
+      (let ((entry (csv:test-assq key alist))) (if entry (cdr entry) #f)))
 
     (define test-quoted
-      (make-test "quoted commas and escaped quotes parse correctly"
+      (make-test
+        "quoted commas and escaped quotes parse correctly"
         (lambda ()
-          (let* ((r (csv:reader-from-string
-                      "a,b,c\n1,\"two,three\",\"he said \"\"hi\"\"\"\n"))
+          (let* ((r (csv:reader-from-string "a,b,c\n1,\"two,three\",\"he said \"\"hi\"\"\"\n"))
                  (rec (csv:read-record r)))
             (assert-equal "1" (csv:test-ref 'a rec))
             (assert-equal "two,three" (csv:test-ref 'b rec))
@@ -64,20 +63,23 @@
             (csv:close r)))))
 
     (define test-fold
-      (make-test "csv:fold streams 100k rows with correct sum"
+      (make-test
+        "csv:fold streams 100k rows with correct sum"
         (lambda ()
           (let* ((csv-data (make-repeated-csv 100000))
                  (r (csv:reader-from-string csv-data))
-                 (total (csv:fold r
-                                  (lambda (acc rec)
-                                    (let ((v (csv:test-ref 'val rec)))
-                                      (+ acc (if v (string->number v) 0))))
-                                  0)))
+                 (total
+                   (csv:fold
+                     r
+                     (lambda (acc rec)
+                       (let ((v (csv:test-ref 'val rec))) (+ acc (if v (string->number v) 0))))
+                     0)))
             (assert-equal 100000 total)
             (csv:close r)))))
 
     (define test-intern
-      (make-test "record keys stay interned across reads"
+      (make-test
+        "record keys stay interned across reads"
         (lambda ()
           (let* ((r (csv:reader-from-string "x,y\n1,2\n3,4\n"))
                  (row1 (csv:read-record r))
@@ -88,13 +90,18 @@
             (csv:close r)))))
 
     (define test-header-options
-      (make-test "header off with column names and comment skipping"
+      (make-test
+        "header off with column names and comment skipping"
         (lambda ()
-          (let* ((r (csv:reader-from-string
-                      "#ignore,me\n10,20\n#skip,again\n30,40\n"
-                      'header #f
-                      'column-names '("left" "right")
-                      'comment #\#))
+          (let* ((r
+                   (csv:reader-from-string
+                     "#ignore,me\n10,20\n#skip,again\n30,40\n"
+                     'header
+                     #f
+                     'column-names
+                     '("left" "right")
+                     'comment
+                     #\#))
                  (row1 (csv:read-record r))
                  (row2 (csv:read-record r)))
             (assert-equal "10" (csv:test-ref 'left row1))
@@ -104,10 +111,10 @@
             (csv:close r)))))
 
     (define test-typed-row
-      (make-test "csv:read-typed-row parses numbers and null tokens"
+      (make-test
+        "csv:read-typed-row parses numbers and null tokens"
         (lambda ()
-          (let* ((r (csv:reader-from-string
-                      "x,y,z,w\n42,3.5,NA,alpha\n,7,NaN,0\n"))
+          (let* ((r (csv:reader-from-string "x,y,z,w\n42,3.5,NA,alpha\n,7,NaN,0\n"))
                  (row1 (csv:read-typed-row r))
                  (row2 (csv:read-typed-row r)))
             (assert-equal 42 (vector-ref row1 0))
@@ -121,7 +128,8 @@
             (csv:close r)))))
 
     (define test-typed-row-locale
-      (make-test "csv:read-typed-row keeps 1,5 as string with ; delimiter"
+      (make-test
+        "csv:read-typed-row keeps 1,5 as string with ; delimiter"
         (lambda ()
           (let* ((r (csv:reader-from-string "x;y\n1,5;2\n" 'delimiter #\;))
                  (row (csv:read-typed-row r)))
@@ -130,8 +138,14 @@
             (csv:close r)))))
 
     (define suite
-      (make-group "std.csv"
-        (list test-quoted test-fold test-intern test-header-options
-              test-typed-row test-typed-row-locale)))
+      (make-group
+        "std.csv"
+        (list
+          test-quoted
+          test-fold
+          test-intern
+          test-header-options
+          test-typed-row
+          test-typed-row-locale)))
 
     (print-tap (run suite))))

@@ -7,59 +7,52 @@
   (import std.actor std.io)
   (begin
 
-    (defun %add-subscription (subs topic pid)
-      (cons (cons topic pid) subs))
+    (defun %add-subscription (subs topic pid) (cons (cons topic pid) subs))
 
     (defun %publish (subs topic payload)
       (for-each
         (lambda (entry)
-          (when (equal? (car entry) topic)
-            (send (cdr entry) (list 'event topic payload))))
+          (when (equal? (car entry) topic) (send (cdr entry) (list 'event topic payload))))
         subs))
 
     (defun make-broker ()
       (spawn
         (lambda ()
-          (let loop ((subs '()))
+          (let
+            loop
+            ((subs '()))
             (receive
               (list
                 (match-case
                   (match-list 'subscribe 2)
                   (lambda (msg)
-                    (let ((pid (car (cdr msg)))
-                          (topic (car (cdr (cdr msg)))))
+                    (let ((pid (car (cdr msg))) (topic (car (cdr (cdr msg)))))
                       (loop (%add-subscription subs topic pid)))))
                 (match-case
                   (match-list 'publish 2)
                   (lambda (msg)
-                    (let ((topic (car (cdr msg)))
-                          (payload (car (cdr (cdr msg)))))
+                    (let ((topic (car (cdr msg))) (payload (car (cdr (cdr msg)))))
                       (%publish subs topic payload)
                       (loop subs))))
-                (match-case
-                  (match-symbol 'stop)
-                  (lambda (msg)
-                    'ok)))
+                (match-case (match-symbol 'stop) (lambda (msg) 'ok)))
               'wait)))))
 
     (defun make-subscriber (name topic broker parent)
       (spawn
         (lambda ()
           (send broker (list 'subscribe (self) topic))
-          (let loop ()
+          (let
+            loop
+            ()
             (receive
               (list
                 (match-case
                   (match-list 'event 2)
                   (lambda (msg)
-                    (let ((seen-topic (car (cdr msg)))
-                          (payload (car (cdr (cdr msg)))))
+                    (let ((seen-topic (car (cdr msg))) (payload (car (cdr (cdr msg)))))
                       (send parent (list 'seen name seen-topic payload))
                       (loop))))
-                (match-case
-                  (match-symbol 'stop)
-                  (lambda (msg)
-                    'ok)))
+                (match-case (match-symbol 'stop) (lambda (msg) 'ok)))
               'wait)))))
 
     (define broker (make-broker))

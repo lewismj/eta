@@ -20,13 +20,13 @@
     (defun hi (bounds) (cdr bounds))
 
     (define suite
-      (make-group "clpr-post-smoke"
+      (make-group
+        "clpr-post-smoke"
         (list
-          (make-test "post + bind narrows; unwind restores"
+          (make-test
+            "post + bind narrows; unwind restores"
             (lambda ()
-              (let* ((x (logic-var))
-                     (y (logic-var))
-                     (m (trail-mark)))
+              (let* ((x (logic-var)) (y (logic-var)) (m (trail-mark)))
                 (assert-equal #t (clp:r<= (clp:r+ x y) 10))
                 (assert-equal #t (unify y 4))
                 (let ((bx (clp:r-bounds x)))
@@ -38,8 +38,8 @@
                 (assert-true (logic-var? (deref-lvar y)))
                 (assert-equal #f (clp:domain-r x))
                 (assert-equal #f (clp:domain-r y)))))
-
-          (make-test "infeasible post is rejected atomically"
+          (make-test
+            "infeasible post is rejected atomically"
             (lambda ()
               (let ((x (logic-var)))
                 (assert-equal #t (clp:r<= x 5))
@@ -50,11 +50,10 @@
                 (let ((after (clp:r-bounds x)))
                   (assert-true (< (lo after) -1e100))
                   (assert-approx-equal 5.0 (hi after) 1e-9)))))
-
-          (make-test "infeasible re-propagation fails unify and rolls back bind"
+          (make-test
+            "infeasible re-propagation fails unify and rolls back bind"
             (lambda ()
-              (let ((x (logic-var))
-                    (y (logic-var)))
+              (let ((x (logic-var)) (y (logic-var)))
                 (assert-equal #t (clp:r<= (clp:r+ x y) 10))
                 (assert-equal #t (clp:r>= x 0))
                 (let ((bx0 (clp:r-bounds x)))

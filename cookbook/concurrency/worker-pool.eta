@@ -8,10 +8,10 @@
   (begin
 
     (defun %vector->list (vec)
-      (let loop ((i 0) (acc '()))
-        (if (= i (vector-length vec))
-            (reverse acc)
-            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
+      (let
+        loop
+        ((i 0) (acc '()))
+        (if (= i (vector-length vec)) (reverse acc) (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
     (define tasks '(1 2 3 4 5))
     (define indices (range 0 (length tasks)))
@@ -33,16 +33,17 @@
                 'wait))))
         tasks))
 
-    (let dispatch ((rest-workers workers) (rest-indices indices) (rest-tasks tasks))
-      (when (and (pair? rest-workers)
-                 (pair? rest-indices)
-                 (pair? rest-tasks))
-        (send (car rest-workers)
-              (list 'task (self) (car rest-indices) (car rest-tasks)))
+    (let
+      dispatch
+      ((rest-workers workers) (rest-indices indices) (rest-tasks tasks))
+      (when (and (pair? rest-workers) (pair? rest-indices) (pair? rest-tasks))
+        (send (car rest-workers) (list 'task (self) (car rest-indices) (car rest-tasks)))
         (dispatch (cdr rest-workers) (cdr rest-indices) (cdr rest-tasks))))
 
     (define results (make-vector (length tasks) 0))
-    (let loop ((remaining (length tasks)))
+    (let
+      loop
+      ((remaining (length tasks)))
       (when (> remaining 0)
         (let ((msg (receive-match (match-list 'result 2) 1000)))
           (vector-set! results (car (cdr msg)) (car (cdr (cdr msg))))

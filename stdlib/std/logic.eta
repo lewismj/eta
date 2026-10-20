@@ -18,8 +18,8 @@
 (module std.logic
   (import std.collections)
   (export
-    ;; Unification as a callable goal function
-    ==
+  ;; Unification as a callable goal function
+  ==
     ;; Term utilities
     copy-term*
     ;; Goal combinators
@@ -35,13 +35,23 @@
     ;; the trail) or #f when it failed.  This is the same shape accepted
     ;; by `findall` / `run1`, so all combinators below compose with the
     ;; existing machinery.
-    goal ==o succeedo failo
-    disj conj
-    fresh fresh-vars
-    conde conda condu onceo
-    run* run-n
+    goal
+    ==o
+    succeedo
+    failo
+    disj
+    conj
+    fresh
+    fresh-vars
+    conde
+    conda
+    condu
+    onceo
+    run*
+    run-n
     ;; Logic-scoped exceptions: raise/catch that also unwind the trail.
-    logic-throw logic-catch)
+    logic-throw
+    logic-catch)
   (begin
 
     ;;@doc (== a b)
@@ -79,11 +89,7 @@
     ;; Negation as failure.
     ;; Probes goal-thunk in isolation; ALWAYS unwinds any bindings it made.
     ;; Returns #t if the goal failed; #f if it succeeded.
-    (defun naf (goal-thunk)
-      (let* ((m  (trail-mark))
-             (ok (goal-thunk)))
-        (unwind-trail m)
-        (not ok)))
+    (defun naf (goal-thunk) (let* ((m (trail-mark)) (ok (goal-thunk))) (unwind-trail m) (not ok)))
 
     ;;@doc (succeeds? goal-thunk)
     ;;@category Logic
@@ -95,10 +101,7 @@
     ;; Returns #t if the goal succeeded; #f if it failed.
     ;; Useful for pure membership or satisfiability tests without side effects.
     (defun succeeds? (goal-thunk)
-      (let* ((m  (trail-mark))
-             (ok (goal-thunk)))
-        (unwind-trail m)
-        (if ok #t #f)))
+      (let* ((m (trail-mark)) (ok (goal-thunk))) (unwind-trail m) (if ok #t #f)))
 
     ;;@doc (findall template-thunk branches)
     ;;@category Logic
@@ -124,16 +127,13 @@
     ;; Build branches with:  (list (lambda () goal-conj) ...)
     (defun findall (template-thunk branches)
       (if (null? branches)
-          '()
-          (let* ((m  (trail-mark))
-                 (ok ((car branches))))
-            (if ok
-                (let ((val (template-thunk)))
-                  (unwind-trail m)
-                  (cons val (findall template-thunk (cdr branches))))
-                (begin
-                  (unwind-trail m)
-                  (findall template-thunk (cdr branches)))))))
+        '()
+        (let* ((m (trail-mark)) (ok ((car branches))))
+          (if ok
+            (let ((val (template-thunk)))
+              (unwind-trail m)
+              (cons val (findall template-thunk (cdr branches))))
+            (begin (unwind-trail m) (findall template-thunk (cdr branches)))))))
 
     ;;@doc (run1 template-thunk branches)
     ;;@category Logic
@@ -145,8 +145,7 @@
     ;; #f if no branch succeeds.  Cheaper than findall when only one answer
     ;; is needed.
     (defun run1 (template-thunk branches)
-      (let ((sols (findall template-thunk branches)))
-        (if (null? sols) #f (car sols))))
+      (let ((sols (findall template-thunk branches))) (if (null? sols) #f (car sols))))
 
     ;;@doc (membero x lst)
     ;;@category Logic
@@ -166,8 +165,7 @@
     ;; findall, leaving only the matching element(s) in the result.
     ;;
     ;; Analogue of Prolog's member/2 (but deterministic enumeration order).
-    (defun membero (x lst)
-      (map* (lambda (elem) (lambda () (== x elem))) lst))
+    (defun membero (x lst) (map* (lambda (elem) (lambda () (== x elem))) lst))
 
     ;; 
     ;;  miniKanren-style goal combinators
@@ -225,14 +223,13 @@
     ;; Compute `failo`.
     ;;@example
     ;; (failo)
-    (defun failo    () '())
+    (defun failo () '())
 
     ;;  Disjunction & conjunction over goalsets 
 
     ;; (disj g1 g2 )   flatten branch lists; identity is the empty list
     ;;                   (a goalset that fails).
-    (defun disj gs
-      (foldr append '() gs))
+    (defun disj gs (foldr append '() gs))
 
     ;;@doc (conj2-goalsets gs1 gs2)
     ;;@category Logic
@@ -241,20 +238,18 @@
     ;; (conj2-goalsets 'x 'x)
     ;; (conj2-goalsets gs1 gs2)  Cartesian product of branch thunks.
     (defun conj2-goalsets (gs1 gs2)
-      (if (null? gs1) '()
-          (append
-            (map* (lambda (b2)
-                    (let ((b1 (car gs1)))
-                      (lambda () (and (b1) (b2)))))
-                  gs2)
-            (conj2-goalsets (cdr gs1) gs2))))
+      (if (null? gs1)
+        '()
+        (append
+          (map* (lambda (b2) (let ((b1 (car gs1))) (lambda () (and (b1) (b2))))) gs2)
+          (conj2-goalsets (cdr gs1) gs2))))
 
     ;; (conj g1 g2 )   conjunction of goalsets.  Identity is a single
     ;;                   always-succeeding branch.
     (defun conj gs
-      (cond ((null? gs)        (succeedo))
-            ((null? (cdr gs))  (car gs))
-            (else              (foldl conj2-goalsets (car gs) (cdr gs)))))
+      (cond ((null? gs) (succeedo))
+        ((null? (cdr gs)) (car gs))
+        (else (foldl conj2-goalsets (car gs) (cdr gs)))))
 
     ;;  conde / conda / condu 
 
@@ -265,9 +260,7 @@
     ;;   (conde (list (==o x 1))
     ;;          (list (==o x 2) (==o y 10)))
     ;;    2-branch goalset equivalent to  X=1    (X=2  Y=10)
-    (defun conde clauses
-      (foldr append '()
-             (map* (lambda (clause) (apply conj clause)) clauses)))
+    (defun conde clauses (foldr append '() (map* (lambda (clause) (apply conj clause)) clauses)))
 
     ;;@doc (onceo goalset)
     ;;@category Logic
@@ -278,17 +271,19 @@
     ;; branch commits to the first succeeding branch of `goalset`.
     ;; Bindings from that branch stay live; later branches are never tried.
     (defun onceo (goalset)
-      (goal (lambda ()
-              (let loop ((bs goalset))
-                (cond
-                  ((null? bs) #f)
-                  (else
-                    (let* ((m  (trail-mark))
-                           (ok ((car bs))))
-                      (if ok
-                          #t                       ; commit — leave bindings
-                          (begin (unwind-trail m)  ; try next branch
-                                 (loop (cdr bs)))))))))))
+      (goal
+        (lambda ()
+          (let
+            loop
+            ((bs goalset))
+            (cond ((null? bs) #f)
+              (else
+                (let* ((m (trail-mark)) (ok ((car bs))))
+                  (if ok
+                    #t ; commit — leave bindings
+                    (begin
+                      (unwind-trail m) ; try next branch
+                      (loop (cdr bs)))))))))))
 
     ;;@doc (conda test then else-gs)
     ;;@category Logic
@@ -300,34 +295,33 @@
     ;;   test's first solution's bindings and commit; else run `else-gs`.
     ;;   `test`, `then`, `else-gs` are all goalsets.
     (defun conda (test then else-gs)
-      (goal (lambda ()
-              (let loop ((bs test))
-                (cond
-                  ((null? bs)
+      (goal
+        (lambda ()
+          (let
+            loop
+            ((bs test))
+            (cond ((null? bs)
                    ;; test had no solution  run else branches
-                   (let inner ((eb else-gs))
+                   (let
+                     inner
+                     ((eb else-gs))
                      (cond ((null? eb) #f)
-                           (else (let* ((m  (trail-mark))
-                                        (ok ((car eb))))
-                                    (if ok #t
-                                        (begin (unwind-trail m)
-                                               (inner (cdr eb)))))))))
-                  (else
-                    (let* ((m  (trail-mark))
-                           (ok ((car bs))))
-                      (if ok
-                          ;; Found first test solution  keep bindings,
-                          ;; now run `then` as a commitment.
-                          (let try-then ((tb then))
-                            (cond ((null? tb) #f)
-                                  (else
-                                    (let* ((m2 (trail-mark))
-                                           (ok2 ((car tb))))
-                                      (if ok2 #t
-                                          (begin (unwind-trail m2)
-                                                 (try-then (cdr tb))))))))
-                          (begin (unwind-trail m)
-                                 (loop (cdr bs)))))))))))
+                       (else
+                         (let* ((m (trail-mark)) (ok ((car eb))))
+                           (if ok #t (begin (unwind-trail m) (inner (cdr eb)))))))))
+              (else
+                (let* ((m (trail-mark)) (ok ((car bs))))
+                  (if ok
+                    ;; Found first test solution  keep bindings,
+                    ;; now run `then` as a commitment.
+                    (let
+                      try-then
+                      ((tb then))
+                      (cond ((null? tb) #f)
+                        (else
+                          (let* ((m2 (trail-mark)) (ok2 ((car tb))))
+                            (if ok2 #t (begin (unwind-trail m2) (try-then (cdr tb))))))))
+                    (begin (unwind-trail m) (loop (cdr bs)))))))))))
 
     ;;@doc (condu test then else-gs)
     ;;@category Logic
@@ -341,8 +335,7 @@
     ;;   `condu` behaves identically for single-branch tests.  For
     ;;   multi-branch tests the difference is that `condu` guarantees
     ;;   exactly one test branch is installed before `then` runs.
-    (defun condu (test then else-gs)
-      (conda (onceo test) then else-gs))
+    (defun condu (test then else-gs) (conda (onceo test) then else-gs))
 
     ;;  fresh / fresh-vars 
 
@@ -353,10 +346,7 @@
     ;; (fresh-vars 1)
     ;; (fresh-vars n)   return a list of n fresh unbound logic variables.
     (defun fresh-vars (n)
-      (let loop ((k n) (acc '()))
-        (if (<= k 0)
-            (reverse acc)
-            (loop (- k 1) (cons (logic-var) acc)))))
+      (let loop ((k n) (acc '())) (if (<= k 0) (reverse acc) (loop (- k 1) (cons (logic-var) acc)))))
 
     ;;@doc (fresh n f)
     ;;@category Logic
@@ -393,19 +383,15 @@
     ;;   executed.  This gives real lazy semantics: computing the 3rd
     ;;   answer does not compute the 4th.
     (defun run-n (n template-thunk goalset)
-      (cond
-        ((<= n 0)          '())
-        ((null? goalset)   '())
+      (cond ((<= n 0) '())
+        ((null? goalset) '())
         (else
-          (let* ((m  (trail-mark))
-                 (ok ((car goalset))))
+          (let* ((m (trail-mark)) (ok ((car goalset))))
             (if ok
-                (let ((val (template-thunk)))
-                  (unwind-trail m)
-                  (cons val (run-n (- n 1) template-thunk (cdr goalset))))
-                (begin
-                  (unwind-trail m)
-                  (run-n n template-thunk (cdr goalset))))))))
+              (let ((val (template-thunk)))
+                (unwind-trail m)
+                (cons val (run-n (- n 1) template-thunk (cdr goalset))))
+              (begin (unwind-trail m) (run-n n template-thunk (cdr goalset))))))))
 
     ;;  Logic-scoped exceptions 
 
@@ -424,8 +410,7 @@
     ;;   a single internal tag ('logic-escape) and box (user-tag . val)
     ;;   as the raised payload.  `logic-catch` re-raises payloads whose
     ;;   tag does not match the requested one.
-    (defun logic-throw (tag val)
-      (raise 'logic-escape (cons tag val)))
+    (defun logic-throw (tag val) (raise 'logic-escape (cons tag val)))
 
     ;;@doc (logic-catch tag body-thunk handler)
     ;;@category Logic
@@ -441,22 +426,13 @@
     ;;   raised value  it does not distinguish.  We wrap body's result
     ;;   in a freshly-consed sentinel so we can tell the two cases apart.
     (defun logic-catch (tag body-thunk handler)
-      (let* ((m         (trail-mark))
-             (sentinel  (cons 'logic-catch 'ok))
-             (result    (catch 'logic-escape
-                          (cons sentinel (body-thunk)))))
+      (let* ((m (trail-mark))
+             (sentinel (cons 'logic-catch 'ok))
+             (result (catch 'logic-escape (cons sentinel (body-thunk)))))
         (cond
-          ;; Normal return: body produced a value.
-          ((and (pair? result) (eq? (car result) sentinel))
-           (cdr result))
+        ;; Normal return: body produced a value.
+        ((and (pair? result) (eq? (car result) sentinel)) (cdr result))
           ;; Matching tag: unwind trail, run handler on val.
-          ((and (pair? result) (eq? (car result) tag))
-           (unwind-trail m)
-           (handler (cdr result)))
+          ((and (pair? result) (eq? (car result) tag)) (unwind-trail m) (handler (cdr result)))
           ;; Different tag: re-raise so an outer logic-catch can see it.
-          (else
-           (unwind-trail m)
-           (raise 'logic-escape result)))))
-
-  ))
-
+          (else (unwind-trail m) (raise 'logic-escape result)))))))

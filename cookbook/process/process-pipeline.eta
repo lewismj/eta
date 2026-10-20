@@ -12,8 +12,7 @@
     ;; Pipe stdout of one subprocess into stdin of another Uses `windows?`.
     ;;@example
     ;; (windows?)
-    (defun windows? ()
-      (equal? (platform) 'Win32))
+    (defun windows? () (equal? (platform) 'Win32))
 
     ;;@doc (producer-command)
     ;;@category Process
@@ -23,8 +22,8 @@
     ;; (producer-command)
     (defun producer-command ()
       (if (windows?)
-          (list "cmd" '("/c" "echo alpha& echo beta"))
-          (list "/bin/sh" '("-c" "printf 'alpha\nbeta\n'"))))
+        (list "cmd" '("/c" "echo alpha& echo beta"))
+        (list "/bin/sh" '("-c" "printf 'alpha\nbeta\n'"))))
 
     ;;@doc (filter-command)
     ;;@category Process
@@ -33,9 +32,7 @@
     ;;@example
     ;; (filter-command)
     (defun filter-command ()
-      (if (windows?)
-          (list "cmd" '("/c" "findstr beta"))
-          (list "/bin/grep" '("beta"))))
+      (if (windows?) (list "cmd" '("/c" "findstr beta")) (list "/bin/grep" '("beta"))))
 
     ;;@doc (copy-bytes input output)
     ;;@category Process
@@ -44,13 +41,10 @@
     ;;@example
     ;; (copy-bytes 'x 'x)
     (defun copy-bytes (input output)
-      (letrec ((loop (lambda ()
-                       (let ((b (read-u8 input)))
-                         (if (equal? b #f)
-                             'done
-                             (begin
-                               (write-u8 b output)
-                               (loop)))))))
+      (letrec ((loop
+                 (lambda ()
+                   (let ((b (read-u8 input)))
+                     (if (equal? b #f) 'done (begin (write-u8 b output) (loop)))))))
         (loop)))
 
     ;;@doc (read-text-from-port port)
@@ -61,13 +55,12 @@
     ;; (read-text-from-port 8080)
     (defun read-text-from-port (port)
       (let ((out (open-output-string)))
-        (letrec ((loop (lambda ()
-                         (let ((b (read-u8 port)))
-                           (if (equal? b #f)
-                               (get-output-string out)
-                               (begin
-                                 (write-char (integer->char b) out)
-                                 (loop)))))))
+        (letrec ((loop
+                   (lambda ()
+                     (let ((b (read-u8 port)))
+                       (if (equal? b #f)
+                         (get-output-string out)
+                         (begin (write-char (integer->char b) out) (loop)))))))
           (loop))))
 
     (let* ((src-cmd (producer-command))
@@ -80,11 +73,7 @@
       (copy-bytes src-out dst-in)
       (close-port src-out)
       (close-port dst-in)
-
       (println (read-text-from-port dst-out))
       (close-port dst-out)
-
       (process:wait src)
-      (process:wait dst))
-
-  ))
+      (process:wait dst))))

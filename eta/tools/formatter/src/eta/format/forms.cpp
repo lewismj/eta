@@ -38,10 +38,15 @@ namespace eta::format {
         static constexpr std::array kAliases{
             AliasSpec{"defun", FormAlias::Define},
             AliasSpec{"define", FormAlias::Define},
+            AliasSpec{"defmacro", FormAlias::Define},
+            AliasSpec{"define-macro", FormAlias::Define},
+            AliasSpec{"define-syntax", FormAlias::Define},
             AliasSpec{"lambda", FormAlias::Lambda},
             AliasSpec{"let", FormAlias::Let},
             AliasSpec{"let*", FormAlias::Let},
+            AliasSpec{"letrec", FormAlias::Let},
             AliasSpec{"letrec*", FormAlias::Let},
+            AliasSpec{"syntax-rules", FormAlias::Let},
             AliasSpec{"begin", FormAlias::Sequence},
             AliasSpec{"module", FormAlias::Module},
             AliasSpec{"if", FormAlias::Conditional},
@@ -58,10 +63,12 @@ namespace eta::format {
         const auto found = std::find_if(kAliases.begin(), kAliases.end(), [&](auto value) { return value.name == name; });
         if (found == kAliases.end()) return FormAlias::None;
         const auto second = node.children[1];
-        if (found->alias == FormAlias::Define)
-            if (found->name == "defun")
-                return is_identifier(file, second) && node.children.size() >= 4 && formals(file, node.children[2], true) ? FormAlias::Define : FormAlias::None;
+        if (found->alias == FormAlias::Define) {
+            if (found->name == "defun" || found->name == "defmacro")
+                /// defun's third element is a plain parameter list, so `()` is valid.
+                return is_identifier(file, second) && node.children.size() >= 4 && formals(file, node.children[2], false) ? FormAlias::Define : FormAlias::None;
             return (is_identifier(file, second) && node.children.size() == 3) || formals(file, second, true) ? FormAlias::Define : FormAlias::None;
+        }
         if (found->alias == FormAlias::Lambda) return formals(file, second, false) ? FormAlias::Lambda : FormAlias::None;
         if (found->alias == FormAlias::Let) {
             if (found->name == "let") {

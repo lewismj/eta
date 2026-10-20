@@ -15,8 +15,7 @@
 
     (for-each
       (lambda (task)
-        (let ((result (request-reply endpoint task)))
-          (println (list 'task task 'result result))))
+        (let ((result (request-reply endpoint task))) (println (list 'task task 'result result))))
       '((square 5) (mul 6 7) (fib 20)))
 
     (println (request-reply endpoint '(shutdown)))))

@@ -35,12 +35,12 @@
     ;; REP sockets follow a strict alternating pattern:
     ;;   recv → send → recv → send → ...
     ;; The server must reply to each request before receiving the next one.
-    (letrec ((loop (lambda ()
-                     (let ((msg (recv! sock 'wait)))
-                       (when msg
-                         (print "echo-server: received: ")
-                         (println msg)
-                         (send! sock msg 'wait)     ; echo back unchanged
-                         (loop))))))
+    (letrec ((loop
+               (lambda ()
+                 (let ((msg (recv! sock 'wait)))
+                   (when msg
+                     (print "echo-server: received: ")
+                     (println msg)
+                     (send! sock msg 'wait) ; echo back unchanged
+                     (loop))))))
       (loop))))
-

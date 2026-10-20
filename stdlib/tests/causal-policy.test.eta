@@ -1,5 +1,6 @@
 ;;; stdlib/tests/causal-policy.test.eta -- Tests for std.causal.policy
 
+;; eta-lint:disable-file=ETA501
 (module causal.policy.tests
   (import std.test std.causal.policy std.stats std.core std.collections)
   (begin
@@ -10,11 +11,7 @@
     ;; Construct `make-row`.
     ;;@example
     ;; (make-row 1 1 1)
-    (defun make-row (z x y)
-      (list
-        (cons 'z z)
-        (cons 'x x)
-        (cons 'y y)))
+    (defun make-row (z x y) (list (cons 'z z) (cons 'x x) (cons 'y y)))
 
     ;;@doc (repeat-row n row)
     ;;@category Tests
@@ -23,10 +20,7 @@
     ;;@example
     ;; (repeat-row 1 'x)
     (defun repeat-row (n row)
-      (let loop ((i 0) (acc '()))
-        (if (= i n)
-            (reverse acc)
-            (loop (+ i 1) (cons row acc)))))
+      (let loop ((i 0) (acc '())) (if (= i n) (reverse acc) (loop (+ i 1) (cons row acc)))))
 
     ;;@doc (z-of obs)
     ;;@category Tests
@@ -46,9 +40,7 @@
       (let ((zs '(-2 -1 0 1 2)))
         (foldl
           (lambda (acc z)
-            (append acc
-                    (repeat-row 10 (make-row z 0 2.0))
-                    (repeat-row 10 (make-row z 1 2.0))))
+            (append acc (repeat-row 10 (make-row z 0 2.0)) (repeat-row 10 (make-row z 1 2.0))))
           '()
           zs)))
 
@@ -64,12 +56,8 @@
       (let ((zs '(-2 -1 0 1 2)))
         (foldl
           (lambda (acc z)
-            (let* ((y0 (+ 1.0 (* 0.2 z)))
-                   (tau (+ 0.5 (* 0.1 z)))
-                   (y1 (+ y0 tau)))
-              (append acc
-                      (repeat-row 6 (make-row z 0 y0))
-                      (repeat-row 6 (make-row z 1 y1)))))
+            (let* ((y0 (+ 1.0 (* 0.2 z))) (tau (+ 0.5 (* 0.1 z))) (y1 (+ y0 tau)))
+              (append acc (repeat-row 6 (make-row z 0 y0)) (repeat-row 6 (make-row z 1 y1)))))
           '()
           zs)))
 
@@ -79,8 +67,7 @@
     ;; Compute `policy-positive-z`.
     ;;@example
     ;; (policy-positive-z 'x)
-    (defun policy-positive-z (zrow)
-      (if (>= (car zrow) 0) 1 0))
+    (defun policy-positive-z (zrow) (if (>= (car zrow) 0) 1 0))
 
     ;;@doc (true-mu0 z)
     ;;@category Tests
@@ -105,19 +92,18 @@
     ;; (true-policy-value 'x)
     (defun true-policy-value (data)
       (stats:mean
-        (map* (lambda (obs)
-                (let* ((z (z-of obs))
-                       (a (policy-positive-z (list z))))
-                  (if (= a 1)
-                      (true-mu1 z)
-                      (true-mu0 z))))
-              data)))
+        (map*
+          (lambda (obs)
+            (let* ((z (z-of obs)) (a (policy-positive-z (list z))))
+              (if (= a 1) (true-mu1 z) (true-mu0 z))))
+          data)))
 
     (define suite
-      (make-group "std.causal.policy"
+      (make-group
+        "std.causal.policy"
         (list
-
-          (make-test "Qini coefficient is zero when treatment effect is identically zero"
+          (make-test
+            "Qini coefficient is zero when treatment effect is identically zero"
             (lambda ()
               (let* ((d (make-flat-data))
                      (pred (map-indexed (lambda (i _o) (modulo (+ (* 7 i) 3) 11)) d))
@@ -128,21 +114,19 @@
                 (let ((auuc (policy:auuc curve)))
                   (assert-true (>= auuc 0.0))
                   (assert-true (<= auuc 1.0))))))
-
-          (make-test "Qini coefficient improves under informative ranking"
+          (make-test
+            "Qini coefficient improves under informative ranking"
             (lambda ()
               (let* ((taus '(-2.0 -1.5 -1.0 -0.5 0.5 1.0 1.5 2.0))
                      (x '(0 1 0 1 0 1 0 1))
-                     (y (map2 (lambda (tau xv)
-                                (+ 2.0 (* xv tau)))
-                              taus x))
+                     (y (map2 (lambda (tau xv) (+ 2.0 (* xv tau))) taus x))
                      (good taus)
                      (bad (reverse taus))
                      (q-good (policy:qini-coefficient (policy:qini-curve good y x)))
                      (q-bad (policy:qini-coefficient (policy:qini-curve bad y x))))
                 (assert-true (> q-good q-bad)))))
-
-          (make-test "AIPW and IPW policy values match true policy value on balanced RCT"
+          (make-test
+            "AIPW and IPW policy values match true policy value on balanced RCT"
             (lambda ()
               (let* ((d (make-rct-data))
                      (mu0 (map* (lambda (obs) (true-mu0 (z-of obs))) d))
@@ -153,8 +137,8 @@
                      (v-aipw (policy:value-aipw d 'y 'x '(z) policy-positive-z mu1 mu0 e)))
                 (assert-approx-equal truth v-ipw 1e-9)
                 (assert-approx-equal truth v-aipw 1e-9))))
-
-          (make-test "Synthetic-truth diagnostics return expected values"
+          (make-test
+            "Synthetic-truth diagnostics return expected values"
             (lambda ()
               (let* ((pehe (policy:pehe '(1.0 2.0 3.0) '(1.1 1.9 2.8)))
                      (rmse-list (policy:ate-rmse 2.0 '(1.8 2.0 2.2)))
@@ -166,18 +150,20 @@
                 (assert-approx-equal 0.0 bias-list 1e-12)
                 (assert-approx-equal 0.3 rmse-scalar 1e-12)
                 (assert-approx-equal -0.3 bias-scalar 1e-12))))
-
-          (make-test "Policy constructors produce expected treatment assignments"
+          (make-test
+            "Policy constructors produce expected treatment assignments"
             (lambda ()
               (let* ((taus '(0.7 -0.2 1.1 0.5))
                      (budget-half (policy:greedy-budget taus 0.5))
                      (budget-three (policy:greedy-budget taus 3))
-                     (ranked (policy:rank-by-cate
-                               (list (list (cons 'id 0))
-                                     (list (cons 'id 1))
-                                     (list (cons 'id 2))
-                                     (list (cons 'id 3)))
-                               taus))
+                     (ranked
+                       (policy:rank-by-cate
+                         (list
+                           (list (cons 'id 0))
+                           (list (cons 'id 1))
+                           (list (cons 'id 2))
+                           (list (cons 'id 3)))
+                         taus))
                      (ranked-taus (cdr ranked)))
                 (assert-equal 1 (policy:greedy-treat-positive 0.1))
                 (assert-equal 0 (policy:greedy-treat-positive 0.0))

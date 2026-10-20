@@ -1,5 +1,6 @@
 ;;; stdlib/tests/process.test.eta - Unit tests for std.process.
 
+;; eta-lint:disable-file=ETA501
 (module process.tests
   (import std.test std.process)
   (begin
@@ -11,19 +12,17 @@
     ;;@example
     ;; (process:test-contains? "sample" 'x)
     (defun process:test-contains? (text needle)
-      (let ((n (string-length text))
-            (m (string-length needle)))
+      (let ((n (string-length text)) (m (string-length needle)))
         (if (= m 0)
-            #t
-            (if (< n m)
-                #f
-                (letrec ((loop (lambda (i)
-                                 (if (> i (- n m))
-                                     #f
-                                     (if (string=? (substring text i (+ i m)) needle)
-                                         #t
-                                         (loop (+ i 1)))))))
-                  (loop 0))))))
+          #t
+          (if (< n m)
+            #f
+            (letrec ((loop
+                       (lambda (i)
+                         (if (> i (- n m))
+                           #f
+                           (if (string=? (substring text i (+ i m)) needle) #t (loop (+ i 1)))))))
+              (loop 0))))))
 
     ;;@doc (process:windows?)
     ;;@category Tests
@@ -31,8 +30,7 @@
     ;; Return whether `process:windows?` holds.
     ;;@example
     ;; (process:windows?)
-    (defun process:windows? ()
-      (equal? (platform) 'Win32))
+    (defun process:windows? () (equal? (platform) 'Win32))
 
     ;;@doc (process:cmd program args)
     ;;@category Tests
@@ -40,8 +38,7 @@
     ;; Compute `process:cmd`.
     ;;@example
     ;; (process:cmd 'x '())
-    (defun process:cmd (program args)
-      (list program args))
+    (defun process:cmd (program args) (list program args))
 
     ;;@doc (process:program cmd)
     ;;@category Tests
@@ -49,8 +46,7 @@
     ;; Compute `process:program`.
     ;;@example
     ;; (process:program 'x)
-    (defun process:program (cmd)
-      (car cmd))
+    (defun process:program (cmd) (car cmd))
 
     ;;@doc (process:args cmd)
     ;;@category Tests
@@ -58,8 +54,7 @@
     ;; Compute `process:args`.
     ;;@example
     ;; (process:args 'x)
-    (defun process:args (cmd)
-      (car (cdr cmd)))
+    (defun process:args (cmd) (car (cdr cmd)))
 
     ;;@doc (process:second xs)
     ;;@category Tests
@@ -67,8 +62,7 @@
     ;; Compute `process:second`.
     ;;@example
     ;; (process:second '())
-    (defun process:second (xs)
-      (car (cdr xs)))
+    (defun process:second (xs) (car (cdr xs)))
 
     ;;@doc (process:third xs)
     ;;@category Tests
@@ -76,8 +70,7 @@
     ;; Compute `process:third`.
     ;;@example
     ;; (process:third '())
-    (defun process:third (xs)
-      (car (cdr (cdr xs))))
+    (defun process:third (xs) (car (cdr (cdr xs))))
 
     ;;@doc (process:payload-msg p)
     ;;@category Tests
@@ -85,8 +78,7 @@
     ;; Compute `process:payload-msg`.
     ;;@example
     ;; (process:payload-msg 'x)
-    (defun process:payload-msg (p)
-      (car (cdr (cdr p))))
+    (defun process:payload-msg (p) (car (cdr (cdr p))))
 
     ;;@doc (process:run-out-err-cmd)
     ;;@category Tests
@@ -96,8 +88,8 @@
     ;; (process:run-out-err-cmd)
     (defun process:run-out-err-cmd ()
       (if (process:windows?)
-          (process:cmd "cmd" '("/c" "echo out& echo err 1>&2& exit /b 3"))
-          (process:cmd "/bin/sh" '("-c" "echo out; echo err 1>&2; exit 3"))))
+        (process:cmd "cmd" '("/c" "echo out& echo err 1>&2& exit /b 3"))
+        (process:cmd "/bin/sh" '("-c" "echo out; echo err 1>&2; exit 3"))))
 
     ;;@doc (process:echo-cmd)
     ;;@category Tests
@@ -107,8 +99,8 @@
     ;; (process:echo-cmd)
     (defun process:echo-cmd ()
       (if (process:windows?)
-          (process:cmd "cmd" '("/c" "echo hello-process"))
-          (process:cmd "/bin/echo" '("hello-process"))))
+        (process:cmd "cmd" '("/c" "echo hello-process"))
+        (process:cmd "/bin/echo" '("hello-process"))))
 
     ;;@doc (process:cat-cmd)
     ;;@category Tests
@@ -117,9 +109,7 @@
     ;;@example
     ;; (process:cat-cmd)
     (defun process:cat-cmd ()
-      (if (process:windows?)
-          (process:cmd "cmd" '("/c" "more"))
-          (process:cmd "/bin/cat" '())))
+      (if (process:windows?) (process:cmd "cmd" '("/c" "more")) (process:cmd "/bin/cat" '())))
 
     ;;@doc (process:sleep-cmd)
     ;;@category Tests
@@ -129,8 +119,8 @@
     ;; (process:sleep-cmd)
     (defun process:sleep-cmd ()
       (if (process:windows?)
-          (process:cmd "cmd" '("/c" "ping -n 3 127.0.0.1 >nul"))
-          (process:cmd "/bin/sh" '("-c" "sleep 1"))))
+        (process:cmd "cmd" '("/c" "ping -n 3 127.0.0.1 >nul"))
+        (process:cmd "/bin/sh" '("-c" "sleep 1"))))
 
     ;;@doc (process:env-cmd)
     ;;@category Tests
@@ -140,39 +130,42 @@
     ;; (process:env-cmd)
     (defun process:env-cmd ()
       (if (process:windows?)
-          (process:cmd "cmd" '("/c" "echo %ETA_PROCESS_STDLIB%"))
-          (process:cmd "/bin/sh" '("-c" "printf '%s' \"$ETA_PROCESS_STDLIB\""))))
+        (process:cmd "cmd" '("/c" "echo %ETA_PROCESS_STDLIB%"))
+        (process:cmd "/bin/sh" '("-c" "printf '%s' \"$ETA_PROCESS_STDLIB\""))))
 
     (define suite
-      (make-group "std.process"
+      (make-group
+        "std.process"
         (list
-
-          (make-test "process:run captures stdout stderr and status"
+          (make-test
+            "process:run captures stdout stderr and status"
             (lambda ()
               (let* ((cmd (process:run-out-err-cmd))
                      (r (process:run (process:program cmd) (process:args cmd))))
                 (assert-equal 3 (car r))
                 (assert-true (process:test-contains? (process:second r) "out"))
                 (assert-true (process:test-contains? (process:third r) "err")))))
-
-          (make-test "process:run-string returns stdout text"
+          (make-test
+            "process:run-string returns stdout text"
             (lambda ()
               (let ((cmd (process:echo-cmd)))
                 (assert-true
                   (process:test-contains?
                     (process:run-string (process:program cmd) (process:args cmd))
                     "hello-process")))))
-
-          (make-test "process:run supports stdin string data"
+          (make-test
+            "process:run supports stdin string data"
             (lambda ()
               (let* ((cmd (process:cat-cmd))
-                     (r (process:run (process:program cmd)
-                                     (process:args cmd)
-                                     '((stdin . "eta-process-stdin")))))
+                     (r
+                       (process:run
+                         (process:program cmd)
+                         (process:args cmd)
+                         '((stdin . "eta-process-stdin")))))
                 (assert-equal 0 (car r))
                 (assert-true (process:test-contains? (process:second r) "eta-process-stdin")))))
-
-          (make-test "process:spawn returns handle and stdio ports"
+          (make-test
+            "process:spawn returns handle and stdio ports"
             (lambda ()
               (let* ((cmd (process:cat-cmd))
                      (h (process:spawn (process:program cmd) (process:args cmd))))
@@ -184,49 +177,44 @@
                 (close-port (process:stdin-port h))
                 (process:kill h)
                 (assert-true (number? (process:wait h 3000))))))
-
-          (make-test "process:wait returns #f on timeout"
+          (make-test
+            "process:wait returns #f on timeout"
             (lambda ()
               (let* ((cmd (process:sleep-cmd))
                      (h (process:spawn (process:program cmd) (process:args cmd))))
                 (assert-equal #f (process:wait h 10))
                 (process:kill h)
                 (assert-true (number? (process:wait h 3000))))))
-
-          (make-test "process:terminate transitions process state"
+          (make-test
+            "process:terminate transitions process state"
             (lambda ()
               (let* ((cmd (process:sleep-cmd))
                      (h (process:spawn (process:program cmd) (process:args cmd)))
                      (terminated (process:terminate h)))
-                (assert-true (or (equal? #t terminated)
-                                 (equal? #f terminated)))
+                (assert-true (or (equal? #t terminated) (equal? #f terminated)))
                 (assert-true (number? (process:wait h 3000)))
                 (assert-equal #f (process:alive? h))
                 (assert-true (number? (process:exit-code h))))))
-
-          (make-test "process:run timeout uses stable error prefix"
+          (make-test
+            "process:run timeout uses stable error prefix"
             (lambda ()
               (let* ((cmd (process:sleep-cmd))
-                     (p (catch 'runtime.error
-                          (process:run (process:program cmd)
-                                       (process:args cmd)
-                                       '((timeout-ms . 10))))))
+                     (p
+                       (catch
+                         'runtime.error
+                         (process:run (process:program cmd) (process:args cmd) '((timeout-ms . 10))))))
                 (assert-equal 'runtime-error (car p))
-                (assert-true
-                  (process:test-contains?
-                    (process:payload-msg p)
-                    "process-timeout:")))))
-
-          (make-test "process:run env option sets child environment"
+                (assert-true (process:test-contains? (process:payload-msg p) "process-timeout:")))))
+          (make-test
+            "process:run env option sets child environment"
             (lambda ()
               (let ((cmd (process:env-cmd)))
                 (assert-true
                   (process:test-contains?
-                    (process:run-string (process:program cmd)
-                                        (process:args cmd)
-                                        '((env . (("ETA_PROCESS_STDLIB" . "eta-process-env")))))
-                    "eta-process-env")))))
-
-          )))
+                    (process:run-string
+                      (process:program cmd)
+                      (process:args cmd)
+                      '((env . (("ETA_PROCESS_STDLIB" . "eta-process-env")))))
+                    "eta-process-env"))))))))
 
     (print-tap (run suite))))

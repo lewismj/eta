@@ -1,0 +1,13 @@
+(module m
+  (export f g)
+  (begin
+    ;; c
+    (defun f ()
+      (let* ((a (compute-something-long 1 2 3))
+             (b (compute-something-long 4 5 6))
+             (c (combine a b)))
+        (if (> c 0) (handle-positive-case c a b) (handle-negative-case c a b))))
+
+    ;; d
+    (define-syntax twice (syntax-rules () ((_ x) (begin x x))))
+    (defun g (x) (letrec ((loop (lambda (n) (if (= n 0) x (loop (- n 1)))))) (loop 3)))))

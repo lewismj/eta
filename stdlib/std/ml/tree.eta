@@ -4,11 +4,7 @@
   (import std.core)
   (import std.collections)
   (import std.stats)
-  (export
-    tree:fit
-    tree:predict
-    tree:leaves
-    tree:leaf-membership)
+  (export tree:fit tree:predict tree:leaves tree:leaf-membership)
   (begin
 
     ;; -- Basic helpers ----------------------------------------------------
@@ -20,14 +16,12 @@
     ;;@example
     ;; (%opts->alist 'x 'x)
     (defun %opts->alist (opts who)
-      (let loop ((xs opts) (acc '()))
-        (cond
-          ((null? xs) (reverse acc))
-          ((null? (cdr xs))
-           (error (string-append who ": options must be key/value pairs")))
-          (else
-           (loop (cdr (cdr xs))
-                 (cons (cons (car xs) (cadr xs)) acc))))))
+      (let
+        loop
+        ((xs opts) (acc '()))
+        (cond ((null? xs) (reverse acc))
+          ((null? (cdr xs)) (error (string-append who ": options must be key/value pairs")))
+          (else (loop (cdr (cdr xs)) (cons (cons (car xs) (cadr xs)) acc))))))
 
     ;;@doc (%opt-ref opts key default)
     ;;@category Ml
@@ -36,8 +30,7 @@
     ;;@example
     ;; (%opt-ref 'x 'x 'x)
     (defun %opt-ref (opts key default)
-      (let ((entry (assq key opts)))
-        (if entry (cdr entry) default)))
+      (let ((entry (assq key opts))) (if entry (cdr entry) default)))
 
     ;;@doc (%assoc-set alist key value)
     ;;@category Ml
@@ -46,18 +39,12 @@
     ;;@example
     ;; (%assoc-set 'x 'x 1)
     (defun %assoc-set (alist key value)
-      (let loop ((rest alist) (acc '()) (done? #f))
-        (cond
-          ((null? rest)
-           (if done?
-               (reverse acc)
-               (reverse (cons (cons key value) acc))))
-          ((equal? key (car (car rest)))
-           (loop (cdr rest)
-                 (cons (cons key value) acc)
-                 #t))
-          (else
-           (loop (cdr rest) (cons (car rest) acc) done?)))))
+      (let
+        loop
+        ((rest alist) (acc '()) (done? #f))
+        (cond ((null? rest) (if done? (reverse acc) (reverse (cons (cons key value) acc))))
+          ((equal? key (car (car rest))) (loop (cdr rest) (cons (cons key value) acc) #t))
+          (else (loop (cdr rest) (cons (car rest) acc) done?)))))
 
     ;;@doc (%member? x xs)
     ;;@category Ml
@@ -66,10 +53,7 @@
     ;;@example
     ;; (%member? 1 '())
     (defun %member? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((equal? x (car xs)) #t)
-        (else (%member? x (cdr xs)))))
+      (cond ((null? xs) #f) ((equal? x (car xs)) #t) (else (%member? x (cdr xs)))))
 
     ;;@doc (%assert-rectangular x-matrix who)
     ;;@category Ml
@@ -79,11 +63,11 @@
     ;; (%assert-rectangular 'x 'x)
     (defun %assert-rectangular (x-matrix who)
       (if (null? x-matrix)
-          x-matrix
-          (let ((p (length (car x-matrix))))
-            (if (every? (lambda (row) (= (length row) p)) x-matrix)
-                x-matrix
-                (error (string-append who ": expected rectangular design matrix"))))))
+        x-matrix
+        (let ((p (length (car x-matrix))))
+          (if (every? (lambda (row) (= (length row) p)) x-matrix)
+            x-matrix
+            (error (string-append who ": expected rectangular design matrix"))))))
 
     ;;@doc (%assert-length-match x-matrix y-vector who)
     ;;@category Ml
@@ -93,8 +77,8 @@
     ;; (%assert-length-match 'x 'x 'x)
     (defun %assert-length-match (x-matrix y-vector who)
       (if (= (length x-matrix) (length y-vector))
-          y-vector
-          (error (string-append who ": expected matching X/Y lengths"))))
+        y-vector
+        (error (string-append who ": expected matching X/Y lengths"))))
 
     ;;@doc (%normalize-int v fallback)
     ;;@category Ml
@@ -102,10 +86,7 @@
     ;; Compute `%normalize-int`.
     ;;@example
     ;; (%normalize-int 1 'x)
-    (defun %normalize-int (v fallback)
-      (if (and (number? v) (> v 0))
-          v
-          fallback))
+    (defun %normalize-int (v fallback) (if (and (number? v) (> v 0)) v fallback))
 
     ;;@doc (%half-floor n)
     ;;@category Ml
@@ -113,8 +94,7 @@
     ;; Compute `%half-floor`.
     ;;@example
     ;; (%half-floor 1)
-    (defun %half-floor (n)
-      (/ (- n (modulo n 2)) 2))
+    (defun %half-floor (n) (/ (- n (modulo n 2)) 2))
 
     ;;@doc (%clamp-int v lo hi)
     ;;@category Ml
@@ -122,11 +102,7 @@
     ;; Compute `%clamp-int`.
     ;;@example
     ;; (%clamp-int 1 'x 'x)
-    (defun %clamp-int (v lo hi)
-      (cond
-        ((< v lo) lo)
-        ((> v hi) hi)
-        (else v)))
+    (defun %clamp-int (v lo hi) (cond ((< v lo) lo) ((> v hi) hi) (else v)))
 
     ;;@doc (%remove-at xs idx)
     ;;@category Ml
@@ -135,12 +111,14 @@
     ;;@example
     ;; (%remove-at '() 1)
     (defun %remove-at (xs idx)
-      (let loop ((rest xs) (i 0) (acc '()))
+      (let
+        loop
+        ((rest xs) (i 0) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (if (= i idx)
-                (append (reverse acc) (cdr rest))
-                (loop (cdr rest) (+ i 1) (cons (car rest) acc))))))
+          (reverse acc)
+          (if (= i idx)
+            (append (reverse acc) (cdr rest))
+            (loop (cdr rest) (+ i 1) (cons (car rest) acc))))))
 
     ;;@doc (%map3 f xs ys zs)
     ;;@category Ml
@@ -150,9 +128,8 @@
     ;; (%map3 (lambda (x) x) '() '() '())
     (defun %map3 (f xs ys zs)
       (if (or (null? xs) (null? ys) (null? zs))
-          '()
-          (cons (f (car xs) (car ys) (car zs))
-                (%map3 f (cdr xs) (cdr ys) (cdr zs)))))
+        '()
+        (cons (f (car xs) (car ys) (car zs)) (%map3 f (cdr xs) (cdr ys) (cdr zs)))))
 
     ;;@doc (%lcg-next seed)
     ;;@category Ml
@@ -160,9 +137,7 @@
     ;;@example
     ;; (%lcg-next 'x)
     ;; Park-Miller minimal standard LCG.
-    (defun %lcg-next (seed)
-      (let ((s (if (<= seed 0) 1 seed)))
-        (modulo (* 48271 s) 2147483647)))
+    (defun %lcg-next (seed) (let ((s (if (<= seed 0) 1 seed))) (modulo (* 48271 s) 2147483647)))
 
     ;;@doc (%shuffle xs seed)
     ;;@category Ml
@@ -171,14 +146,16 @@
     ;;@example
     ;; (%shuffle '() 'x)
     (defun %shuffle (xs seed)
-      (let loop ((pool xs) (s seed) (acc '()))
+      (let
+        loop
+        ((pool xs) (s seed) (acc '()))
         (if (null? pool)
-            (cons (reverse acc) s)
-            (let* ((s2 (%lcg-next s))
-                   (idx (modulo s2 (length pool)))
-                   (picked (list-ref pool idx))
-                   (rest (%remove-at pool idx)))
-              (loop rest s2 (cons picked acc))))))
+          (cons (reverse acc) s)
+          (let* ((s2 (%lcg-next s))
+                 (idx (modulo s2 (length pool)))
+                 (picked (list-ref pool idx))
+                 (rest (%remove-at pool idx)))
+            (loop rest s2 (cons picked acc))))))
 
     ;; -- Row wrappers -----------------------------------------------------
 
@@ -231,8 +208,7 @@
     ;; Compute `%mean-y`.
     ;;@example
     ;; (%mean-y '())
-    (defun %mean-y (rows)
-      (if (null? rows) 0.0 (stats:mean (%rows-y rows))))
+    (defun %mean-y (rows) (if (null? rows) 0.0 (stats:mean (%rows-y rows))))
 
     ;;@doc (%rows-sum rows)
     ;;@category Ml
@@ -240,8 +216,7 @@
     ;; Compute `%rows-sum`.
     ;;@example
     ;; (%rows-sum '())
-    (defun %rows-sum (rows)
-      (foldl (lambda (acc r) (+ acc (%row-y r))) 0.0 rows))
+    (defun %rows-sum (rows) (foldl (lambda (acc r) (+ acc (%row-y r))) 0.0 rows))
 
     ;;@doc (%rows-sumsq rows)
     ;;@category Ml
@@ -250,11 +225,7 @@
     ;;@example
     ;; (%rows-sumsq '())
     (defun %rows-sumsq (rows)
-      (foldl (lambda (acc r)
-               (let ((y (%row-y r)))
-                 (+ acc (* y y))))
-             0.0
-             rows))
+      (foldl (lambda (acc r) (let ((y (%row-y r))) (+ acc (* y y)))) 0.0 rows))
 
     ;;@doc (%sse n sumy sumsq)
     ;;@category Ml
@@ -262,10 +233,7 @@
     ;; Compute `%sse`.
     ;;@example
     ;; (%sse 1 'x 'x)
-    (defun %sse (n sumy sumsq)
-      (if (<= n 0)
-          0.0
-          (- sumsq (/ (* sumy sumy) n))))
+    (defun %sse (n sumy sumsq) (if (<= n 0) 0.0 (- sumsq (/ (* sumy sumy) n))))
 
     ;;@doc (%rows-sse rows)
     ;;@category Ml
@@ -273,9 +241,7 @@
     ;; Compute `%rows-sse`.
     ;;@example
     ;; (%rows-sse '())
-    (defun %rows-sse (rows)
-      (let ((n (length rows)))
-        (%sse n (%rows-sum rows) (%rows-sumsq rows))))
+    (defun %rows-sse (rows) (let ((n (length rows))) (%sse n (%rows-sum rows) (%rows-sumsq rows))))
 
     ;; -- Tree representation ----------------------------------------------
 
@@ -286,8 +252,7 @@
     ;; (%leaf-node 'x 'x 'x)
     ;; Leaf node:  (leaf id prediction members)
     ;; Split node: (split feature threshold left right)
-    (defun %leaf-node (leaf-id prediction members)
-      (list 'leaf leaf-id prediction members))
+    (defun %leaf-node (leaf-id prediction members) (list 'leaf leaf-id prediction members))
 
     ;;@doc (%split-node feature threshold left right)
     ;;@category Ml
@@ -295,8 +260,7 @@
     ;; Compute `%split-node`.
     ;;@example
     ;; (%split-node 'x 'x 'x 'x)
-    (defun %split-node (feature threshold left right)
-      (list 'split feature threshold left right))
+    (defun %split-node (feature threshold left right) (list 'split feature threshold left right))
 
     ;;@doc (%leaf? node)
     ;;@category Ml
@@ -304,8 +268,7 @@
     ;; Return whether `%leaf?` holds.
     ;;@example
     ;; (%leaf? 'x)
-    (defun %leaf? (node)
-      (and (pair? node) (eq? (car node) 'leaf)))
+    (defun %leaf? (node) (and (pair? node) (eq? (car node) 'leaf)))
 
     ;;@doc (%split? node)
     ;;@category Ml
@@ -313,8 +276,7 @@
     ;; Return whether `%split?` holds.
     ;;@example
     ;; (%split? 'x)
-    (defun %split? (node)
-      (and (pair? node) (eq? (car node) 'split)))
+    (defun %split? (node) (and (pair? node) (eq? (car node) 'split)))
 
     ;;@doc (%leaf-id node)
     ;;@category Ml
@@ -374,11 +336,8 @@
     ;;@example
     ;; (%make-leaf-from-rows '() 'x 'x)
     (defun %make-leaf-from-rows (rows next-id seed)
-      (let ((prediction (%mean-y rows))
-            (members (map* %row-id rows)))
-        (list (%leaf-node next-id prediction members)
-              seed
-              (+ next-id 1))))
+      (let ((prediction (%mean-y rows)) (members (map* %row-id rows)))
+        (list (%leaf-node next-id prediction members) seed (+ next-id 1))))
 
     ;; -- Split search -----------------------------------------------------
 
@@ -388,8 +347,7 @@
     ;; Compute `%feature-list`.
     ;;@example
     ;; (%feature-list 'x)
-    (defun %feature-list (p)
-      (range 0 p))
+    (defun %feature-list (p) (range 0 p))
 
     ;;@doc (%choose-features p mtry seed)
     ;;@category Ml
@@ -400,11 +358,11 @@
     (defun %choose-features (p mtry seed)
       (let ((all (%feature-list p)))
         (if (or (<= mtry 0) (>= mtry p))
-            (cons all seed)
-            (let* ((shuffle+seed (%shuffle all seed))
-                   (shuffled (car shuffle+seed))
-                   (seed2 (cdr shuffle+seed)))
-              (cons (take mtry shuffled) seed2)))))
+          (cons all seed)
+          (let* ((shuffle+seed (%shuffle all seed))
+                 (shuffled (car shuffle+seed))
+                 (seed2 (cdr shuffle+seed)))
+            (cons (take mtry shuffled) seed2)))))
 
     ;;@doc (%best-split-feature rows feature min-leaf)
     ;;@category Ml
@@ -413,55 +371,44 @@
     ;; (%best-split-feature '() 'x 'x)
     ;; Returns #f or (gain feature threshold).
     (defun %best-split-feature (rows feature min-leaf)
-      (let* ((sorted (sort (lambda (a b)
-                             (< (%feature-value a feature)
-                                (%feature-value b feature)))
-                           rows))
+      (let* ((sorted
+               (sort (lambda (a b) (< (%feature-value a feature) (%feature-value b feature))) rows))
              (n (length sorted)))
         (if (< n (* 2 min-leaf))
-            #f
-            (let* ((sumy (%rows-sum sorted))
-                   (sumsq (%rows-sumsq sorted))
-                   (parent-sse (%sse n sumy sumsq)))
-              (if (< parent-sse 1e-12)
-                  #f
-                  (let loop ((rest sorted)
-                             (left-n 0)
-                             (left-sum 0.0)
-                             (left-sumsq 0.0)
-                             (best #f))
-                    (if (or (null? rest) (null? (cdr rest)))
-                        best
-                        (let* ((row (car rest))
-                               (next-row (cadr rest))
-                               (xv (%feature-value row feature))
-                               (xnext (%feature-value next-row feature))
-                               (yv (%row-y row))
-                               (ln (+ left-n 1))
-                               (ls (+ left-sum yv))
-                               (lss (+ left-sumsq (* yv yv)))
-                               (rn (- n ln))
-                               (rs (- sumy ls))
-                               (rss (- sumsq lss))
-                               (candidate
-                                 (if (and (>= ln min-leaf)
-                                          (>= rn min-leaf)
-                                          (< xv xnext))
-                                     (let* ((left-sse (%sse ln ls lss))
-                                            (right-sse (%sse rn rs rss))
-                                            (gain (- parent-sse
-                                                     (+ left-sse right-sse))))
-                                       (if (> gain 1e-12)
-                                           (list gain feature (/ (+ xv xnext) 2.0))
-                                           #f))
-                                     #f))
-                               (best2
-                                 (if (and candidate
-                                          (or (not best)
-                                              (> (car candidate) (car best))))
-                                     candidate
-                                     best)))
-                          (loop (cdr rest) ln ls lss best2)))))))))
+          #f
+          (let* ((sumy (%rows-sum sorted))
+                 (sumsq (%rows-sumsq sorted))
+                 (parent-sse (%sse n sumy sumsq)))
+            (if (< parent-sse 1e-12)
+              #f
+              (let
+                loop
+                ((rest sorted) (left-n 0) (left-sum 0.0) (left-sumsq 0.0) (best #f))
+                (if (or (null? rest) (null? (cdr rest)))
+                  best
+                  (let* ((row (car rest))
+                         (next-row (cadr rest))
+                         (xv (%feature-value row feature))
+                         (xnext (%feature-value next-row feature))
+                         (yv (%row-y row))
+                         (ln (+ left-n 1))
+                         (ls (+ left-sum yv))
+                         (lss (+ left-sumsq (* yv yv)))
+                         (rn (- n ln))
+                         (rs (- sumy ls))
+                         (rss (- sumsq lss))
+                         (candidate
+                           (if (and (>= ln min-leaf) (>= rn min-leaf) (< xv xnext))
+                             (let* ((left-sse (%sse ln ls lss))
+                                    (right-sse (%sse rn rs rss))
+                                    (gain (- parent-sse (+ left-sse right-sse))))
+                               (if (> gain 1e-12) (list gain feature (/ (+ xv xnext) 2.0)) #f))
+                             #f))
+                         (best2
+                           (if (and candidate (or (not best) (> (car candidate) (car best))))
+                             candidate
+                             best)))
+                    (loop (cdr rest) ln ls lss best2)))))))))
 
     ;;@doc (%best-split rows features min-leaf)
     ;;@category Ml
@@ -470,17 +417,14 @@
     ;;@example
     ;; (%best-split '() 'x 'x)
     (defun %best-split (rows features min-leaf)
-      (let loop ((fs features) (best #f))
+      (let
+        loop
+        ((fs features) (best #f))
         (if (null? fs)
-            best
-            (let* ((cand (%best-split-feature rows (car fs) min-leaf))
-                   (best2
-                     (if (and cand
-                              (or (not best)
-                                  (> (car cand) (car best))))
-                         cand
-                         best)))
-              (loop (cdr fs) best2)))))
+          best
+          (let* ((cand (%best-split-feature rows (car fs) min-leaf))
+                 (best2 (if (and cand (or (not best) (> (car cand) (car best)))) cand best)))
+            (loop (cdr fs) best2)))))
 
     ;;@doc (%partition-rows rows feature threshold)
     ;;@category Ml
@@ -489,13 +433,15 @@
     ;; (%partition-rows '() 'x 'x)
     ;; Returns (left . right).
     (defun %partition-rows (rows feature threshold)
-      (let loop ((rest rows) (left '()) (right '()))
+      (let
+        loop
+        ((rest rows) (left '()) (right '()))
         (if (null? rest)
-            (cons (reverse left) (reverse right))
-            (let ((row (car rest)))
-              (if (< (%feature-value row feature) threshold)
-                  (loop (cdr rest) (cons row left) right)
-                  (loop (cdr rest) left (cons row right)))))))
+          (cons (reverse left) (reverse right))
+          (let ((row (car rest)))
+            (if (< (%feature-value row feature) threshold)
+              (loop (cdr rest) (cons row left) right)
+              (loop (cdr rest) left (cons row right)))))))
 
     ;; -- Tree growth ------------------------------------------------------
 
@@ -507,52 +453,53 @@
     ;; Returns (node next-seed next-leaf-id).
     (defun %build-tree (rows depth min-leaf max-depth mtry p seed next-id)
       (let ((n (length rows)))
-        (if (or (<= n 0)
-                (>= depth max-depth)
-                (< n (* 2 min-leaf))
-                (< (%rows-sse rows) 1e-12)
-                (= p 0))
-            (%make-leaf-from-rows rows next-id seed)
-            (let* ((features+seed (%choose-features p mtry seed))
-                   (features (car features+seed))
-                   (seed2 (cdr features+seed))
-                   (best (%best-split rows features min-leaf)))
-              (if (not best)
+        (if (or
+              (<= n 0)
+              (>= depth max-depth)
+              (< n (* 2 min-leaf))
+              (< (%rows-sse rows) 1e-12)
+              (= p 0))
+          (%make-leaf-from-rows rows next-id seed)
+          (let* ((features+seed (%choose-features p mtry seed))
+                 (features (car features+seed))
+                 (seed2 (cdr features+seed))
+                 (best (%best-split rows features min-leaf)))
+            (if (not best)
+              (%make-leaf-from-rows rows next-id seed2)
+              (let* ((feature (cadr best))
+                     (threshold (caddr best))
+                     (parts (%partition-rows rows feature threshold))
+                     (left-rows (car parts))
+                     (right-rows (cdr parts)))
+                (if (or (null? left-rows) (null? right-rows))
                   (%make-leaf-from-rows rows next-id seed2)
-                  (let* ((feature (cadr best))
-                         (threshold (caddr best))
-                         (parts (%partition-rows rows feature threshold))
-                         (left-rows (car parts))
-                         (right-rows (cdr parts)))
-                    (if (or (null? left-rows) (null? right-rows))
-                        (%make-leaf-from-rows rows next-id seed2)
-                        (let* ((left-result
-                                 (%build-tree left-rows
-                                              (+ depth 1)
-                                              min-leaf
-                                              max-depth
-                                              mtry
-                                              p
-                                              seed2
-                                              next-id))
-                               (left-node (list-ref left-result 0))
-                               (seed3 (list-ref left-result 1))
-                               (next-id2 (list-ref left-result 2))
-                               (right-result
-                                 (%build-tree right-rows
-                                              (+ depth 1)
-                                              min-leaf
-                                              max-depth
-                                              mtry
-                                              p
-                                              seed3
-                                              next-id2))
-                               (right-node (list-ref right-result 0))
-                               (seed4 (list-ref right-result 1))
-                               (next-id3 (list-ref right-result 2)))
-                          (list (%split-node feature threshold left-node right-node)
-                                seed4
-                                next-id3)))))))))
+                  (let* ((left-result
+                           (%build-tree
+                             left-rows
+                             (+ depth 1)
+                             min-leaf
+                             max-depth
+                             mtry
+                             p
+                             seed2
+                             next-id))
+                         (left-node (list-ref left-result 0))
+                         (seed3 (list-ref left-result 1))
+                         (next-id2 (list-ref left-result 2))
+                         (right-result
+                           (%build-tree
+                             right-rows
+                             (+ depth 1)
+                             min-leaf
+                             max-depth
+                             mtry
+                             p
+                             seed3
+                             next-id2))
+                         (right-node (list-ref right-result 0))
+                         (seed4 (list-ref right-result 1))
+                         (next-id3 (list-ref right-result 2)))
+                    (list (%split-node feature threshold left-node right-node) seed4 next-id3)))))))))
 
     ;; -- Honest leaf estimation ------------------------------------------
 
@@ -564,11 +511,10 @@
     ;; (%leaf-id-for-row 'x 'x)
     (defun %leaf-id-for-row (node row)
       (if (%leaf? node)
-          (%leaf-id node)
-          (if (< (list-ref row (%split-feature node))
-                 (%split-threshold node))
-              (%leaf-id-for-row (%split-left node) row)
-              (%leaf-id-for-row (%split-right node) row))))
+        (%leaf-id node)
+        (if (< (list-ref row (%split-feature node)) (%split-threshold node))
+          (%leaf-id-for-row (%split-left node) row)
+          (%leaf-id-for-row (%split-right node) row))))
 
     ;;@doc (%accum-add acc leaf-id y rid)
     ;;@category Ml
@@ -579,12 +525,12 @@
     (defun %accum-add (acc leaf-id y rid)
       (let ((entry (assq leaf-id acc)))
         (if entry
-            (let* ((rec (cdr entry))
-                   (sumy (+ (list-ref rec 0) y))
-                   (count (+ (list-ref rec 1) 1))
-                   (members (cons rid (list-ref rec 2))))
-              (%assoc-set acc leaf-id (list sumy count members)))
-            (cons (cons leaf-id (list y 1 (list rid))) acc))))
+          (let* ((rec (cdr entry))
+                 (sumy (+ (list-ref rec 0) y))
+                 (count (+ (list-ref rec 1) 1))
+                 (members (cons rid (list-ref rec 2))))
+            (%assoc-set acc leaf-id (list sumy count members)))
+          (cons (cons leaf-id (list y 1 (list rid))) acc))))
 
     ;;@doc (%build-estimation-acc tree est-rows)
     ;;@category Ml
@@ -593,11 +539,12 @@
     ;;@example
     ;; (%build-estimation-acc 'x 'x)
     (defun %build-estimation-acc (tree est-rows)
-      (foldl (lambda (acc row)
-               (let ((leaf-id (%leaf-id-for-row tree (%row-x row))))
-                 (%accum-add acc leaf-id (%row-y row) (%row-id row))))
-             '()
-             est-rows))
+      (foldl
+        (lambda (acc row)
+          (let ((leaf-id (%leaf-id-for-row tree (%row-x row))))
+            (%accum-add acc leaf-id (%row-y row) (%row-id row))))
+        '()
+        est-rows))
 
     ;;@doc (%apply-honest-estimates node acc)
     ;;@category Ml
@@ -607,21 +554,19 @@
     ;; (%apply-honest-estimates 'x 'x)
     (defun %apply-honest-estimates (node acc)
       (if (%leaf? node)
-          (let* ((leaf-id (%leaf-id node))
-                 (entry (assq leaf-id acc)))
-            (if entry
-                (let* ((rec (cdr entry))
-                       (sumy (list-ref rec 0))
-                       (count (list-ref rec 1))
-                       (members-rev (list-ref rec 2)))
-                  (if (> count 0)
-                      (%leaf-node leaf-id (/ sumy count) (reverse members-rev))
-                      node))
-                node))
-          (%split-node (%split-feature node)
-                       (%split-threshold node)
-                       (%apply-honest-estimates (%split-left node) acc)
-                       (%apply-honest-estimates (%split-right node) acc))))
+        (let* ((leaf-id (%leaf-id node)) (entry (assq leaf-id acc)))
+          (if entry
+            (let* ((rec (cdr entry))
+                   (sumy (list-ref rec 0))
+                   (count (list-ref rec 1))
+                   (members-rev (list-ref rec 2)))
+              (if (> count 0) (%leaf-node leaf-id (/ sumy count) (reverse members-rev)) node))
+            node))
+        (%split-node
+          (%split-feature node)
+          (%split-threshold node)
+          (%apply-honest-estimates (%split-left node) acc)
+          (%apply-honest-estimates (%split-right node) acc))))
 
     ;; -- Tree summaries ---------------------------------------------------
 
@@ -646,11 +591,8 @@
     ;; (%collect-leaves 'x)
     (defun %collect-leaves (node)
       (if (%leaf? node)
-          (list (%leaf-record (%leaf-id node)
-                              (%leaf-prediction node)
-                              (%leaf-members-raw node)))
-          (append (%collect-leaves (%split-left node))
-                  (%collect-leaves (%split-right node)))))
+        (list (%leaf-record (%leaf-id node) (%leaf-prediction node) (%leaf-members-raw node)))
+        (append (%collect-leaves (%split-left node)) (%collect-leaves (%split-right node)))))
 
     ;;@doc (%zeros n)
     ;;@category Ml
@@ -658,10 +600,7 @@
     ;; Compute `%zeros`.
     ;;@example
     ;; (%zeros 1)
-    (defun %zeros (n)
-      (if (<= n 0)
-          '()
-          (cons 0 (%zeros (- n 1)))))
+    (defun %zeros (n) (if (<= n 0) '() (cons 0 (%zeros (- n 1)))))
 
     ;;@doc (%counts-add-feature counts feature)
     ;;@category Ml
@@ -670,9 +609,7 @@
     ;;@example
     ;; (%counts-add-feature 'x 'x)
     (defun %counts-add-feature (counts feature)
-      (map-indexed (lambda (j c)
-                     (if (= j feature) (+ c 1) c))
-                   counts))
+      (map-indexed (lambda (j c) (if (= j feature) (+ c 1) c)) counts))
 
     ;;@doc (%counts-merge a b)
     ;;@category Ml
@@ -680,8 +617,7 @@
     ;; Compute `%counts-merge`.
     ;;@example
     ;; (%counts-merge 1 1)
-    (defun %counts-merge (a b)
-      (map2 (lambda (x y) (+ x y)) a b))
+    (defun %counts-merge (a b) (map2 (lambda (x y) (+ x y)) a b))
 
     ;;@doc (%split-counts node p)
     ;;@category Ml
@@ -691,11 +627,10 @@
     ;; (%split-counts 'x 'x)
     (defun %split-counts (node p)
       (if (%leaf? node)
-          (%zeros p)
-          (%counts-add-feature
-            (%counts-merge (%split-counts (%split-left node) p)
-                           (%split-counts (%split-right node) p))
-            (%split-feature node))))
+        (%zeros p)
+        (%counts-add-feature
+          (%counts-merge (%split-counts (%split-left node) p) (%split-counts (%split-right node) p))
+          (%split-feature node))))
 
     ;; -- Model access -----------------------------------------------------
 
@@ -707,10 +642,7 @@
     ;; (%model-ref 'x 'x 'x)
     (defun %model-ref (model key who)
       (let ((entry (assq key model)))
-        (if entry
-            (cdr entry)
-            (error (string-append who ": invalid tree model; missing key")
-                   key))))
+        (if entry (cdr entry) (error (string-append who ": invalid tree model; missing key") key))))
 
     ;;@doc (%predict-row node row)
     ;;@category Ml
@@ -720,11 +652,10 @@
     ;; (%predict-row 'x 'x)
     (defun %predict-row (node row)
       (if (%leaf? node)
-          (%leaf-prediction node)
-          (if (< (list-ref row (%split-feature node))
-                 (%split-threshold node))
-              (%predict-row (%split-left node) row)
-              (%predict-row (%split-right node) row))))
+        (%leaf-prediction node)
+        (if (< (list-ref row (%split-feature node)) (%split-threshold node))
+          (%predict-row (%split-left node) row)
+          (%predict-row (%split-right node) row))))
 
     ;; -- Public API -------------------------------------------------------
 
@@ -748,64 +679,38 @@
              (honest? (%opt-ref opt-map 'honest? #f))
              (seed (%normalize-int (%opt-ref opt-map 'seed 1) 1))
              (mtry-raw (%opt-ref opt-map 'mtry (if (= p 0) 1 p)))
-             (mtry (%clamp-int (%normalize-int mtry-raw (if (= p 0) 1 p))
-                               1
-                               (if (= p 0) 1 p)))
+             (mtry (%clamp-int (%normalize-int mtry-raw (if (= p 0) 1 p)) 1 (if (= p 0) 1 p)))
              (default-ids (range 0 n))
              (row-ids (%opt-ref opt-map 'row-ids default-ids)))
         (if (not (= (length row-ids) n))
-            (error "tree:fit: expected row-ids to align with X rows")
-            (let* ((rows (%map3 (lambda (x y rid) (%make-row x y rid))
-                                x-matrix y-vector row-ids))
-                   (honest-enabled? (and honest? (>= n (* 2 min-leaf))))
-                   (shuffle+seed
-                     (if honest-enabled?
-                         (%shuffle rows seed)
-                         #f))
-                   (shuffled
-                     (if honest-enabled?
-                         (car shuffle+seed)
-                         '()))
-                   (grow-n
-                     (if honest-enabled?
-                         (%clamp-int (%half-floor n)
-                                     min-leaf
-                                     (- n min-leaf))
-                         0))
-                   (rows-for-grow
-                     (if honest-enabled?
-                         (take grow-n shuffled)
-                         rows))
-                   (rows-for-estimate
-                     (if honest-enabled?
-                         (drop grow-n shuffled)
-                         '()))
-                   (tree-result (%build-tree rows-for-grow
-                                             0
-                                             min-leaf
-                                             max-depth
-                                             mtry
-                                             p
-                                             seed
-                                             0))
-                   (raw-root (list-ref tree-result 0))
-                   (seed2 (list-ref tree-result 1))
-                   (root (if (and honest-enabled?
-                                  (not (null? rows-for-estimate)))
-                             (%apply-honest-estimates
-                               raw-root
-                               (%build-estimation-acc raw-root rows-for-estimate))
-                             raw-root))
-                   (leaf-list (%collect-leaves root))
-                   (counts (%split-counts root p)))
-              (list
-                (cons 'tag 'ml-tree)
-                (cons 'root root)
-                (cons 'n-features p)
-                (cons 'leaves leaf-list)
-                (cons 'split-counts counts)
-                (cons 'seed seed2)
-                (cons 'options opt-map))))))
+          (error "tree:fit: expected row-ids to align with X rows")
+          (let* ((rows (%map3 (lambda (x y rid) (%make-row x y rid)) x-matrix y-vector row-ids))
+                 (honest-enabled? (and honest? (>= n (* 2 min-leaf))))
+                 (shuffle+seed (if honest-enabled? (%shuffle rows seed) #f))
+                 (shuffled (if honest-enabled? (car shuffle+seed) '()))
+                 (grow-n
+                   (if honest-enabled? (%clamp-int (%half-floor n) min-leaf (- n min-leaf)) 0))
+                 (rows-for-grow (if honest-enabled? (take grow-n shuffled) rows))
+                 (rows-for-estimate (if honest-enabled? (drop grow-n shuffled) '()))
+                 (tree-result (%build-tree rows-for-grow 0 min-leaf max-depth mtry p seed 0))
+                 (raw-root (list-ref tree-result 0))
+                 (seed2 (list-ref tree-result 1))
+                 (root
+                   (if (and honest-enabled? (not (null? rows-for-estimate)))
+                     (%apply-honest-estimates
+                       raw-root
+                       (%build-estimation-acc raw-root rows-for-estimate))
+                     raw-root))
+                 (leaf-list (%collect-leaves root))
+                 (counts (%split-counts root p)))
+            (list
+              (cons 'tag 'ml-tree)
+              (cons 'root root)
+              (cons 'n-features p)
+              (cons 'leaves leaf-list)
+              (cons 'split-counts counts)
+              (cons 'seed seed2)
+              (cons 'options opt-map))))))
 
     ;;@doc (tree:predict model x-matrix)
     ;;@category Ml
@@ -833,7 +738,4 @@
     ;; (tree:leaves 'x)
     ;; Returns list of leaf records:
     ;;   ((id . k) (prediction . mu) (members . (i ...)) (size . n))
-    (defun tree:leaves (model)
-      (%model-ref model 'leaves "tree:leaves"))
-
-  ))
+    (defun tree:leaves (model) (%model-ref model 'leaves "tree:leaves"))))

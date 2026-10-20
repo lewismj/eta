@@ -23,4 +23,3 @@
     (println (shape xz))
     (println (to-list xz))
     (println (to-list zx))))
-

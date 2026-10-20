@@ -12,8 +12,7 @@
     ;; Blocking subprocess invocation Uses `windows?`.
     ;;@example
     ;; (windows?)
-    (defun windows? ()
-      (equal? (platform) 'Win32))
+    (defun windows? () (equal? (platform) 'Win32))
 
     ;;@doc (git-version-command)
     ;;@category Process
@@ -22,15 +21,11 @@
     ;;@example
     ;; (git-version-command)
     (defun git-version-command ()
-      (if (windows?)
-          (list "cmd" '("/c" "git --version"))
-          (list "git" '("--version"))))
+      (if (windows?) (list "cmd" '("/c" "git --version")) (list "git" '("--version"))))
 
-    (let* ((cmd (git-version-command))
-           (result (process:run (car cmd) (car (cdr cmd)))))
-      (println (list
-                 (cons 'status (car result))
-                 (cons 'stdout (car (cdr result)))
-                 (cons 'stderr (car (cdr (cdr result)))))))
-
-  ))
+    (let* ((cmd (git-version-command)) (result (process:run (car cmd) (car (cdr cmd)))))
+      (println
+        (list
+          (cons 'status (car result))
+          (cons 'stdout (car (cdr result)))
+          (cons 'stderr (car (cdr (cdr result)))))))))

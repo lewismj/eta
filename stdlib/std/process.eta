@@ -1,8 +1,7 @@
 ;;; std/process.eta - Subprocess helpers built on %process-* primitives.
 
 (module std.process
-  (export
-    process:run
+  (export process:run
     process:spawn
     process:wait
     process:kill
@@ -43,7 +42,4 @@
     ;;@example
     ;; (process:run-string 'x '() '())
     (defun process:run-string (program args . rest)
-      (let ((result (apply %process-run program args rest)))
-        (car (cdr result))))
-
-  ))
+      (let ((result (apply %process-run program args rest))) (car (cdr result))))))

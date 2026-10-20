@@ -1,10 +1,7 @@
 ;;; stdlib/tests/causal-render.test.eta -- Tests for std.causal.render
 
 (module causal.render.tests
-  (import std.test
-          std.causal.render
-          std.core
-          std.collections)
+  (import std.test std.causal.render std.core std.collections)
   (begin
 
     ;;@doc (contains? text needle)
@@ -14,19 +11,17 @@
     ;;@example
     ;; (contains? "sample" 'x)
     (defun contains? (text needle)
-      (let ((n (string-length text))
-            (m (string-length needle)))
+      (let ((n (string-length text)) (m (string-length needle)))
         (if (= m 0)
-            #t
-            (if (< n m)
-                #f
-                (letrec ((loop (lambda (i)
-                                 (if (> i (- n m))
-                                     #f
-                                     (if (string=? (substring text i (+ i m)) needle)
-                                         #t
-                                         (loop (+ i 1)))))))
-                  (loop 0))))))
+          #t
+          (if (< n m)
+            #f
+            (letrec ((loop
+                       (lambda (i)
+                         (if (> i (- n m))
+                           #f
+                           (if (string=? (substring text i (+ i m)) needle) #t (loop (+ i 1)))))))
+              (loop 0))))))
 
     ;;@doc (contains-edge? g edge)
     ;;@category Tests
@@ -34,39 +29,32 @@
     ;; Return whether `contains-edge?` holds.
     ;;@example
     ;; (contains-edge? 'x 'x)
-    (defun contains-edge? (g edge)
-      (any? (lambda (e) (equal? e edge)) g))
+    (defun contains-edge? (g edge) (any? (lambda (e) (equal? e edge)) g))
 
-    (define mixed-graph
-      '((a -> b)
-        (a <-> c)
-        (b -- c)))
+    (define mixed-graph '((a -> b) (a <-> c) (b -- c)))
 
-    (define validated-graph
-      (define-dag '((x -> y)
-                    (x <-> z))))
+    (define validated-graph (define-dag '((x -> y) (x <-> z))))
 
     (define suite
-      (make-group "std.causal.render"
+      (make-group
+        "std.causal.render"
         (list
-
-          (make-test "define-dag validates directed and bidirected edges"
+          (make-test
+            "define-dag validates directed and bidirected edges"
             (lambda ()
               (assert-true (contains-edge? validated-graph '(x -> y)))
               (assert-true (contains-edge? validated-graph '(x <-> z)))))
-
-          (make-test "dag:->dot renders title rankdir and mixed edges"
+          (make-test
+            "dag:->dot renders title rankdir and mixed edges"
             (lambda ()
-              (let ((s (dag:->dot mixed-graph
-                                  '((title . "Risk Graph")
-                                    (rankdir . "TB")))))
+              (let ((s (dag:->dot mixed-graph '((title . "Risk Graph") (rankdir . "TB")))))
                 (assert-true (contains? s "digraph \"Risk Graph\" {"))
                 (assert-true (contains? s "rankdir=TB;"))
                 (assert-true (contains? s "\"a\" -> \"b\";"))
                 (assert-true (contains? s "\"a\" -> \"c\" [dir=both, style=dashed];"))
                 (assert-true (contains? s "\"b\" -> \"c\" [dir=none];")))))
-
-          (make-test "dag:->mermaid renders deterministic ids and edge styles"
+          (make-test
+            "dag:->mermaid renders deterministic ids and edge styles"
             (lambda ()
               (let ((s (dag:->mermaid mixed-graph)))
                 (assert-true (contains? s "flowchart LR"))
@@ -77,8 +65,8 @@
                 (assert-true (contains? s "n0 -.-> n2"))
                 (assert-true (contains? s "n2 -.-> n0"))
                 (assert-true (contains? s "n1 --- n2")))))
-
-          (make-test "dag:->latex renders causal operators"
+          (make-test
+            "dag:->latex renders causal operators"
             (lambda ()
               (let ((s (dag:->latex mixed-graph)))
                 (assert-true (contains? s "\\mathcal{G}"))

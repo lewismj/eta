@@ -31,10 +31,7 @@
     ;;@example
     ;; (%member? 1 '())
     (defun %member? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((equal? x (car xs)) #t)
-        (else (%member? x (cdr xs)))))
+      (cond ((null? xs) #f) ((equal? x (car xs)) #t) (else (%member? x (cdr xs)))))
 
     ;;@doc (%adjoin x xs)
     ;;@category Causal
@@ -42,8 +39,7 @@
     ;; Compute `%adjoin`.
     ;;@example
     ;; (%adjoin 1 '())
-    (defun %adjoin (x xs)
-      (if (%member? x xs) xs (cons x xs)))
+    (defun %adjoin (x xs) (if (%member? x xs) xs (cons x xs)))
 
     ;;@doc (%set-diff a b)
     ;;@category Causal
@@ -51,8 +47,7 @@
     ;; Compute `%set-diff`.
     ;;@example
     ;; (%set-diff 1 1)
-    (defun %set-diff (a b)
-      (filter (lambda (x) (not (%member? x b))) a))
+    (defun %set-diff (a b) (filter (lambda (x) (not (%member? x b))) a))
 
     ;;@doc (%normalize-vars vars)
     ;;@category Causal
@@ -61,13 +56,13 @@
     ;;@example
     ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
-      (let loop ((rest vars) (acc '()))
+      (let
+        loop
+        ((rest vars) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (let ((v (car rest)))
-              (if (%member? v acc)
-                  (loop (cdr rest) acc)
-                  (loop (cdr rest) (cons v acc)))))))
+          (reverse acc)
+          (let ((v (car rest)))
+            (if (%member? v acc) (loop (cdr rest) acc) (loop (cdr rest) (cons v acc)))))))
 
     ;;@doc (%as-node-set x)
     ;;@category Causal
@@ -76,8 +71,7 @@
     ;;@example
     ;; (%as-node-set 1)
     (defun %as-node-set (x)
-      (cond
-        ((null? x) '())
+      (cond ((null? x) '())
         ((symbol? x) (list x))
         ((list? x) (%normalize-vars x))
         (else (error "expected symbol or list of symbols"))))
@@ -90,12 +84,10 @@
     ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes vars)
       (if (null? vars)
-          'ok
-          (begin
-            (if (%member? (car vars) nodes)
-                'ok
-                (error 'unknown-variable (car vars)))
-            (%assert-vars nodes (cdr vars)))))
+        'ok
+        (begin
+          (if (%member? (car vars) nodes) 'ok (error 'unknown-variable (car vars)))
+          (%assert-vars nodes (cdr vars)))))
 
     ;; -- Graph helpers ---------------------------------------------------
 
@@ -143,9 +135,7 @@
     ;;@example
     ;; (%mixed-edge? 'x)
     (defun %mixed-edge? (e)
-      (and (list? e)
-           (= (length e) 3)
-           (or (%directed-edge? e) (%bidirected-edge? e))))
+      (and (list? e) (= (length e) 3) (or (%directed-edge? e) (%bidirected-edge? e))))
 
     ;;@doc (%assert-admg g)
     ;;@category Causal
@@ -153,10 +143,7 @@
     ;; Compute `%assert-admg`.
     ;;@example
     ;; (%assert-admg 'x)
-    (defun %assert-admg (g)
-      (if (every? %mixed-edge? g)
-          g
-          (error 'invalid-admg g)))
+    (defun %assert-admg (g) (if (every? %mixed-edge? g) g (error 'invalid-admg g)))
 
     ;;@doc (%graph-nodes g)
     ;;@category Causal
@@ -165,10 +152,7 @@
     ;;@example
     ;; (%graph-nodes 'x)
     (defun %graph-nodes (g)
-      (foldl (lambda (acc e)
-               (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
-             '()
-             g))
+      (foldl (lambda (acc e) (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc))) '() g))
 
     ;;@doc (%edge-member? e edges)
     ;;@category Causal
@@ -176,8 +160,7 @@
     ;; Return whether `%edge-member?` holds.
     ;;@example
     ;; (%edge-member? 'x 'x)
-    (defun %edge-member? (e edges)
-      (any? (lambda (x) (equal? x e)) edges))
+    (defun %edge-member? (e edges) (any? (lambda (x) (equal? x e)) edges))
 
     ;;@doc (%edge-adjoin e edges)
     ;;@category Causal
@@ -185,8 +168,7 @@
     ;; Compute `%edge-adjoin`.
     ;;@example
     ;; (%edge-adjoin 'x 'x)
-    (defun %edge-adjoin (e edges)
-      (if (%edge-member? e edges) edges (cons e edges)))
+    (defun %edge-adjoin (e edges) (if (%edge-member? e edges) edges (cons e edges)))
 
     ;; -- Counterfactual naming ------------------------------------------
 
@@ -199,12 +181,9 @@
     (defun %fresh-cf-symbol (name used idx)
       (let ((candidate
               (if (= idx 0)
-                  (string->symbol (string-append name "'"))
-                  (string->symbol
-                    (string-append name "'" (number->string idx))))))
-        (if (%member? candidate used)
-            (%fresh-cf-symbol name used (+ idx 1))
-            candidate)))
+                (string->symbol (string-append name "'"))
+                (string->symbol (string-append name "'" (number->string idx))))))
+        (if (%member? candidate used) (%fresh-cf-symbol name used (+ idx 1)) candidate)))
 
     ;;@doc (%cf-map nodes)
     ;;@category Causal
@@ -213,14 +192,13 @@
     ;;@example
     ;; (%cf-map 'x)
     (defun %cf-map (nodes)
-      (let loop ((rest nodes) (used nodes) (acc '()))
+      (let
+        loop
+        ((rest nodes) (used nodes) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (let* ((v (car rest))
-                   (v* (%fresh-cf-symbol (symbol->string v) used 0)))
-              (loop (cdr rest)
-                    (%adjoin v* used)
-                    (cons (cons v v*) acc))))))
+          (reverse acc)
+          (let* ((v (car rest)) (v* (%fresh-cf-symbol (symbol->string v) used 0)))
+            (loop (cdr rest) (%adjoin v* used) (cons (cons v v*) acc))))))
 
     ;;@doc (%cf-node map var)
     ;;@category Causal
@@ -229,10 +207,7 @@
     ;;@example
     ;; (%cf-node 'x 'x)
     (defun %cf-node (map var)
-      (let ((p (assq var map)))
-        (if p
-            (cdr p)
-            (error "missing counterfactual node mapping"))))
+      (let ((p (assq var map))) (if p (cdr p) (error "missing counterfactual node mapping"))))
 
     ;; -- Twin-network construction --------------------------------------
 
@@ -243,32 +218,30 @@
     ;;@example
     ;; (%counterfactual-world-edges 'x 'x 'x)
     (defun %counterfactual-world-edges (g cf-map x-set)
-      (let loop ((rest g) (acc '()))
+      (let
+        loop
+        ((rest g) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (let* ((e (car rest))
-                   (a (%edge-from e))
-                   (k (%edge-kind e))
-                   (b (%edge-to e))
-                   (a* (%cf-node cf-map a))
-                   (b* (%cf-node cf-map b)))
-              (cond
-                ((%directed-edge? e)
-                 ;; do(X=...) removes incoming mechanisms into X in the
-                 ;; counterfactual world, so edges into X' are omitted.
-                 (if (%member? b x-set)
+          (reverse acc)
+          (let* ((e (car rest))
+                 (a (%edge-from e))
+                 (k (%edge-kind e))
+                 (b (%edge-to e))
+                 (a* (%cf-node cf-map a))
+                 (b* (%cf-node cf-map b)))
+            (cond ((%directed-edge? e)
+                   ;; do(X=...) removes incoming mechanisms into X in the
+                   ;; counterfactual world, so edges into X' are omitted.
+                   (if (%member? b x-set)
                      (loop (cdr rest) acc)
-                     (loop (cdr rest)
-                           (%edge-adjoin (list a* '-> b*) acc))))
-                ((%bidirected-edge? e)
-                 ;; Intervened variables are detached from exogenous
-                 ;; disturbances in the counterfactual copy.
-                 (if (or (%member? a x-set) (%member? b x-set))
-                     (loop (cdr rest) acc)
-                     (loop (cdr rest)
-                           (%edge-adjoin (list a* '<-> b*) acc))))
-                (else
-                 (loop (cdr rest) acc)))))))
+                     (loop (cdr rest) (%edge-adjoin (list a* '-> b*) acc))))
+              ((%bidirected-edge? e)
+               ;; Intervened variables are detached from exogenous
+               ;; disturbances in the counterfactual copy.
+               (if (or (%member? a x-set) (%member? b x-set))
+                 (loop (cdr rest) acc)
+                 (loop (cdr rest) (%edge-adjoin (list a* '<-> b*) acc))))
+              (else (loop (cdr rest) acc)))))))
 
     ;;@doc (%cross-world-latent-links nodes cf-map x-set)
     ;;@category Causal
@@ -277,12 +250,11 @@
     ;;@example
     ;; (%cross-world-latent-links 'x 'x 'x)
     (defun %cross-world-latent-links (nodes cf-map x-set)
-      (foldl (lambda (acc v)
-               (if (%member? v x-set)
-                   acc
-                   (%edge-adjoin (list v '<-> (%cf-node cf-map v)) acc)))
-             '()
-             nodes))
+      (foldl
+        (lambda (acc v)
+          (if (%member? v x-set) acc (%edge-adjoin (list v '<-> (%cf-node cf-map v)) acc)))
+        '()
+        nodes))
 
     ;;@doc (twin-network g intervened-vars)
     ;;@category Causal
@@ -298,10 +270,7 @@
              (cf-map (%cf-map nodes))
              (cf-edges (%counterfactual-world-edges g cf-map x-set))
              (bridges (%cross-world-latent-links nodes cf-map x-set)))
-        (reverse
-          (foldl (lambda (acc e) (%edge-adjoin e acc))
-                 '()
-                 (append g cf-edges bridges)))))
+        (reverse (foldl (lambda (acc e) (%edge-adjoin e acc)) '() (append g cf-edges bridges)))))
 
     ;; -- Counterfactual query normalization ------------------------------
 
@@ -312,13 +281,11 @@
     ;;@example
     ;; (%gamma-event? 'x)
     (defun %gamma-event? (event)
-      (and (list? event)
-           (>= (length event) 2)
-           (symbol? (car event))
-           (let ((ix (cadr event)))
-             (or (null? ix)
-                 (symbol? ix)
-                 (and (list? ix) (every? symbol? ix))))))
+      (and
+        (list? event)
+        (>= (length event) 2)
+        (symbol? (car event))
+        (let ((ix (cadr event))) (or (null? ix) (symbol? ix) (and (list? ix) (every? symbol? ix))))))
 
     ;;@doc (%normalize-gamma gamma where)
     ;;@category Causal
@@ -328,9 +295,8 @@
     ;; (%normalize-gamma 'x 'x)
     (defun %normalize-gamma (gamma where)
       (if (and (list? gamma) (every? %gamma-event? gamma))
-          gamma
-          (error (string-append where
-                                ": expected gamma as list of (Y X) events"))))
+        gamma
+        (error (string-append where ": expected gamma as list of (Y X) events"))))
 
     ;;@doc (%event-interventions event where)
     ;;@category Causal
@@ -340,13 +306,10 @@
     ;; (%event-interventions 'x 'x)
     (defun %event-interventions (event where)
       (let ((ix (cadr event)))
-        (cond
-          ((null? ix) '())
+        (cond ((null? ix) '())
           ((symbol? ix) (list ix))
           ((and (list? ix) (every? symbol? ix)) (%normalize-vars ix))
-          (else
-           (error (string-append where
-                                 ": expected intervention symbols"))))))
+          (else (error (string-append where ": expected intervention symbols"))))))
 
     ;;@doc (%gamma-y-vars gamma)
     ;;@category Causal
@@ -354,8 +317,7 @@
     ;; Compute `%gamma-y-vars`.
     ;;@example
     ;; (%gamma-y-vars 'x)
-    (defun %gamma-y-vars (gamma)
-      (%normalize-vars (map* car gamma)))
+    (defun %gamma-y-vars (gamma) (%normalize-vars (map* car gamma)))
 
     ;;@doc (%gamma-x-vars gamma where)
     ;;@category Causal
@@ -365,10 +327,7 @@
     ;; (%gamma-x-vars 'x 'x)
     (defun %gamma-x-vars (gamma where)
       (%normalize-vars
-        (foldl (lambda (acc event)
-                 (append acc (%event-interventions event where)))
-               '()
-               gamma)))
+        (foldl (lambda (acc event) (append acc (%event-interventions event where))) '() gamma)))
 
     ;;@doc (%delta-var d where)
     ;;@category Causal
@@ -377,12 +336,9 @@
     ;;@example
     ;; (%delta-var 'x 'x)
     (defun %delta-var (d where)
-      (cond
-        ((symbol? d) d)
+      (cond ((symbol? d) d)
         ((and (list? d) (not (null? d)) (symbol? (car d))) (car d))
-        (else
-         (error (string-append where
-                               ": expected delta entries as symbols or (V value)")))))
+        (else (error (string-append where ": expected delta entries as symbols or (V value)")))))
 
     ;;@doc (%delta-z-vars delta where)
     ;;@category Causal
@@ -392,9 +348,8 @@
     ;; (%delta-z-vars 'x 'x)
     (defun %delta-z-vars (delta where)
       (if (list? delta)
-          (%normalize-vars (map* (lambda (d) (%delta-var d where)) delta))
-          (error (string-append where
-                                ": expected delta as a list of assignments"))))
+        (%normalize-vars (map* (lambda (d) (%delta-var d where)) delta))
+        (error (string-append where ": expected delta as a list of assignments"))))
 
     ;; -- Counterfactual identification API ------------------------------
 
@@ -413,10 +368,8 @@
         (%assert-vars nodes y-set)
         (%assert-vars nodes x-set)
         (if (null? y-set)
-            (error "id*: expected at least one counterfactual outcome")
-            (if (null? x-set)
-                (list 'P y-set)
-                (do:simplify (id g y-set x-set))))))
+          (error "id*: expected at least one counterfactual outcome")
+          (if (null? x-set) (list 'P y-set) (do:simplify (id g y-set x-set))))))
 
     ;;@doc (idc* g gamma delta)
     ;;@category Causal
@@ -435,14 +388,12 @@
         (%assert-vars nodes x-set)
         (%assert-vars nodes z-set)
         (if (null? y-set)
-            (error "idc*: expected at least one counterfactual outcome")
-            (if (null? x-set)
-                (if (null? z-set)
-                    (list 'P y-set)
-                    (list 'cond-on
-                          (list 'P (%normalize-vars (append y-set z-set)))
-                          (list 'P z-set)))
-                (do:simplify (idc g y-set x-set (%set-diff z-set x-set)))))))
+          (error "idc*: expected at least one counterfactual outcome")
+          (if (null? x-set)
+            (if (null? z-set)
+              (list 'P y-set)
+              (list 'cond-on (list 'P (%normalize-vars (append y-set z-set))) (list 'P z-set)))
+            (do:simplify (idc g y-set x-set (%set-diff z-set x-set)))))))
 
     ;;@doc (do:ett g y x x*)
     ;;@category Causal
@@ -452,10 +403,7 @@
     ;; Effect of treatment on the treated.
     (defun do:ett (g y x x*)
       (if (not (symbol? y))
-          (error "do:ett: expected symbol for outcome variable")
-          (if (not (symbol? x))
-              (error "do:ett: expected symbol for treatment variable")
-              (idc* g (list (list y x))
-                    (list (list x x*))))))
-
-  ))
+        (error "do:ett: expected symbol for outcome variable")
+        (if (not (symbol? x))
+          (error "do:ett: expected symbol for treatment variable")
+          (idc* g (list (list y x)) (list (list x x*))))))))

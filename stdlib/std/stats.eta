@@ -15,28 +15,49 @@
 (module std.stats
   (import std.core)
   (import std.collections)
-  (export
-    stats:mean
-    stats:variance stats:stddev stats:sem
-    stats:percentile stats:median
-    stats:covariance stats:correlation
-    stats:ci stats:ci-lower stats:ci-upper
-    stats:t-cdf stats:t-quantile stats:normal-quantile
-    stats:t-test stats:t-test-stat stats:t-test-pvalue
-    stats:t-test-df stats:t-test-mean-diff
-    stats:ols stats:ols-slope stats:ols-intercept stats:ols-r2
-    stats:ols-se-slope stats:ols-se-intercept
-    stats:ols-t-slope stats:ols-t-intercept
-    stats:ols-p-slope stats:ols-p-intercept
+  (export stats:mean
+    stats:variance
+    stats:stddev
+    stats:sem
+    stats:percentile
+    stats:median
+    stats:covariance
+    stats:correlation
+    stats:ci
+    stats:ci-lower
+    stats:ci-upper
+    stats:t-cdf
+    stats:t-quantile
+    stats:normal-quantile
+    stats:t-test
+    stats:t-test-stat
+    stats:t-test-pvalue
+    stats:t-test-df
+    stats:t-test-mean-diff
+    stats:ols
+    stats:ols-slope
+    stats:ols-intercept
+    stats:ols-r2
+    stats:ols-se-slope
+    stats:ols-se-intercept
+    stats:ols-t-slope
+    stats:ols-t-intercept
+    stats:ols-p-slope
+    stats:ols-p-intercept
     stats:summary
     ;; Multivariate / column-wise operations
-    stats:mean-vec stats:var-vec
-    stats:cov-matrix stats:cor-matrix
+    stats:mean-vec
+    stats:var-vec
+    stats:cov-matrix
+    stats:cor-matrix
     stats:quantile-vec
     stats:ols-multi
-    stats:ols-multi-coefficients stats:ols-multi-std-errors
-    stats:ols-multi-t-stats stats:ols-multi-p-values
-    stats:ols-multi-r-squared stats:ols-multi-adj-r-squared
+    stats:ols-multi-coefficients
+    stats:ols-multi-std-errors
+    stats:ols-multi-t-stats
+    stats:ols-multi-p-values
+    stats:ols-multi-r-squared
+    stats:ols-multi-adj-r-squared
     stats:ols-multi-residual-se
     ;; Learner-spec constructors used by causal CATE modules.
     stats:make-ols-regressor
@@ -63,7 +84,7 @@
     ;; Compute `stats:median`.
     ;;@example
     ;; (stats:median '())
-    (defun stats:median     (xs)   (%stats-percentile xs 0.5))
+    (defun stats:median (xs) (%stats-percentile xs 0.5))
 
     (define stats:covariance %stats-covariance)
     (define stats:correlation %stats-correlation)
@@ -76,14 +97,14 @@
     ;; Compute `stats:ci-lower`.
     ;;@example
     ;; (stats:ci-lower 'x)
-    (defun stats:ci-lower (ci)       (car ci))
+    (defun stats:ci-lower (ci) (car ci))
     ;;@doc (stats:ci-upper ci)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ci-upper`.
     ;;@example
     ;; (stats:ci-upper 'x)
-    (defun stats:ci-upper (ci)       (cdr ci))
+    (defun stats:ci-upper (ci) (cdr ci))
 
     (define stats:t-cdf %stats-t-cdf)
     (define stats:t-quantile %stats-t-quantile)
@@ -97,41 +118,47 @@
     ;; Compute `stats:t-test-stat`.
     ;;@example
     ;; (stats:t-test-stat 'x)
-    (defun stats:t-test-stat     (result)  (car result))
+    (defun stats:t-test-stat (result) (car result))
     ;;@doc (stats:t-test-pvalue result)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:t-test-pvalue`.
     ;;@example
     ;; (stats:t-test-pvalue 'x)
-    (defun stats:t-test-pvalue   (result)  (cadr result))
+    (defun stats:t-test-pvalue (result) (cadr result))
     ;;@doc (stats:t-test-df result)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:t-test-df`.
     ;;@example
     ;; (stats:t-test-df 'x)
-    (defun stats:t-test-df       (result)  (caddr result))
-    (defun stats:t-test-mean-diff(result)  (car (cdr (cdr (cdr result)))))
+    (defun stats:t-test-df (result) (caddr result))
+    (defun stats:t-test-mean-diff (result) (car (cdr (cdr (cdr result)))))
 
     ;; ── OLS simple linear regression ───────────────────────────────
     ;; OLS results are represented as a record for clearer field access.
     ;; Accessors also accept the legacy 9-element list form.
     (define-record-type %ols-result
-      (%make-ols-result slope intercept r2
-                        se-slope se-intercept
-                        t-slope t-intercept
-                        p-slope p-intercept)
+      (%make-ols-result
+        slope
+        intercept
+        r2
+        se-slope
+        se-intercept
+        t-slope
+        t-intercept
+        p-slope
+        p-intercept)
       %ols-result?
-      (slope        %ols-result-slope)
-      (intercept    %ols-result-intercept)
-      (r2           %ols-result-r2)
-      (se-slope     %ols-result-se-slope)
+      (slope %ols-result-slope)
+      (intercept %ols-result-intercept)
+      (r2 %ols-result-r2)
+      (se-slope %ols-result-se-slope)
       (se-intercept %ols-result-se-intercept)
-      (t-slope      %ols-result-t-slope)
-      (t-intercept  %ols-result-t-intercept)
-      (p-slope      %ols-result-p-slope)
-      (p-intercept  %ols-result-p-intercept))
+      (t-slope %ols-result-t-slope)
+      (t-intercept %ols-result-t-intercept)
+      (p-slope %ols-result-p-slope)
+      (p-intercept %ols-result-p-intercept))
 
     ;;@doc (%ols-result-from-list r)
     ;;@category Stats
@@ -141,12 +168,17 @@
     ;; (%ols-result-from-list 'x)
     (defun %ols-result-from-list (r)
       (if (and (list? r) (= (length r) 9))
-          (%make-ols-result
-            (list-ref r 0) (list-ref r 1) (list-ref r 2)
-            (list-ref r 3) (list-ref r 4)
-            (list-ref r 5) (list-ref r 6)
-            (list-ref r 7) (list-ref r 8))
-          (error "stats:ols: expected 9-element result list" r)))
+        (%make-ols-result
+          (list-ref r 0)
+          (list-ref r 1)
+          (list-ref r 2)
+          (list-ref r 3)
+          (list-ref r 4)
+          (list-ref r 5)
+          (list-ref r 6)
+          (list-ref r 7)
+          (list-ref r 8))
+        (error "stats:ols: expected 9-element result list" r)))
 
     ;;@doc (%as-ols-result r)
     ;;@category Stats
@@ -154,10 +186,7 @@
     ;; Compute `%as-ols-result`.
     ;;@example
     ;; (%as-ols-result 'x)
-    (defun %as-ols-result (r)
-      (if (%ols-result? r)
-          r
-          (%ols-result-from-list r)))
+    (defun %as-ols-result (r) (if (%ols-result? r) r (%ols-result-from-list r)))
 
     ;;@doc (stats:ols xs ys)
     ;;@category Stats
@@ -165,80 +194,70 @@
     ;; Compute `stats:ols`.
     ;;@example
     ;; (stats:ols '() '())
-    (defun stats:ols (xs ys)
-      (%ols-result-from-list (%stats-ols xs ys)))
+    (defun stats:ols (xs ys) (%ols-result-from-list (%stats-ols xs ys)))
     ;;@doc (stats:ols-slope r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-slope`.
     ;;@example
     ;; (stats:ols-slope 'x)
-    (defun stats:ols-slope (r)
-      (%ols-result-slope (%as-ols-result r)))
+    (defun stats:ols-slope (r) (%ols-result-slope (%as-ols-result r)))
     ;;@doc (stats:ols-intercept r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-intercept`.
     ;;@example
     ;; (stats:ols-intercept 'x)
-    (defun stats:ols-intercept (r)
-      (%ols-result-intercept (%as-ols-result r)))
+    (defun stats:ols-intercept (r) (%ols-result-intercept (%as-ols-result r)))
     ;;@doc (stats:ols-r2 r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-r2`.
     ;;@example
     ;; (stats:ols-r2 'x)
-    (defun stats:ols-r2 (r)
-      (%ols-result-r2 (%as-ols-result r)))
+    (defun stats:ols-r2 (r) (%ols-result-r2 (%as-ols-result r)))
     ;;@doc (stats:ols-se-slope r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-se-slope`.
     ;;@example
     ;; (stats:ols-se-slope 'x)
-    (defun stats:ols-se-slope (r)
-      (%ols-result-se-slope (%as-ols-result r)))
+    (defun stats:ols-se-slope (r) (%ols-result-se-slope (%as-ols-result r)))
     ;;@doc (stats:ols-se-intercept r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-se-intercept`.
     ;;@example
     ;; (stats:ols-se-intercept 'x)
-    (defun stats:ols-se-intercept (r)
-      (%ols-result-se-intercept (%as-ols-result r)))
+    (defun stats:ols-se-intercept (r) (%ols-result-se-intercept (%as-ols-result r)))
     ;;@doc (stats:ols-t-slope r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-t-slope`.
     ;;@example
     ;; (stats:ols-t-slope 'x)
-    (defun stats:ols-t-slope (r)
-      (%ols-result-t-slope (%as-ols-result r)))
+    (defun stats:ols-t-slope (r) (%ols-result-t-slope (%as-ols-result r)))
     ;;@doc (stats:ols-t-intercept r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-t-intercept`.
     ;;@example
     ;; (stats:ols-t-intercept 'x)
-    (defun stats:ols-t-intercept (r)
-      (%ols-result-t-intercept (%as-ols-result r)))
+    (defun stats:ols-t-intercept (r) (%ols-result-t-intercept (%as-ols-result r)))
     ;;@doc (stats:ols-p-slope r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-p-slope`.
     ;;@example
     ;; (stats:ols-p-slope 'x)
-    (defun stats:ols-p-slope (r)
-      (%ols-result-p-slope (%as-ols-result r)))
+    (defun stats:ols-p-slope (r) (%ols-result-p-slope (%as-ols-result r)))
     ;;@doc (stats:ols-p-intercept r)
     ;;@category Stats
     ;;@module std.stats
     ;; Compute `stats:ols-p-intercept`.
     ;;@example
     ;; (stats:ols-p-intercept 'x)
-    (defun stats:ols-p-intercept (r)
-      (%ols-result-p-intercept (%as-ols-result r)))
+    (defun stats:ols-p-intercept (r) (%ols-result-p-intercept (%as-ols-result r)))
 
     ;;  Multivariate / column-wise operations 
     ;; All accept either:
@@ -252,9 +271,7 @@
     ;;@example
     ;; (stats:mean-vec 'x '())
     (defun stats:mean-vec (data . rest)
-      (if (null? rest)
-          (%stats-mean-vec data)
-          (%stats-mean-vec data (car rest))))
+      (if (null? rest) (%stats-mean-vec data) (%stats-mean-vec data (car rest))))
 
     ;;@doc (stats:var-vec data . rest)
     ;;@category Stats
@@ -263,9 +280,7 @@
     ;;@example
     ;; (stats:var-vec 'x '())
     (defun stats:var-vec (data . rest)
-      (if (null? rest)
-          (%stats-var-vec data)
-          (%stats-var-vec data (car rest))))
+      (if (null? rest) (%stats-var-vec data) (%stats-var-vec data (car rest))))
 
     ;;@doc (stats:cov-matrix data . rest)
     ;;@category Stats
@@ -274,9 +289,7 @@
     ;;@example
     ;; (stats:cov-matrix 'x '())
     (defun stats:cov-matrix (data . rest)
-      (if (null? rest)
-          (%stats-cov-matrix data)
-          (%stats-cov-matrix data (car rest))))
+      (if (null? rest) (%stats-cov-matrix data) (%stats-cov-matrix data (car rest))))
 
     ;;@doc (stats:cor-matrix data . rest)
     ;;@category Stats
@@ -285,9 +298,7 @@
     ;;@example
     ;; (stats:cor-matrix 'x '())
     (defun stats:cor-matrix (data . rest)
-      (if (null? rest)
-          (%stats-cor-matrix data)
-          (%stats-cor-matrix data (car rest))))
+      (if (null? rest) (%stats-cor-matrix data) (%stats-cor-matrix data (car rest))))
 
     ;;@doc (stats:quantile-vec a b . rest)
     ;;@category Stats
@@ -298,9 +309,7 @@
     ;;   (stats:quantile-vec (list seq1 seq2) p)
     ;;   (stats:quantile-vec fact-table '(col1 col2) p)
     (defun stats:quantile-vec (a b . rest)
-      (if (null? rest)
-          (%stats-quantile-vec a b)
-          (%stats-quantile-vec a b (car rest))))
+      (if (null? rest) (%stats-quantile-vec a b) (%stats-quantile-vec a b (car rest))))
 
     ;;@doc (stats:ols-multi a b . rest)
     ;;@category Stats
@@ -311,9 +320,7 @@
     ;;   (stats:ols-multi y-seq (list x1 x2))
     ;;   (stats:ols-multi fact-table y-col '(x1-col x2-col))
     (defun stats:ols-multi (a b . rest)
-      (if (null? rest)
-          (%stats-ols-multi a b)
-          (%stats-ols-multi a b (car rest))))
+      (if (null? rest) (%stats-ols-multi a b) (%stats-ols-multi a b (car rest))))
 
     ;;@doc (%stats:assoc-value alist sym-key str-key)
     ;;@category Stats
@@ -323,10 +330,7 @@
     ;; (%stats:assoc-value 'x 'x 'x)
     (defun %stats:assoc-value (alist sym-key str-key)
       (let ((sp (assoc sym-key alist)))
-        (if sp
-            (cdr sp)
-            (let ((tp (assoc str-key alist)))
-              (if tp (cdr tp) #f)))))
+        (if sp (cdr sp) (let ((tp (assoc str-key alist))) (if tp (cdr tp) #f)))))
 
     ;;@doc (%stats:pair-cdr-at alist idx)
     ;;@category Stats
@@ -336,9 +340,8 @@
     ;; (%stats:pair-cdr-at 'x 1)
     (defun %stats:pair-cdr-at (alist idx)
       (if (or (< idx 0) (>= idx (length alist)))
-          #f
-          (let ((entry (list-ref alist idx)))
-            (if (pair? entry) (cdr entry) #f))))
+        #f
+        (let ((entry (list-ref alist idx))) (if (pair? entry) (cdr entry) #f))))
 
     ;;@doc (stats:ols-multi-coefficients r)
     ;;@category Stats
@@ -347,8 +350,7 @@
     ;; (stats:ols-multi-coefficients 'x)
     ;;  OLS-multi accessors (result is an alist) 
     (defun stats:ols-multi-coefficients (r)
-      (or (%stats:assoc-value r 'coefficients "coefficients")
-          (%stats:pair-cdr-at r 0)))
+      (or (%stats:assoc-value r 'coefficients "coefficients") (%stats:pair-cdr-at r 0)))
     ;;@doc (stats:ols-multi-std-errors r)
     ;;@category Stats
     ;;@module std.stats
@@ -356,8 +358,7 @@
     ;;@example
     ;; (stats:ols-multi-std-errors 'x)
     (defun stats:ols-multi-std-errors (r)
-      (or (%stats:assoc-value r 'std-errors "std-errors")
-          (%stats:pair-cdr-at r 1)))
+      (or (%stats:assoc-value r 'std-errors "std-errors") (%stats:pair-cdr-at r 1)))
     ;;@doc (stats:ols-multi-t-stats r)
     ;;@category Stats
     ;;@module std.stats
@@ -365,8 +366,7 @@
     ;;@example
     ;; (stats:ols-multi-t-stats 'x)
     (defun stats:ols-multi-t-stats (r)
-      (or (%stats:assoc-value r 't-stats "t-stats")
-          (%stats:pair-cdr-at r 2)))
+      (or (%stats:assoc-value r 't-stats "t-stats") (%stats:pair-cdr-at r 2)))
     ;;@doc (stats:ols-multi-p-values r)
     ;;@category Stats
     ;;@module std.stats
@@ -374,8 +374,7 @@
     ;;@example
     ;; (stats:ols-multi-p-values 'x)
     (defun stats:ols-multi-p-values (r)
-      (or (%stats:assoc-value r 'p-values "p-values")
-          (%stats:pair-cdr-at r 3)))
+      (or (%stats:assoc-value r 'p-values "p-values") (%stats:pair-cdr-at r 3)))
     ;;@doc (stats:ols-multi-r-squared r)
     ;;@category Stats
     ;;@module std.stats
@@ -383,8 +382,7 @@
     ;;@example
     ;; (stats:ols-multi-r-squared 'x)
     (defun stats:ols-multi-r-squared (r)
-      (or (%stats:assoc-value r 'r-squared "r-squared")
-          (%stats:pair-cdr-at r 4)))
+      (or (%stats:assoc-value r 'r-squared "r-squared") (%stats:pair-cdr-at r 4)))
     ;;@doc (stats:ols-multi-adj-r-squared r)
     ;;@category Stats
     ;;@module std.stats
@@ -392,8 +390,7 @@
     ;;@example
     ;; (stats:ols-multi-adj-r-squared 'x)
     (defun stats:ols-multi-adj-r-squared (r)
-      (or (%stats:assoc-value r 'adj-r-squared "adj-r-squared")
-          (%stats:pair-cdr-at r 5)))
+      (or (%stats:assoc-value r 'adj-r-squared "adj-r-squared") (%stats:pair-cdr-at r 5)))
     ;;@doc (stats:ols-multi-residual-se r)
     ;;@category Stats
     ;;@module std.stats
@@ -401,8 +398,7 @@
     ;;@example
     ;; (stats:ols-multi-residual-se 'x)
     (defun stats:ols-multi-residual-se (r)
-      (or (%stats:assoc-value r 'residual-se "residual-se")
-          (%stats:pair-cdr-at r 6)))
+      (or (%stats:assoc-value r 'residual-se "residual-se") (%stats:pair-cdr-at r 6)))
 
     ;; -- Learner-spec helpers --------------------------------------------
 
@@ -413,10 +409,7 @@
     ;;@example
     ;; (%dot 1 1)
     (defun %dot (a b)
-      (if (or (null? a) (null? b))
-          0.0
-          (+ (* (car a) (car b))
-             (%dot (cdr a) (cdr b)))))
+      (if (or (null? a) (null? b)) 0.0 (+ (* (car a) (car b)) (%dot (cdr a) (cdr b)))))
 
     ;;@doc (%matrix-cols x-matrix)
     ;;@category Stats
@@ -426,15 +419,14 @@
     ;; (%matrix-cols 'x)
     (defun %matrix-cols (x-matrix)
       (if (null? x-matrix)
-          '()
-          (let ((p (length (car x-matrix))))
-            (let loop ((j 0) (acc '()))
-              (if (= j p)
-                  (reverse acc)
-                  (loop (+ j 1)
-                        (cons (map* (lambda (row) (list-ref row j))
-                                    x-matrix)
-                              acc)))))))
+        '()
+        (let ((p (length (car x-matrix))))
+          (let
+            loop
+            ((j 0) (acc '()))
+            (if (= j p)
+              (reverse acc)
+              (loop (+ j 1) (cons (map* (lambda (row) (list-ref row j)) x-matrix) acc)))))))
 
     ;;@doc (%assert-matrix-rows x-matrix)
     ;;@category Stats
@@ -444,11 +436,11 @@
     ;; (%assert-matrix-rows 'x)
     (defun %assert-matrix-rows (x-matrix)
       (if (null? x-matrix)
-          x-matrix
-          (let ((p (length (car x-matrix))))
-            (if (every? (lambda (row) (= (length row) p)) x-matrix)
-                x-matrix
-                (error "stats: learner expected rectangular design matrix")))))
+        x-matrix
+        (let ((p (length (car x-matrix))))
+          (if (every? (lambda (row) (= (length row) p)) x-matrix)
+            x-matrix
+            (error "stats: learner expected rectangular design matrix")))))
 
     ;;@doc (%clip01 p)
     ;;@category Stats
@@ -456,11 +448,7 @@
     ;; Compute `%clip01`.
     ;;@example
     ;; (%clip01 'x)
-    (defun %clip01 (p)
-      (cond
-        ((< p 1e-9) 1e-9)
-        ((> p (- 1.0 1e-9)) (- 1.0 1e-9))
-        (else p)))
+    (defun %clip01 (p) (cond ((< p 1e-9) 1e-9) ((> p (- 1.0 1e-9)) (- 1.0 1e-9)) (else p)))
 
     ;;@doc (%sigmoid x)
     ;;@category Stats
@@ -468,8 +456,7 @@
     ;; Compute `%sigmoid`.
     ;;@example
     ;; (%sigmoid 1)
-    (defun %sigmoid (x)
-      (%clip01 (/ 1.0 (+ 1.0 (exp (- x))))))
+    (defun %sigmoid (x) (%clip01 (/ 1.0 (+ 1.0 (exp (- x))))))
 
     ;;@doc (%normalize-binary-target v)
     ;;@category Stats
@@ -478,8 +465,7 @@
     ;;@example
     ;; (%normalize-binary-target 1)
     (defun %normalize-binary-target (v)
-      (cond
-        ((equal? v 1) 1.0)
+      (cond ((equal? v 1) 1.0)
         ((equal? v 0) 0.0)
         ((eq? v #t) 1.0)
         ((eq? v #f) 0.0)
@@ -497,38 +483,33 @@
     ;;    (kind . regressor))
     ;; `fit-weighted` currently falls back to unweighted OLS.
     (defun stats:make-ols-regressor ()
-      (letrec
-          ((fit
-             (lambda (x-matrix y-vector)
-               (%assert-matrix-rows x-matrix)
-               (if (not (= (length x-matrix) (length y-vector)))
-                   (error "stats: OLS learner expected matching X/Y lengths")
+      (letrec ((fit
+                 (lambda (x-matrix y-vector)
+                   (%assert-matrix-rows x-matrix)
+                   (if (not (= (length x-matrix) (length y-vector)))
+                     (error "stats: OLS learner expected matching X/Y lengths")
                      (let* ((raw-coeffs
-                            (if (null? y-vector)
+                              (if (null? y-vector)
                                 '(0.0)
-                                (if (or (null? x-matrix)
-                                        (null? (car x-matrix)))
-                                    (list (stats:mean y-vector))
-                                    (stats:ols-multi-coefficients
-                                      (stats:ols-multi y-vector
-                                                       (%matrix-cols x-matrix))))))
+                                (if (or (null? x-matrix) (null? (car x-matrix)))
+                                  (list (stats:mean y-vector))
+                                  (stats:ols-multi-coefficients
+                                    (stats:ols-multi y-vector (%matrix-cols x-matrix))))))
                             (coeffs (if (pair? raw-coeffs) raw-coeffs '(0.0))))
-                     (list (cons 'coefficients coeffs))))))
-           (predict
-             (lambda (model x-matrix)
-               (%assert-matrix-rows x-matrix)
-               (let* ((entry (assq 'coefficients model))
-                      (coeffs (if entry (cdr entry) '(0.0)))
-                      (intercept (if (null? coeffs) 0.0 (car coeffs)))
-                      (betas (if (null? coeffs) '() (cdr coeffs))))
-                 (map* (lambda (row)
-                         (+ intercept (%dot betas row)))
-                       x-matrix))))
-           (fit-weighted
-             (lambda (x-matrix y-vector w-vector)
-               (if (not (= (length x-matrix) (length w-vector)))
-                   (error "stats: OLS learner expected matching X/weights lengths")
-                   (fit x-matrix y-vector)))))
+                       (list (cons 'coefficients coeffs))))))
+               (predict
+                 (lambda (model x-matrix)
+                   (%assert-matrix-rows x-matrix)
+                   (let* ((entry (assq 'coefficients model))
+                          (coeffs (if entry (cdr entry) '(0.0)))
+                          (intercept (if (null? coeffs) 0.0 (car coeffs)))
+                          (betas (if (null? coeffs) '() (cdr coeffs))))
+                     (map* (lambda (row) (+ intercept (%dot betas row))) x-matrix))))
+               (fit-weighted
+                 (lambda (x-matrix y-vector w-vector)
+                   (if (not (= (length x-matrix) (length w-vector)))
+                     (error "stats: OLS learner expected matching X/weights lengths")
+                     (fit x-matrix y-vector)))))
         (list
           (cons 'fit fit)
           (cons 'predict predict)
@@ -542,47 +523,44 @@
     ;; (stats:make-logistic)
     ;; Logistic learner-spec for binary outcomes.
     (defun stats:make-logistic ()
-      (let ((epochs 250)
-            (lr 0.05)
-            (l2 0.0))
-        (letrec
-            ((fit
-               (lambda (x-matrix y-vector)
-                 (%assert-matrix-rows x-matrix)
-                 (if (or (null? x-matrix)
-                         (not (= (length x-matrix) (length y-vector))))
-                     (error "stats: logistic learner expected non-empty matching X/Y lengths")
-                     (let* ((n (length x-matrix))
-                            (p (length (car x-matrix)))
-                            (ys (map* %normalize-binary-target y-vector))
-                            (w (make-vector p 0.0)))
-                       (let train ((step 0) (bias 0.0))
-                         (if (>= step epochs)
-                             (list
-                               (cons 'bias bias)
-                               (cons 'weights (vector->list w)))
+      (let ((epochs 250) (lr 0.05) (l2 0.0))
+        (letrec ((fit
+                   (lambda (x-matrix y-vector)
+                     (%assert-matrix-rows x-matrix)
+                     (if (or (null? x-matrix) (not (= (length x-matrix) (length y-vector))))
+                       (error "stats: logistic learner expected non-empty matching X/Y lengths")
+                       (let* ((n (length x-matrix))
+                              (p (length (car x-matrix)))
+                              (ys (map* %normalize-binary-target y-vector))
+                              (w (make-vector p 0.0)))
+                         (let
+                           train
+                           ((step 0) (bias 0.0))
+                           (if (>= step epochs)
+                             (list (cons 'bias bias) (cons 'weights (vector->list w)))
                              (let* ((grads
-                                      (foldl (lambda (acc pair)
-                                               (let* ((row (car pair))
-                                                      (yv (cdr pair))
-                                                      (z (+ bias (%dot (vector->list w) row)))
-                                                      (p-hat (%sigmoid z))
-                                                      (err (- p-hat yv))
-                                                      (gb (+ (car acc) err))
-                                                      (gw-old (cdr acc))
-                                                      (gw-new
-                                                        (map-indexed
-                                                          (lambda (j g)
-                                                            (+ g (* err (list-ref row j))))
-                                                          gw-old)))
-                                                 (cons gb gw-new)))
-                                             (cons 0.0
-                                                   (map* (lambda (_j) 0.0) (range 0 p)))
-                                             (zip x-matrix ys)))
+                                      (foldl
+                                        (lambda (acc pair)
+                                          (let* ((row (car pair))
+                                                 (yv (cdr pair))
+                                                 (z (+ bias (%dot (vector->list w) row)))
+                                                 (p-hat (%sigmoid z))
+                                                 (err (- p-hat yv))
+                                                 (gb (+ (car acc) err))
+                                                 (gw-old (cdr acc))
+                                                 (gw-new
+                                                   (map-indexed
+                                                     (lambda (j g) (+ g (* err (list-ref row j))))
+                                                     gw-old)))
+                                            (cons gb gw-new)))
+                                        (cons 0.0 (map* (lambda (_j) 0.0) (range 0 p)))
+                                        (zip x-matrix ys)))
                                     (gb (/ (car grads) n))
                                     (gw (cdr grads))
                                     (next-bias (- bias (* lr gb))))
-                               (let update ((j 0))
+                               (let
+                                 update
+                                 ((j 0))
                                  (when (< j p)
                                    (let* ((wj (vector-ref w j))
                                           (gj (/ (list-ref gw j) n))
@@ -591,20 +569,15 @@
                                      (vector-set! w j wj2)
                                      (update (+ j 1)))))
                                (train (+ step 1) next-bias))))))))
-             (predict
-               (lambda (model x-matrix)
-                 (%assert-matrix-rows x-matrix)
-                 (let* ((b-entry (assq 'bias model))
-                        (w-entry (assq 'weights model))
-                        (bias (if b-entry (cdr b-entry) 0.0))
-                        (weights (if w-entry (cdr w-entry) '())))
-                   (map* (lambda (row)
-                           (%sigmoid (+ bias (%dot weights row))))
-                         x-matrix)))))
-          (list
-            (cons 'fit fit)
-            (cons 'predict predict)
-            (cons 'kind 'classifier)))))
+                 (predict
+                   (lambda (model x-matrix)
+                     (%assert-matrix-rows x-matrix)
+                     (let* ((b-entry (assq 'bias model))
+                            (w-entry (assq 'weights model))
+                            (bias (if b-entry (cdr b-entry) 0.0))
+                            (weights (if w-entry (cdr w-entry) '())))
+                       (map* (lambda (row) (%sigmoid (+ bias (%dot weights row)))) x-matrix)))))
+          (list (cons 'fit fit) (cons 'predict predict) (cons 'kind 'classifier)))))
 
     ;;@doc (stats:summary xs)
     ;;@category Stats
@@ -614,13 +587,11 @@
     ;; Returns an alist with key statistics for a numeric list.
     (defun stats:summary (xs)
       (list
-        (list 'n      (length xs))
-        (list 'mean   (stats:mean xs))
+        (list 'n (length xs))
+        (list 'mean (stats:mean xs))
         (list 'stddev (stats:stddev xs))
-        (list 'sem    (stats:sem xs))
+        (list 'sem (stats:sem xs))
         (list 'median (stats:median xs))
-        (list 'min    (stats:percentile xs 0.0))
-        (list 'max    (stats:percentile xs 1.0))
-        (list 'ci-95  (stats:ci xs 0.95))))
-
-  ))
+        (list 'min (stats:percentile xs 0.0))
+        (list 'max (stats:percentile xs 1.0))
+        (list 'ci-95 (stats:ci xs 0.95))))))

@@ -46,24 +46,36 @@
   ;; Note: `register-attr-hook!`, `put-attr`, `get-attr` are core VM
   ;; built-ins registered globally by core_primitives.cc  no import needed.
   (export
-    ;; Domain constructors
-    clp:domain clp:in-fd
+  ;; Domain constructors
+  clp:domain
+    clp:in-fd
     ;; Domain accessors / predicates
-    clp:domain-z? clp:domain-fd?
-    clp:domain-lo clp:domain-hi
-    clp:domain-values clp:domain-empty?
+    clp:domain-z?
+    clp:domain-fd?
+    clp:domain-lo
+    clp:domain-hi
+    clp:domain-values
+    clp:domain-empty?
     ;; Constraint propagators
-    clp:= clp:+
-    clp:plus-offset clp:abs
-    clp:* clp:sum clp:scalar-product clp:element
-    clp:<= clp:>= clp:<>
+    clp:=
+    clp:+
+    clp:plus-offset
+    clp:abs
+    clp:*
+    clp:sum
+    clp:scalar-product
+    clp:element
+    clp:<=
+    clp:>=
+    clp:<>
     ;; Global constraint
     clp:all-different
     ;; Solver (labelling)
     clp:solve
     clp:labeling
     ;; Optimisation
-    clp:minimize clp:maximize
+    clp:minimize
+    clp:maximize
     ;; Deprecated aliases (remove after one minor release)
     clp:!=)
   (begin
@@ -76,14 +88,14 @@
     ;; Constraint Logic Programming over Eta's native unification Uses `clp:domain`.
     ;;@example
     ;; (clp:domain-lo dom)
-    (defun clp:domain (var lo hi)  (%clp-domain-z!  var lo hi))
+    (defun clp:domain (var lo hi) (%clp-domain-z! var lo hi))
     ;;@doc (clp:in-fd var . vals)
     ;;@category Clp
     ;;@module std.clp
     ;; Compute `clp:in-fd`.
     ;;@example
     ;; (clp:in-fd 'x '())
-    (defun clp:in-fd  (var . vals) (%clp-domain-fd! var vals))
+    (defun clp:in-fd (var . vals) (%clp-domain-fd! var vals))
 
     ;;  Domain accessors 
 
@@ -93,8 +105,7 @@
     ;; Return whether `clp:domain-z?` holds.
     ;;@example
     ;; (clp:domain-z? 'x)
-    (defun clp:domain-z? (dom)
-      (and (pair? dom) (eq? (car dom) 'z)))
+    (defun clp:domain-z? (dom) (and (pair? dom) (eq? (car dom) 'z)))
 
     ;;@doc (clp:domain-fd? dom)
     ;;@category Clp
@@ -102,8 +113,7 @@
     ;; Return whether `clp:domain-fd?` holds.
     ;;@example
     ;; (clp:domain-fd? 'x)
-    (defun clp:domain-fd? (dom)
-      (and (pair? dom) (eq? (car dom) 'fd)))
+    (defun clp:domain-fd? (dom) (and (pair? dom) (eq? (car dom) 'fd)))
 
     ;;@doc (clp:domain-lo dom)
     ;;@category Clp
@@ -113,13 +123,11 @@
     ;; (clp:domain-lo 'x)
     (defun clp:domain-lo (dom)
       (if (not (pair? dom))
-          #f
-          (case (car dom)
-            ((z) (car (cdr dom)))
-            ((fd)
-             (let ((vs (cdr dom)))
-               (if (null? vs) #f (car vs))))
-            (else #f))))
+        #f
+        (case (car dom)
+          ((z) (car (cdr dom)))
+          ((fd) (let ((vs (cdr dom))) (if (null? vs) #f (car vs))))
+          (else #f))))
 
     ;;@doc (clp:domain-hi dom)
     ;;@category Clp
@@ -129,16 +137,13 @@
     ;; (clp:domain-hi 'x)
     (defun clp:domain-hi (dom)
       (if (not (pair? dom))
-          #f
-          (case (car dom)
-            ((z) (car (cdr (cdr dom))))
-            ((fd)
-             (let ((vs (cdr dom)))
-               (if (null? vs) #f
-                   (let loop ((xs vs))
-                     (if (null? (cdr xs)) (car xs)
-                         (loop (cdr xs)))))))
-            (else #f))))
+        #f
+        (case (car dom)
+          ((z) (car (cdr (cdr dom))))
+          ((fd)
+           (let ((vs (cdr dom)))
+             (if (null? vs) #f (let loop ((xs vs)) (if (null? (cdr xs)) (car xs) (loop (cdr xs)))))))
+          (else #f))))
 
     ;;@doc (clp:domain-values dom)
     ;;@category Clp
@@ -148,13 +153,11 @@
     ;; (clp:domain-values 'x)
     (defun clp:domain-values (dom)
       (if (not (pair? dom))
-          '()
-          (case (car dom)
-            ((z)
-             (range (clp:domain-lo dom) (+ (clp:domain-hi dom) 1)))
-            ((fd)
-             (cdr dom))
-            (else '()))))
+        '()
+        (case (car dom)
+          ((z) (range (clp:domain-lo dom) (+ (clp:domain-hi dom) 1)))
+          ((fd) (cdr dom))
+          (else '()))))
 
     ;;@doc (clp:domain-empty? dom)
     ;;@category Clp
@@ -162,8 +165,7 @@
     ;; Return whether `clp:domain-empty?` holds.
     ;;@example
     ;; (clp:domain-empty? 'x)
-    (defun clp:domain-empty? (dom)
-      (or (not dom) (null? (clp:domain-values dom))))
+    (defun clp:domain-empty? (dom) (or (not dom) (null? (clp:domain-values dom))))
 
     ;;@doc (%clp-domain-size var)
     ;;@category Clp
@@ -172,8 +174,7 @@
     ;;@example
     ;; (%clp-domain-size 'x)
     (defun %clp-domain-size (var)
-      (let ((dom (%clp-get-domain var)))
-        (if dom (length (clp:domain-values dom)) #f)))
+      (let ((dom (%clp-get-domain var))) (if dom (length (clp:domain-values dom)) #f)))
 
     ;;  Internal helpers 
 
@@ -184,8 +185,7 @@
     ;;@example
     ;; (%clp-domain-values-for-var 'x)
     (defun %clp-domain-values-for-var (var)
-      (let ((dom (%clp-get-domain var)))
-        (if dom (clp:domain-values dom) '())))
+      (let ((dom (%clp-get-domain var))) (if dom (clp:domain-values dom) '())))
 
     ;;  Constraint propagators 
 
@@ -196,19 +196,15 @@
     ;;@example
     ;; (clp:= 1 1)
     (defun clp:= (x y)
-      (let ((dx (%clp-get-domain x))
-            (dy (%clp-get-domain y)))
+      (let ((dx (%clp-get-domain x)) (dy (%clp-get-domain y)))
         (if (and dx dy)
-            (let* ((vx (clp:domain-values dx))
-                   (vy (clp:domain-values dy))
-                   (common (filter (lambda (v) (member v vy)) vx)))
-              (if (null? common)
-                  #f
-                  (begin
-                    (%clp-domain-fd! x common)
-                    (%clp-domain-fd! y common)
-                    (== x y))))
-            (== x y))))
+          (let* ((vx (clp:domain-values dx))
+                 (vy (clp:domain-values dy))
+                 (common (filter (lambda (v) (member v vy)) vx)))
+            (if (null? common)
+              #f
+              (begin (%clp-domain-fd! x common) (%clp-domain-fd! y common) (== x y))))
+          (== x y))))
 
     ;;@doc (clp:+ x y z)
     ;;@category Clp
@@ -220,12 +216,13 @@
       ;; Native bounds-consistency propagator with re-firing on bind.
       ;; Runs once immediately; attaches a re-propagator thunk to each var so
       ;; subsequent bindings (of any of x/y/z) re-trigger narrowing.
-      (and (%clp-fd-plus! x y z)
-           (let ((thunk (lambda () (%clp-fd-plus! x y z))))
-             (%clp-prop-attach! x thunk)
-             (%clp-prop-attach! y thunk)
-             (%clp-prop-attach! z thunk)
-             #t)))
+      (and
+        (%clp-fd-plus! x y z)
+        (let ((thunk (lambda () (%clp-fd-plus! x y z))))
+          (%clp-prop-attach! x thunk)
+          (%clp-prop-attach! y thunk)
+          (%clp-prop-attach! z thunk)
+          #t)))
 
     ;;@doc (clp:plus-offset y x k)
     ;;@category Clp
@@ -235,11 +232,12 @@
     ;; (clp:plus-offset y x k)   posts y = x + k  (k a ground integer).
     ;; Useful for N-queens diagonal constraints: Ai = Qi + i, Bi = Qi  i.
     (defun clp:plus-offset (y x k)
-      (and (%clp-fd-plus-offset! y x k)
-           (let ((thunk (lambda () (%clp-fd-plus-offset! y x k))))
-             (%clp-prop-attach! y thunk)
-             (%clp-prop-attach! x thunk)
-             #t)))
+      (and
+        (%clp-fd-plus-offset! y x k)
+        (let ((thunk (lambda () (%clp-fd-plus-offset! y x k))))
+          (%clp-prop-attach! y thunk)
+          (%clp-prop-attach! x thunk)
+          #t)))
 
     ;;@doc (clp:abs y x)
     ;;@category Clp
@@ -248,11 +246,12 @@
     ;; (clp:abs 1 1)
     ;; (clp:abs y x)   posts y = |x|.
     (defun clp:abs (y x)
-      (and (%clp-fd-abs! y x)
-           (let ((thunk (lambda () (%clp-fd-abs! y x))))
-             (%clp-prop-attach! y thunk)
-             (%clp-prop-attach! x thunk)
-             #t)))
+      (and
+        (%clp-fd-abs! y x)
+        (let ((thunk (lambda () (%clp-fd-abs! y x))))
+          (%clp-prop-attach! y thunk)
+          (%clp-prop-attach! x thunk)
+          #t)))
 
     ;;@doc (clp:* z x y)
     ;;@category Clp
@@ -261,12 +260,13 @@
     ;; (clp:* 1 1 1)
     ;; (clp:* z x y)   posts z = x * y (bounds consistency).
     (defun clp:* (z x y)
-      (and (%clp-fd-times! z x y)
-           (let ((thunk (lambda () (%clp-fd-times! z x y))))
-             (%clp-prop-attach! z thunk)
-             (%clp-prop-attach! x thunk)
-             (%clp-prop-attach! y thunk)
-             #t)))
+      (and
+        (%clp-fd-times! z x y)
+        (let ((thunk (lambda () (%clp-fd-times! z x y))))
+          (%clp-prop-attach! z thunk)
+          (%clp-prop-attach! x thunk)
+          (%clp-prop-attach! y thunk)
+          #t)))
 
     ;;@doc (clp:sum xs s)
     ;;@category Clp
@@ -276,15 +276,14 @@
     ;; (clp:sum xs s)   posts  xs = s.  `xs` is a list of logic vars
     ;; and/or ground integers.
     (defun clp:sum (xs s)
-      (and (%clp-fd-sum! xs s)
-           (let ((thunk (lambda () (%clp-fd-sum! xs s))))
-             (%clp-prop-attach! s thunk)
-             (let loop ((ys xs))
-               (cond
-                 ((null? ys) #t)
-                 (else
-                   (%clp-prop-attach! (car ys) thunk)
-                   (loop (cdr ys))))))))
+      (and
+        (%clp-fd-sum! xs s)
+        (let ((thunk (lambda () (%clp-fd-sum! xs s))))
+          (%clp-prop-attach! s thunk)
+          (let
+            loop
+            ((ys xs))
+            (cond ((null? ys) #t) (else (%clp-prop-attach! (car ys) thunk) (loop (cdr ys))))))))
 
     ;;@doc (clp:scalar-product cs xs s)
     ;;@category Clp
@@ -293,15 +292,14 @@
     ;; (clp:scalar-product 'x '() "sample")
     ;; (clp:scalar-product cs xs s)   posts  cx = s.
     (defun clp:scalar-product (cs xs s)
-      (and (%clp-fd-scalar-product! cs xs s)
-           (let ((thunk (lambda () (%clp-fd-scalar-product! cs xs s))))
-             (%clp-prop-attach! s thunk)
-             (let loop ((ys xs))
-               (cond
-                 ((null? ys) #t)
-                 (else
-                   (%clp-prop-attach! (car ys) thunk)
-                   (loop (cdr ys))))))))
+      (and
+        (%clp-fd-scalar-product! cs xs s)
+        (let ((thunk (lambda () (%clp-fd-scalar-product! cs xs s))))
+          (%clp-prop-attach! s thunk)
+          (let
+            loop
+            ((ys xs))
+            (cond ((null? ys) #t) (else (%clp-prop-attach! (car ys) thunk) (loop (cdr ys))))))))
 
     ;;@doc (clp:element i xs v)
     ;;@category Clp
@@ -310,16 +308,15 @@
     ;; (clp:element 1 '() 1)
     ;; (clp:element i xs v)   posts xs[i] = v, one-based index.
     (defun clp:element (i xs v)
-      (and (%clp-fd-element! i xs v)
-           (let ((thunk (lambda () (%clp-fd-element! i xs v))))
-             (%clp-prop-attach! i thunk)
-             (%clp-prop-attach! v thunk)
-             (let loop ((ys xs))
-               (cond
-                 ((null? ys) #t)
-                 (else
-                   (%clp-prop-attach! (car ys) thunk)
-                   (loop (cdr ys))))))))
+      (and
+        (%clp-fd-element! i xs v)
+        (let ((thunk (lambda () (%clp-fd-element! i xs v))))
+          (%clp-prop-attach! i thunk)
+          (%clp-prop-attach! v thunk)
+          (let
+            loop
+            ((ys xs))
+            (cond ((null? ys) #t) (else (%clp-prop-attach! (car ys) thunk) (loop (cdr ys))))))))
 
     ;;@doc (clp:<= x y)
     ;;@category Clp
@@ -328,19 +325,17 @@
     ;;@example
     ;; (clp:<= 1 1)
     (defun clp:<= (x y)
-      (let ((dx (%clp-get-domain x))
-            (dy (%clp-get-domain y)))
+      (let ((dx (%clp-get-domain x)) (dy (%clp-get-domain y)))
         (if (and dx dy (clp:domain-z? dx) (clp:domain-z? dy))
-            (let* ((nxhi (min (clp:domain-hi dx) (clp:domain-hi dy)))
-                   (nylo (max (clp:domain-lo dy) (clp:domain-lo dx))))
-              (if (or (> (clp:domain-lo dx) nxhi)
-                      (> nylo (clp:domain-hi dy)))
-                  #f
-                  (begin
-                    (%clp-domain-z! x (clp:domain-lo dx) nxhi)
-                    (%clp-domain-z! y nylo (clp:domain-hi dy))
-                    #t)))
-            #t)))
+          (let* ((nxhi (min (clp:domain-hi dx) (clp:domain-hi dy)))
+                 (nylo (max (clp:domain-lo dy) (clp:domain-lo dx))))
+            (if (or (> (clp:domain-lo dx) nxhi) (> nylo (clp:domain-hi dy)))
+              #f
+              (begin
+                (%clp-domain-z! x (clp:domain-lo dx) nxhi)
+                (%clp-domain-z! y nylo (clp:domain-hi dy))
+                #t)))
+          #t)))
 
     ;;@doc (clp:>= x y)
     ;;@category Clp
@@ -376,8 +371,7 @@
     ;; Attach a re-propagator thunk to `v`'s `'clp.prop` attribute.
     ;; No-op if `v` is already ground (ground values never fire hooks).
     (defun %clp-prop-attach! (v thunk)
-      (cond
-        ((not (logic-var? (deref-lvar v))) #t)
+      (cond ((not (logic-var? (deref-lvar v))) #t)
         (else
           (let ((existing (get-attr v 'clp.prop)))
             (put-attr v 'clp.prop (cons thunk (if existing existing '())))
@@ -404,14 +398,13 @@
     ;;@example
     ;; (clp:all-different 'x)
     (defun clp:all-different (vars)
-      (and (%clp-fd-all-different! vars)
-           (let ((thunk (lambda () (%clp-fd-all-different! vars))))
-             (let loop ((ys vars))
-               (cond
-                 ((null? ys) #t)
-                 (else
-                   (%clp-prop-attach! (car ys) thunk)
-                   (loop (cdr ys))))))))
+      (and
+        (%clp-fd-all-different! vars)
+        (let ((thunk (lambda () (%clp-fd-all-different! vars))))
+          (let
+            loop
+            ((ys vars))
+            (cond ((null? ys) #t) (else (%clp-prop-attach! (car ys) thunk) (loop (cdr ys))))))))
 
     ;;@doc (clp:<> x y)
     ;;@category Clp
@@ -464,9 +457,8 @@
     ;; (%clp-opt 'x 'x 'x)
     ;; plist lookup with default.
     (defun %clp-opt (opts key default)
-      (cond
-        ((null? opts) default)
-        ((null? (cdr opts)) default)       ; odd length — ignore dangling key
+      (cond ((null? opts) default)
+        ((null? (cdr opts)) default) ; odd length — ignore dangling key
         ((eq? (car opts) key) (car (cdr opts)))
         (else (%clp-opt (cdr (cdr opts)) key default))))
 
@@ -478,33 +470,29 @@
     ;; Normalise rest args into a plist.  The legacy single-symbol form
     ;; `(clp:labeling vars 'ff)` is promoted to `(strategy ff)`.
     (defun %clp-normalise-opts (rest)
-      (cond
-        ((null? rest) '())
-        ((and (null? (cdr rest))
-              (symbol? (car rest)))
-         (list 'strategy (car rest)))
+      (cond ((null? rest) '())
+        ((and (null? (cdr rest)) (symbol? (car rest))) (list 'strategy (car rest)))
         (else rest)))
 
     (defun clp:labeling vars-and-opts
-      (let* ((vars         (car vars-and-opts))
-             (opts         (%clp-normalise-opts (cdr vars-and-opts)))
-             (strategy     (%clp-opt opts 'strategy       'leftmost))
-             (value-order  (%clp-opt opts 'value-ordering 'up))
-             (solutions    (%clp-opt opts 'solutions      'first))
-             (on-solution  (%clp-opt opts 'on-solution    #f))
+      (let* ((vars (car vars-and-opts))
+             (opts (%clp-normalise-opts (cdr vars-and-opts)))
+             (strategy (%clp-opt opts 'strategy 'leftmost))
+             (value-order (%clp-opt opts 'value-ordering 'up))
+             (solutions (%clp-opt opts 'solutions 'first))
+             (on-solution (%clp-opt opts 'on-solution #f))
              ;; Accumulator cell: a single mutable pair whose car is the
              ;; current count, cdr is the reversed solution list.
-             (acc          (cons 0 '())))
+             (acc (cons 0 '())))
         ;; `found-fn` is called at each leaf of the DFS.  Its return value
         ;; tells %clp-search whether to keep searching:
         ;;   #t  keep going (find another solution)
         ;;   #f  stop and propagate success up
         (let ((found-fn
                 (lambda ()
-                  (let* ((snap    (map (lambda (v) (deref-lvar v)) vars))
+                  (let* ((snap (map (lambda (v) (deref-lvar v)) vars))
                          (user-ok (if on-solution (on-solution snap) #t)))
-                    (cond
-                      ((eq? solutions 'first) #f)                 ; always stop
+                    (cond ((eq? solutions 'first) #f) ; always stop
                       ((eq? solutions 'all)
                        (set-car! acc (+ (car acc) 1))
                        (set-cdr! acc (cons snap (cdr acc)))
@@ -512,14 +500,12 @@
                       ((integer? solutions)
                        (set-car! acc (+ (car acc) 1))
                        (set-cdr! acc (cons snap (cdr acc)))
-                       (if (or (eq? user-ok #f)
-                               (>= (car acc) solutions)) #f #t))
+                       (if (or (eq? user-ok #f) (>= (car acc) solutions)) #f #t))
                       (else #f))))))
           (cond
-            ;; 'first: keep the solution's bindings so the caller can
-            ;; inspect them (existing contract).
-            ((eq? solutions 'first)
-             (%clp-search vars strategy value-order found-fn))
+          ;; 'first: keep the solution's bindings so the caller can
+          ;; inspect them (existing contract).
+          ((eq? solutions 'first) (%clp-search vars strategy value-order found-fn))
             ;; Enumeration modes: wrap in a trail mark and unwind after so
             ;; that vars are left unbound when `clp:labeling` returns.
             (else
@@ -538,17 +524,13 @@
     ;; mean "dead-end, backtrack".
     (defun %clp-search (vars strategy value-order found-fn)
       (let ((unbound (filter (lambda (v) (logic-var? (deref-lvar v))) vars)))
-        (cond
-          ((null? unbound)
-           ;; All ground  a solution.  found-fn decides whether to stop.
-           (let ((r (found-fn)))
-             (if r #f #t)))          ; #t-from-fn → keep searching (return #f from %clp-search)
+        (cond ((null? unbound)
+               ;; All ground  a solution.  found-fn decides whether to stop.
+               (let ((r (found-fn))) (if r #f #t))) ; #t-from-fn → keep searching (return #f from %clp-search)
           (else
             (let* ((pick (%clp-pick unbound strategy))
                    (rest (filter (lambda (v) (not (eq? v pick))) vars))
-                   (vals (%clp-order-values
-                           (%clp-domain-values-for-var pick)
-                           value-order)))
+                   (vals (%clp-order-values (%clp-domain-values-for-var pick) value-order)))
               (%clp-try-values pick vals rest strategy value-order found-fn))))))
 
     ;;@doc (%clp-pick vars strategy)
@@ -558,12 +540,10 @@
     ;;@example
     ;; (%clp-pick 'x 'x)
     (defun %clp-pick (vars strategy)
-      (cond
-        ((eq? strategy 'leftmost)             (car vars))
-        ((or (eq? strategy 'ff)
-             (eq? strategy 'smallest))        (%clp-pick-by vars <))
-        ((eq? strategy 'largest)              (%clp-pick-by vars >))
-        (else                                 (car vars))))
+      (cond ((eq? strategy 'leftmost) (car vars))
+        ((or (eq? strategy 'ff) (eq? strategy 'smallest)) (%clp-pick-by vars <))
+        ((eq? strategy 'largest) (%clp-pick-by vars >))
+        (else (car vars))))
 
     ;;@doc (%clp-pick-by vars cmp)
     ;;@category Clp
@@ -572,16 +552,13 @@
     ;; (%clp-pick-by 'x 'x)
     ;; Pick the var whose domain size is extremal under `cmp` (< = smallest).
     (defun %clp-pick-by (vars cmp)
-      (let loop ((xs (cdr vars))
-                 (best (car vars))
-                 (best-sz (or (%clp-domain-size (car vars)) 999999999)))
-        (cond
-          ((null? xs) best)
+      (let
+        loop
+        ((xs (cdr vars)) (best (car vars)) (best-sz (or (%clp-domain-size (car vars)) 999999999)))
+        (cond ((null? xs) best)
           (else
             (let ((sz (or (%clp-domain-size (car xs)) 999999999)))
-              (if (cmp sz best-sz)
-                  (loop (cdr xs) (car xs) sz)
-                  (loop (cdr xs) best best-sz)))))))
+              (if (cmp sz best-sz) (loop (cdr xs) (car xs) sz) (loop (cdr xs) best best-sz)))))))
 
     ;;@doc (%clp-order-values vals order)
     ;;@category Clp
@@ -590,10 +567,7 @@
     ;;@example
     ;; (%clp-order-values '() 'x)
     (defun %clp-order-values (vals order)
-      (cond
-        ((null? vals) vals)
-        ((eq? order 'down) (reverse vals))
-        (else vals)))
+      (cond ((null? vals) vals) ((eq? order 'down) (reverse vals)) (else vals)))
 
     ;;@doc (%clp-try-values var vals rest strategy value-order found-fn)
     ;;@category Clp
@@ -602,20 +576,17 @@
     ;;@example
     ;; (%clp-try-values 'x '() '() 'x 'x (lambda (x) x))
     (defun %clp-try-values (var vals rest strategy value-order found-fn)
-      (cond
-        ((null? vals) #f)
+      (cond ((null? vals) #f)
         (else
-          (let* ((m  (trail-mark))
-                 (ok (and (unify var (car vals))
-                          (%clp-search rest strategy value-order found-fn))))
-            (cond
-              (ok
-               ;; Either a deeper branch said "stop" (ok=#t from %clp-search
-               ;; means "enough, propagate success")  preserve bindings when
-               ;; solutions='first, otherwise we still need to unwind between
-               ;; enumerations.  The leaf has already recorded its snapshot;
-               ;; we bubble the stop signal up without unwinding here.
-               #t)
+          (let* ((m (trail-mark))
+                 (ok (and (unify var (car vals)) (%clp-search rest strategy value-order found-fn))))
+            (cond (ok
+                    ;; Either a deeper branch said "stop" (ok=#t from %clp-search
+                    ;; means "enough, propagate success")  preserve bindings when
+                    ;; solutions='first, otherwise we still need to unwind between
+                    ;; enumerations.  The leaf has already recorded its snapshot;
+                    ;; we bubble the stop signal up without unwinding here.
+                    #t)
               (else
                 (unwind-trail m)
                 (%clp-try-values var (cdr vals) rest strategy value-order found-fn)))))))
@@ -638,29 +609,19 @@
     ;;@example
     ;; (%clp-bb 'x 'x 'x 'x)
     (defun %clp-bb (cost goal-thunk direction best)
-      (let* ((m  (trail-mark))
-             (ok (goal-thunk)))
-        (cond
-          ((not ok)
-           (unwind-trail m)
-           best)
+      (let* ((m (trail-mark)) (ok (goal-thunk)))
+        (cond ((not ok) (unwind-trail m) best)
           (else
             (let ((v (deref-lvar cost)))
-              (cond
-                ((logic-var? v)
-                 (unwind-trail m)
-                 best)
+              (cond ((logic-var? v) (unwind-trail m) best)
                 (else
                   (unwind-trail m)
                   (let ((dom (%clp-get-domain cost)))
-                    (cond
-                      ((and dom (clp:domain-z? dom))
-                       (cond
-                         ((eq? direction 'min)
-                          (%clp-domain-z! cost (clp:domain-lo dom) (- v 1)))
-                         (else
-                          (%clp-domain-z! cost (+ v 1) (clp:domain-hi dom))))
-                       (%clp-bb cost goal-thunk direction v))
+                    (cond ((and dom (clp:domain-z? dom))
+                           (cond ((eq? direction 'min)
+                                  (%clp-domain-z! cost (clp:domain-lo dom) (- v 1)))
+                             (else (%clp-domain-z! cost (+ v 1) (clp:domain-hi dom))))
+                           (%clp-bb cost goal-thunk direction v))
                       (else v))))))))))
 
     ;;@doc (clp:minimize cost goal-thunk)
@@ -676,9 +637,4 @@
     ;; Compute `clp:maximize`.
     ;;@example
     ;; (clp:maximize 'x 'x)
-    (defun clp:maximize (cost goal-thunk) (%clp-bb cost goal-thunk 'max #f))
-
-  ))
-
-
-
+    (defun clp:maximize (cost goal-thunk) (%clp-bb cost goal-thunk 'max #f))))

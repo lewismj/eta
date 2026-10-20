@@ -18,21 +18,35 @@
   (import std.collections)
   (import std.logic)
   (export
-    ;; Domain constructors
-    clp:real clp:real-open clp:real-half-open
+  ;; Domain constructors
+  clp:real
+    clp:real-open
+    clp:real-half-open
     ;; Domain accessors / predicates
-    clp:domain-r? clp:domain-r-lo clp:domain-r-hi
-    clp:domain-r-lo-open? clp:domain-r-hi-open?
+    clp:domain-r?
+    clp:domain-r-lo
+    clp:domain-r-hi
+    clp:domain-r-lo-open?
+    clp:domain-r-hi-open?
     clp:domain-r
     ;; Linear-expression constructors
-    clp:r+ clp:r- clp:r*scalar
+    clp:r+
+    clp:r-
+    clp:r*scalar
     ;; Real-constraint posting API
-    clp:r= clp:r<= clp:r< clp:r>= clp:r>
+    clp:r=
+    clp:r<=
+    clp:r<
+    clp:r>=
+    clp:r>
     ;; Optimization API
-    clp:r-minimize clp:r-maximize
-    clp:rq-minimize clp:rq-maximize
+    clp:r-minimize
+    clp:r-maximize
+    clp:rq-minimize
+    clp:rq-maximize
     ;; Queries
-    clp:r-bounds clp:r-feasible?)
+    clp:r-bounds
+    clp:r-feasible?)
   (begin
 
     ;; -- Domain constructors -------------------------------------------------
@@ -45,8 +59,7 @@
     ;; constrains x in feasibility checks and in optimisation.
     ;;@example
     ;; (clp:real 'x 'x 'x)
-    (defun clp:real (var lo hi)
-      (%clp-domain-r! var lo hi #f #f))
+    (defun clp:real (var lo hi) (%clp-domain-r! var lo hi #f #f))
 
     ;;@doc (clp:real-open var lo hi)
     ;;@category Clpr
@@ -56,8 +69,7 @@
     ;; Fully-open interval (lo, hi).  Same dual install as clp:real;
     ;; the LP/QP backends treat the bounds as strict (shaved by an
     ;; internal epsilon).
-    (defun clp:real-open (var lo hi)
-      (%clp-domain-r! var lo hi #t #t))
+    (defun clp:real-open (var lo hi) (%clp-domain-r! var lo hi #t #t))
 
     ;;@doc (clp:real-half-open var lo hi)
     ;;@category Clpr
@@ -65,8 +77,7 @@
     ;;@example
     ;; (clp:real-half-open 'x 'x 'x)
     ;; Half-open interval [lo, hi).  Same dual install as clp:real.
-    (defun clp:real-half-open (var lo hi)
-      (%clp-domain-r! var lo hi #f #t))
+    (defun clp:real-half-open (var lo hi) (%clp-domain-r! var lo hi #f #t))
 
     ;; -- Domain accessors ----------------------------------------------------
 
@@ -76,8 +87,7 @@
     ;; Return whether `clp:domain-r?` holds.
     ;;@example
     ;; (clp:domain-r? 'x)
-    (defun clp:domain-r? (dom)
-      (and (pair? dom) (eq? (car dom) 'r)))
+    (defun clp:domain-r? (dom) (and (pair? dom) (eq? (car dom) 'r)))
 
     ;;@doc (clp:domain-r-lo dom)
     ;;@category Clpr
@@ -95,8 +105,7 @@
     ;; Compute `clp:domain-r-hi`.
     ;;@example
     ;; (clp:domain-r-hi 'x)
-    (defun clp:domain-r-hi (dom)
-      (car (cdr (cdr dom))))
+    (defun clp:domain-r-hi (dom) (car (cdr (cdr dom))))
 
     ;;@doc (clp:domain-r-lo-open? dom)
     ;;@category Clpr
@@ -104,8 +113,7 @@
     ;; Return whether `clp:domain-r-lo-open?` holds.
     ;;@example
     ;; (clp:domain-r-lo-open? 'x)
-    (defun clp:domain-r-lo-open? (dom)
-      (car (cdr (cdr (cdr dom)))))
+    (defun clp:domain-r-lo-open? (dom) (car (cdr (cdr (cdr dom)))))
 
     ;;@doc (clp:domain-r-hi-open? dom)
     ;;@category Clpr
@@ -113,8 +121,7 @@
     ;; Return whether `clp:domain-r-hi-open?` holds.
     ;;@example
     ;; (clp:domain-r-hi-open? 'x)
-    (defun clp:domain-r-hi-open? (dom)
-      (car (cdr (cdr (cdr (cdr dom))))))
+    (defun clp:domain-r-hi-open? (dom) (car (cdr (cdr (cdr (cdr dom))))))
 
     ;;@doc (clp:domain-r var)
     ;;@category Clpr
@@ -122,9 +129,7 @@
     ;; Compute `clp:domain-r`.
     ;;@example
     ;; (clp:domain-r 'x)
-    (defun clp:domain-r (var)
-      (let ((d (%clp-get-domain var)))
-        (if (clp:domain-r? d) d #f)))
+    (defun clp:domain-r (var) (let ((d (%clp-get-domain var))) (if (clp:domain-r? d) d #f)))
 
     ;; -- Internal helpers ----------------------------------------------------
 
@@ -135,8 +140,7 @@
     ;; (%clpr-prop-attach! 1 (lambda (x) x))
     ;; Attach a re-propagator thunk to v's 'clp.prop attribute.
     (defun %clpr-prop-attach! (v thunk)
-      (cond
-        ((not (logic-var? (deref-lvar v))) #t)
+      (cond ((not (logic-var? (deref-lvar v))) #t)
         (else
           (let ((existing (get-attr v 'clp.prop)))
             (put-attr v 'clp.prop (cons thunk (if existing existing '())))
@@ -152,10 +156,7 @@
     ;;@example
     ;; (%clpr-member-eq? 1 '())
     (defun %clpr-member-eq? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((eq? x (car xs)) #t)
-        (else (%clpr-member-eq? x (cdr xs)))))
+      (cond ((null? xs) #f) ((eq? x (car xs)) #t) (else (%clpr-member-eq? x (cdr xs)))))
 
     ;;@doc (%clpr-merge-vars xs ys)
     ;;@category Clpr
@@ -165,11 +166,11 @@
     ;; Merge ys into xs, preserving set semantics (eq? identity).
     (defun %clpr-merge-vars (xs ys)
       (if (null? ys)
-          xs
-          (let ((y (car ys)))
-            (if (%clpr-member-eq? y xs)
-                (%clpr-merge-vars xs (cdr ys))
-                (%clpr-merge-vars (cons y xs) (cdr ys))))))
+        xs
+        (let ((y (car ys)))
+          (if (%clpr-member-eq? y xs)
+            (%clpr-merge-vars xs (cdr ys))
+            (%clpr-merge-vars (cons y xs) (cdr ys))))))
 
     ;;@doc (%clpr-expr-vars-list xs)
     ;;@category Clpr
@@ -178,11 +179,8 @@
     ;;@example
     ;; (%clpr-expr-vars-list '())
     (defun %clpr-expr-vars-list (xs)
-      (cond
-        ((null? xs) '())
-        ((pair? xs)
-         (%clpr-merge-vars (%clpr-expr-vars (car xs))
-                           (%clpr-expr-vars-list (cdr xs))))
+      (cond ((null? xs) '())
+        ((pair? xs) (%clpr-merge-vars (%clpr-expr-vars (car xs)) (%clpr-expr-vars-list (cdr xs))))
         (else (%clpr-expr-vars xs))))
 
     ;;@doc (%clpr-expr-vars expr)
@@ -193,17 +191,14 @@
     ;; Collect all unbound logic vars that participate in expr.
     (defun %clpr-expr-vars (expr)
       (let ((v (deref-lvar expr)))
-        (cond
-          ((logic-var? v) (list v))
+        (cond ((logic-var? v) (list v))
           ((pair? v) (%clpr-expr-vars-list v))
           ((compound? v)
            (let ((n (arity v)))
-             (let loop ((i 1) (acc '()))
-               (if (> i n)
-                   acc
-                   (loop (+ i 1)
-                         (%clpr-merge-vars acc
-                                           (%clpr-expr-vars (arg i v))))))))
+             (let
+               loop
+               ((i 1) (acc '()))
+               (if (> i n) acc (loop (+ i 1) (%clpr-merge-vars acc (%clpr-expr-vars (arg i v))))))))
           (else '()))))
 
     ;;@doc (%clpr-attach-vars! vars thunk)
@@ -213,26 +208,18 @@
     ;;@example
     ;; (%clpr-attach-vars! 'x (lambda (x) x))
     (defun %clpr-attach-vars! (vars thunk)
-      (let loop ((xs vars))
-        (cond
-          ((null? xs) #t)
-          (else
-            (%clpr-prop-attach! (car xs) thunk)
-            (loop (cdr xs))))))
+      (let
+        loop
+        ((xs vars))
+        (cond ((null? xs) #t) (else (%clpr-prop-attach! (car xs) thunk) (loop (cdr xs))))))
 
     ;; -- Linear-expression constructors -------------------------------------
 
     (defun clp:r+ args
-      (cond
-        ((null? args) 0.0)
-        ((null? (cdr args)) (car args))
-        (else (cons '+ args))))
+      (cond ((null? args) 0.0) ((null? (cdr args)) (car args)) (else (cons '+ args))))
 
     (defun clp:r- args
-      (cond
-        ((null? args) 0.0)
-        ((null? (cdr args)) (list '- (car args)))
-        (else (cons '- args))))
+      (cond ((null? args) 0.0) ((null? (cdr args)) (list '- (car args))) (else (cons '- args))))
 
     ;;@doc (clp:r*scalar k expr)
     ;;@category Clpr
@@ -240,8 +227,7 @@
     ;;@example
     ;; (clp:r*scalar 1 'x)
     ;; Scalar multiplication only (non-linear var*var is rejected in C++).
-    (defun clp:r*scalar (k expr)
-      (list '* k expr))
+    (defun clp:r*scalar (k expr) (list '* k expr))
 
     ;; -- Posting API ---------------------------------------------------------
 
@@ -252,12 +238,12 @@
     ;;@example
     ;; (clp:r<= 'x 'x)
     (defun clp:r<= (lhs rhs)
-      (and (%clp-r-post-leq! lhs rhs)
-           (let* ((thunk (lambda () (%clp-r-propagate!)))
-                  (vars (%clpr-merge-vars (%clpr-expr-vars lhs)
-                                          (%clpr-expr-vars rhs))))
-             (%clpr-attach-vars! vars thunk)
-             #t)))
+      (and
+        (%clp-r-post-leq! lhs rhs)
+        (let* ((thunk (lambda () (%clp-r-propagate!)))
+               (vars (%clpr-merge-vars (%clpr-expr-vars lhs) (%clpr-expr-vars rhs))))
+          (%clpr-attach-vars! vars thunk)
+          #t)))
 
     ;;@doc (clp:r= lhs rhs)
     ;;@category Clpr
@@ -266,12 +252,12 @@
     ;;@example
     ;; (clp:r= 'x 'x)
     (defun clp:r= (lhs rhs)
-      (and (%clp-r-post-eq! lhs rhs)
-           (let* ((thunk (lambda () (%clp-r-propagate!)))
-                  (vars (%clpr-merge-vars (%clpr-expr-vars lhs)
-                                          (%clpr-expr-vars rhs))))
-             (%clpr-attach-vars! vars thunk)
-             #t)))
+      (and
+        (%clp-r-post-eq! lhs rhs)
+        (let* ((thunk (lambda () (%clp-r-propagate!)))
+               (vars (%clpr-merge-vars (%clpr-expr-vars lhs) (%clpr-expr-vars rhs))))
+          (%clpr-attach-vars! vars thunk)
+          #t)))
 
     ;; Strict relations are encoded via a small epsilon margin.
     (define *clpr-strict-eps* 1e-9)
@@ -282,8 +268,7 @@
     ;; Compute `clp:r<`.
     ;;@example
     ;; (clp:r< 'x 'x)
-    (defun clp:r< (lhs rhs)
-      (clp:r<= lhs (clp:r- rhs *clpr-strict-eps*)))
+    (defun clp:r< (lhs rhs) (clp:r<= lhs (clp:r- rhs *clpr-strict-eps*)))
 
     ;;@doc (clp:r>= lhs rhs)
     ;;@category Clpr
@@ -291,8 +276,7 @@
     ;; Compute `clp:r>=`.
     ;;@example
     ;; (clp:r>= 'x 'x)
-    (defun clp:r>= (lhs rhs)
-      (clp:r<= rhs lhs))
+    (defun clp:r>= (lhs rhs) (clp:r<= rhs lhs))
 
     ;;@doc (clp:r> lhs rhs)
     ;;@category Clpr
@@ -300,8 +284,7 @@
     ;; Compute `clp:r>`.
     ;;@example
     ;; (clp:r> 'x 'x)
-    (defun clp:r> (lhs rhs)
-      (clp:r< rhs lhs))
+    (defun clp:r> (lhs rhs) (clp:r< rhs lhs))
 
     ;; -- Optimization --------------------------------------------------------
 
@@ -312,8 +295,7 @@
     ;;@example
     ;; (%clpr-opt-unpack 'x)
     (defun %clpr-opt-unpack (res)
-      (cond
-        ((eq? res #f) #f)
+      (cond ((eq? res #f) #f)
         ((eq? res 'clp.r.unbounded) (error "clp.r.unbounded"))
         ((pair? res) (values (car res) (cdr res)))
         (else (error "clp.r.optimize.invalid-result"))))
@@ -324,8 +306,7 @@
     ;;@example
     ;; (clp:r-minimize 'x)
     ;; Returns (values optimum witness) on success, #f on infeasible.
-    (defun clp:r-minimize (objective)
-      (%clpr-opt-unpack (%clp-r-minimize objective)))
+    (defun clp:r-minimize (objective) (%clpr-opt-unpack (%clp-r-minimize objective)))
 
     ;;@doc (clp:r-maximize objective)
     ;;@category Clpr
@@ -333,8 +314,7 @@
     ;;@example
     ;; (clp:r-maximize 'x)
     ;; Returns (values optimum witness) on success, #f on infeasible.
-    (defun clp:r-maximize (objective)
-      (%clpr-opt-unpack (%clp-r-maximize objective)))
+    (defun clp:r-maximize (objective) (%clpr-opt-unpack (%clp-r-maximize objective)))
 
     ;;@doc (clp:rq-minimize objective)
     ;;@category Clpr
@@ -343,8 +323,7 @@
     ;; (clp:rq-minimize 'x)
     ;; Returns (values optimum witness) on success, #f on infeasible.
     ;; Accepts convex quadratic objectives and linear objectives.
-    (defun clp:rq-minimize (objective)
-      (%clpr-opt-unpack (%clp-r-qp-minimize objective)))
+    (defun clp:rq-minimize (objective) (%clpr-opt-unpack (%clp-r-qp-minimize objective)))
 
     ;;@doc (clp:rq-maximize objective)
     ;;@category Clpr
@@ -353,8 +332,7 @@
     ;; (clp:rq-maximize 'x)
     ;; Returns (values optimum witness) on success, #f on infeasible.
     ;; Accepts convex quadratic objectives and linear objectives.
-    (defun clp:rq-maximize (objective)
-      (%clpr-opt-unpack (%clp-r-qp-maximize objective)))
+    (defun clp:rq-maximize (objective) (%clpr-opt-unpack (%clp-r-qp-maximize objective)))
 
     ;; -- Queries -------------------------------------------------------------
 
@@ -364,8 +342,7 @@
     ;; Return whether `clp:r-feasible?` holds.
     ;;@example
     ;; (clp:r-feasible?)
-    (defun clp:r-feasible? ()
-      (%clp-r-propagate!))
+    (defun clp:r-feasible? () (%clp-r-propagate!))
 
     ;;@doc (clp:r-bounds var)
     ;;@category Clpr
@@ -375,10 +352,6 @@
     ;; Returns (lo . hi) for an R-domained var, else #f.
     (defun clp:r-bounds (var)
       (if (%clp-r-propagate!)
-          (let ((d (%clp-get-domain var)))
-            (if (clp:domain-r? d)
-                (cons (clp:domain-r-lo d) (clp:domain-r-hi d))
-                #f))
-          #f))
-
-  ))
+        (let ((d (%clp-get-domain var)))
+          (if (clp:domain-r? d) (cons (clp:domain-r-lo d) (clp:domain-r-hi d)) #f))
+        #f))))

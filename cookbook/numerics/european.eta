@@ -42,8 +42,7 @@
     ;; tape-ref-value is a pass-through for plain numbers.
     ;;@example
     ;; (branch-primal 1)
-    (defun branch-primal (x)
-      (if (tape-ref? x) (tape-ref-value x) x))
+    (defun branch-primal (x) (if (tape-ref? x) (tape-ref-value x) x))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §2  Statistical Functions
@@ -58,8 +57,7 @@
     ;; Compute `norm-pdf`.
     ;;@example
     ;; (norm-pdf 1)
-    (defun norm-pdf (x)
-      (* inv-sqrt-2pi (exp (* -0.5 (* x x)))))
+    (defun norm-pdf (x) (* inv-sqrt-2pi (exp (* -0.5 (* x x)))))
 
     ;;@doc (norm-cdf x)
     ;;@category Numerics
@@ -74,12 +72,19 @@
         (if (< xv 0)
           (- 1.0 (norm-cdf (* -1 x)))
           (let ((t (/ 1.0 (+ 1.0 (* 0.2316419 x)))))
-            (- 1.0 (* (* inv-sqrt-2pi (exp (* -0.5 (* x x))))
-                (* t (+ 0.319381530
-                    (* t (+ -0.356563782
-                        (* t (+ 1.781477937
-                            (* t (+ -1.821255978
-                                (* t 1.330274429)))))))))))))))
+            (-
+              1.0
+              (*
+                (* inv-sqrt-2pi (exp (* -0.5 (* x x))))
+                (*
+                  t
+                  (+
+                    0.319381530
+                    (*
+                      t
+                      (+
+                        -0.356563782
+                        (* t (+ 1.781477937 (* t (+ -1.821255978 (* t 1.330274429)))))))))))))))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §3  Black-Scholes Building Blocks
@@ -95,9 +100,7 @@
     ;; (bs-d1 "sample" 1 'x 'x 'x)
     ;; d₁ = [ln(S/K) + (r + σ²/2)·T] / (σ·√T)
     (defun bs-d1 (S K r sigma T)
-      (/ (+ (log (/ S K))
-          (* (+ r (/ (* sigma sigma) 2)) T))
-        (* sigma (sqrt T))))
+      (/ (+ (log (/ S K)) (* (+ r (/ (* sigma sigma) 2)) T)) (* sigma (sqrt T))))
 
     ;;@doc (bs-call-price S K r sigma T)
     ;;@category Numerics
@@ -106,12 +109,8 @@
     ;; (bs-call-price "sample" 1 'x 'x 'x)
     ;; C = S·Φ(d₁) − K·e^{-rT}·Φ(d₂)
     (defun bs-call-price (S K r sigma T)
-      (let ((d1  (bs-d1 S K r sigma T))
-          (svt (* sigma (sqrt T))))
-        (let ((d2 (- d1 svt)))
-          (- (* S (norm-cdf d1))
-            (* (* K (exp (* -1 (* r T))))
-              (norm-cdf d2))))))
+      (let ((d1 (bs-d1 S K r sigma T)) (svt (* sigma (sqrt T))))
+        (let ((d2 (- d1 svt))) (- (* S (norm-cdf d1)) (* (* K (exp (* -1 (* r T)))) (norm-cdf d2))))))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §4  Second-Order Greeks (Grad-on-Greek)
@@ -123,8 +122,7 @@
     ;;@example
     ;; (bs-delta-fn "sample" 1 'x 'x 'x)
     ;; Delta = Φ(d₁) — differentiable for Gamma, Vanna
-    (defun bs-delta-fn (S K r sigma T)
-      (norm-cdf (bs-d1 S K r sigma T)))
+    (defun bs-delta-fn (S K r sigma T) (norm-cdf (bs-d1 S K r sigma T)))
 
     ;;@doc (bs-vega-fn S K r sigma T)
     ;;@category Numerics
@@ -132,8 +130,7 @@
     ;;@example
     ;; (bs-vega-fn "sample" 1 'x 'x 'x)
     ;; Vega = S · φ(d₁) · √T — differentiable for Vanna, Volga
-    (defun bs-vega-fn (S K r sigma T)
-      (* S (* (norm-pdf (bs-d1 S K r sigma T)) (sqrt T))))
+    (defun bs-vega-fn (S K r sigma T) (* S (* (norm-pdf (bs-d1 S K r sigma T)) (sqrt T))))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §5  Run the Computation
@@ -151,31 +148,32 @@
     (define params '(100.0 90.0 0.03 0.30 0.5))
     (define win (eq? (platform) 'Win32))
 
-    (display (if win "==================================================\n"
+    (display
+      (if win
+        "==================================================\n"
         "══════════════════════════════════════════════════\n"))
     (display " European Option Greeks with Tape-Based AAD\n")
-    (display (if win "==================================================\n\n"
+    (display
+      (if win
+        "==================================================\n\n"
         "══════════════════════════════════════════════════\n\n"))
-
 
     (display "Market parameters:\n")
     (display "  S     = 100.0  (spot)\n")
     (display "  K     =  90.0  (strike)\n")
     (display "  r     =  3%    (risk-free rate)\n")
-    (display (if win "  sigma =  30%   (volatility)\n"
-        "  σ     =  30%   (volatility)\n"))
+    (display (if win "  sigma =  30%   (volatility)\n" "  σ     =  30%   (volatility)\n"))
     (display "  T     =  0.5   (maturity, years)\n\n")
 
     ;; ── 1. First-Order Greeks ─────────────────────────────────────
 
-    (display (if win "\n-- First-Order Greeks (single backward pass) --\n\n"
+    (display
+      (if win
+        "\n-- First-Order Greeks (single backward pass) --\n\n"
         "\n── First-Order Greeks (single backward pass) ──────\n\n"))
 
-    (let ((result (grad (lambda (S K r sigma T)
-              (bs-call-price S K r sigma T))
-            params)))
-      (let ((price (car result))
-          (g     (cadr result)))
+    (let ((result (grad (lambda (S K r sigma T) (bs-call-price S K r sigma T)) params)))
+      (let ((price (car result)) (g (cadr result)))
         (display "  Price   = ")
         (println price)
         (display "\n")
@@ -199,15 +197,14 @@
 
     ;; ── 2. Second-Order Greeks via grad-on-Greek ──────────────────
 
-    (display (if win "\n\n-- Second-Order Greeks (grad-on-Greek) --\n\n"
+    (display
+      (if win
+        "\n\n-- Second-Order Greeks (grad-on-Greek) --\n\n"
         "\n\n── Second-Order Greeks (grad-on-Greek) ─────────────\n\n"))
 
     ;; grad(Delta) → Gamma (∂Δ/∂S), Vanna via ∂Δ/∂σ
-    (let ((delta-result (grad (lambda (S K r sigma T)
-              (bs-delta-fn S K r sigma T))
-            params)))
-      (let ((delta-val (car delta-result))
-          (dg        (cadr delta-result)))
+    (let ((delta-result (grad (lambda (S K r sigma T) (bs-delta-fn S K r sigma T)) params)))
+      (let ((delta-val (car delta-result)) (dg (cadr delta-result)))
         (display "  grad(Delta):\n")
         (display "    Delta         = ")
         (println delta-val)
@@ -220,56 +217,58 @@
         (let ((vanna-from-delta (vector-ref dg 3)))
 
           ;; grad(Vega) → Vanna via ∂V/∂S, Volga (∂V/∂σ)
-          (let ((vega-result (grad (lambda (S K r sigma T)
-                    (bs-vega-fn S K r sigma T))
-                  params)))
-            (let ((vega-val (car vega-result))
-                (vg       (cadr vega-result)))
+          (let ((vega-result (grad (lambda (S K r sigma T) (bs-vega-fn S K r sigma T)) params)))
+            (let ((vega-val (car vega-result)) (vg (cadr vega-result)))
               (display "\n  grad(Vega):\n")
               (display "    Vega          = ")
               (println vega-val)
-              (display (if                      win "    Vanna (dV/dS)  = " "    Vanna (∂V/∂S) = "))
-              (println (vector-ref                                  vg 0))
-              (display (if  win "    Volga (dV/dsigma) = " "    Volga (∂V/∂σ) = "))
+              (display (if win "    Vanna (dV/dS)  = " "    Vanna (∂V/∂S) = "))
+              (println (vector-ref vg 0))
+              (display (if win "    Volga (dV/dsigma) = " "    Volga (∂V/∂σ) = "))
               (println (vector-ref vg 3))
 
               ;; ── 3. Schwarz's Theorem Check ──────────────────────
-              (display (if win "\n\n-- Schwarz's Theorem Check --\n\n"
+              (display
+                (if win
+                  "\n\n-- Schwarz's Theorem Check --\n\n"
                   "\n\n── Schwarz's Theorem Check ─────────────────────────\n\n"))
-              (display (if win "  Vanna (dDelta/dsigma) = "
-                  "  Vanna (∂Δ/∂σ)        = "))
+              (display (if win "  Vanna (dDelta/dsigma) = " "  Vanna (∂Δ/∂σ)        = "))
               (println vanna-from-delta)
-              (display (if win "  Vanna (dVega/dS)      = "
-                  "  Vanna (∂V/∂S)         = "))
+              (display (if win "  Vanna (dVega/dS)      = " "  Vanna (∂V/∂S)         = "))
               (println (vector-ref vg 0))
-              (display (if win "  Difference            = "
-                  "  Difference            = "))
+              (display (if win "  Difference            = " "  Difference            = "))
               (println (- vanna-from-delta (vector-ref vg 0)))
               (display "  (Should be ~0 by Schwarz's theorem)\n"))))))
 
     ;; ── 4. Summary Table ──────────────────────────────────────────
 
-    (display (if win "\n-- Summary --\n\n"
-        "\n── Summary ─────────────────────────────────────────\n\n"))
+    (display
+      (if win "\n-- Summary --\n\n" "\n── Summary ─────────────────────────────────────────\n\n"))
     (display "  Greek      | AD Value\n")
     (display "  -----------+-----------\n")
 
     (let ((r1 (grad (lambda (S K r sigma T) (bs-call-price S K r sigma T)) params)))
       (let ((g1 (cadr r1)))
-        (display "  Price      | ") (println (car r1))
-        (display "  Delta      | ") (println (vector-ref g1 0))
-        (display "  Vega       | ") (println (vector-ref g1 3))
-        (display "  Rho        | ") (println (vector-ref g1 2))
-        (display "  -Theta     | ") (println (vector-ref g1 4))))
+        (display "  Price      | ")
+        (println (car r1))
+        (display "  Delta      | ")
+        (println (vector-ref g1 0))
+        (display "  Vega       | ")
+        (println (vector-ref g1 3))
+        (display "  Rho        | ")
+        (println (vector-ref g1 2))
+        (display "  -Theta     | ")
+        (println (vector-ref g1 4))))
 
     (let ((r2 (grad (lambda (S K r sigma T) (bs-delta-fn S K r sigma T)) params)))
-      (let ((g2 (cadr r2)))
-        (display "  Gamma      | ") (println (vector-ref g2 0))))
+      (let ((g2 (cadr r2))) (display "  Gamma      | ") (println (vector-ref g2 0))))
 
     (let ((r3 (grad (lambda (S K r sigma T) (bs-vega-fn S K r sigma T)) params)))
       (let ((g3 (cadr r3)))
-        (display "  Vanna      | ") (println (vector-ref g3 0))
-        (display "  Volga      | ") (println (vector-ref g3 3))))
+        (display "  Vanna      | ")
+        (println (vector-ref g3 0))
+        (display "  Volga      | ")
+        (println (vector-ref g3 3))))
 
 
     ;; ════════════════════════════════════════════════════════════════
@@ -292,7 +291,9 @@
 
 
 
-    (display (if win "\n\n-- Tape-Based AD Architecture --\n\n"
+    (display
+      (if win
+        "\n\n-- Tape-Based AD Architecture --\n\n"
         "\n\n── Tape-Based AD Architecture ──────────────────────\n\n"))
     (display "  The tape (Wengert list) records ~32 bytes per operation.\n")
     (display "  No closures allocated, recording happens at the C++ level.\n")
@@ -300,7 +301,4 @@
     (display "  For this BS pricing example:\n")
     (display "    - ~30 elementary operations recorded per evaluation\n")
     (display "    - One backward sweep yields all 5 first-order Greeks\n")
-    (display "    - Second-order Greeks via nested grad calls\n")
-
-))
-
+    (display "    - Second-order Greeks via nested grad calls\n")))

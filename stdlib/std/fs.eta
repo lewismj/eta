@@ -1,8 +1,7 @@
 ;;; std/fs.eta - Filesystem and path primitives.
 
 (module std.fs
-  (export
-    fs:file-exists?
+  (export fs:file-exists?
     fs:directory?
     fs:delete-file
     fs:make-directory
@@ -34,7 +33,4 @@
     (define fs:file-modification-time file-modification-time)
     (define fs:file-size file-size)
 
-    (defun fs:path-join args
-      (apply path-join args))
-
-  ))
+    (defun fs:path-join args (apply path-join args))))

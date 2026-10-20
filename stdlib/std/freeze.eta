@@ -44,14 +44,11 @@
     ;; the hook fires we run them all; if any returns #f we fail.
     (defun %freeze-hook (var bound-val attr-val)
       ;; attr-val is the list of pending thunks on `var`.
-      (let loop ((gs attr-val))
-        (cond
-          ((null? gs) #t)
-          (else
-            (let ((r ((car gs))))
-              (if (or (eq? r #f) (null? r))
-                  #f
-                  (loop (cdr gs))))))))
+      (let
+        loop
+        ((gs attr-val))
+        (cond ((null? gs) #t)
+          (else (let ((r ((car gs)))) (if (or (eq? r #f) (null? r)) #f (loop (cdr gs))))))))
 
     ;; Install the hook once at module load.
     (register-attr-hook! 'freeze %freeze-hook)
@@ -64,15 +61,12 @@
     ;; (freeze 1 'x)
     (defun freeze (v goal-thunk)
       ;; If v is already ground, run goal-thunk now.
-      (cond
-        ((not (logic-var? v))   (goal-thunk))
+      (cond ((not (logic-var? v)) (goal-thunk))
         ;; Already bound (follows binding chain)  run immediately.
-        ((not (logic-var? (deref-lvar v)))
-         (goal-thunk))
+        ((not (logic-var? (deref-lvar v))) (goal-thunk))
         (else
           ;; Still unbound  append to (or create) 'freeze attribute.
-          (let* ((existing (get-attr v 'freeze))
-                 (pending  (if existing existing '())))
+          (let* ((existing (get-attr v 'freeze)) (pending (if existing existing '())))
             (put-attr v 'freeze (cons goal-thunk pending))
             #t))))
 
@@ -105,8 +99,7 @@
       ;; at call time).  We probe via trail-mark / unify / compare trail
       ;; size: if unify succeeds AND the trail is unchanged, the two
       ;; terms were already equal with no fresh bindings.
-      (let* ((m   (trail-mark))
-             (ok  (unify a b)))
+      (let* ((m (trail-mark)) (ok (unify a b)))
         (unwind-trail m)
         ;; Strong test: since we probe in isolation and unwind, a simple
         ;; `equal?` after deref suffices for the already-equal check.
@@ -118,11 +111,7 @@
     ;; Return whether `%dif-can-unify?` holds.
     ;;@example
     ;; (%dif-can-unify? 1 1)
-    (defun %dif-can-unify? (a b)
-      (let* ((m  (trail-mark))
-             (ok (unify a b)))
-        (unwind-trail m)
-        ok))
+    (defun %dif-can-unify? (a b) (let* ((m (trail-mark)) (ok (unify a b))) (unwind-trail m) ok))
 
     ;;@doc (%dif-hook var bound-val attr-val)
     ;;@category Freeze
@@ -133,14 +122,15 @@
     (defun %dif-hook (var bound-val attr-val)
       ;; attr-val is a list of (other-term . nil) witnesses  each entry
       ;; is a term that must stay *different* from `var`.
-      (let loop ((ws attr-val))
-        (cond
-          ((null? ws) #t)
+      (let
+        loop
+        ((ws attr-val))
+        (cond ((null? ws) #t)
           (else
             (let ((other (car (car ws))))
               (cond
-                ;; Now provably equal  disequality violated.
-                ((%dif-equal? var other) #f)
+              ;; Now provably equal  disequality violated.
+              ((%dif-equal? var other) #f)
                 ;; Otherwise keep going.
                 (else (loop (cdr ws)))))))))
 
@@ -153,8 +143,7 @@
     ;;@example
     ;; (%dif-add-witness 1 'x)
     (defun %dif-add-witness (v other)
-      (let* ((existing (get-attr v 'dif))
-             (pending  (if existing existing '())))
+      (let* ((existing (get-attr v 'dif)) (pending (if existing existing '())))
         (put-attr v 'dif (cons (cons other #f) pending))))
 
     ;;@doc (dif x y)
@@ -165,21 +154,16 @@
     ;; (dif 1 1)
     (defun dif (x y)
       ;; Fast path: already ground on both sides.
-      (let ((dx (if (logic-var? x) (deref-lvar x) x))
-            (dy (if (logic-var? y) (deref-lvar y) y)))
+      (let ((dx (if (logic-var? x) (deref-lvar x) x)) (dy (if (logic-var? y) (deref-lvar y) y)))
         (cond
-          ;; Both ground: succeeds iff not equal.
-          ((and (not (logic-var? dx)) (not (logic-var? dy)))
-           (not (equal? dx dy)))
+        ;; Both ground: succeeds iff not equal.
+        ((and (not (logic-var? dx)) (not (logic-var? dy))) (not (equal? dx dy)))
           ;; If they currently cannot unify at all, constraint trivially holds.
           ((not (%dif-can-unify? dx dy)) #t)
           ;; If they are already equal, dif fails immediately.
           ((%dif-equal? dx dy) #f)
           ;; Attach witnesses on whichever side(s) are still vars.
           (else
-           (when (logic-var? dx) (%dif-add-witness dx dy))
-           (when (logic-var? dy) (%dif-add-witness dy dx))
-           #t))))
-
-  ))
-
+            (when (logic-var? dx) (%dif-add-witness dx dy))
+            (when (logic-var? dy) (%dif-add-witness dy dx))
+            #t))))))

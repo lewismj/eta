@@ -27,17 +27,15 @@
     ;;@example
     ;; (display weather-dag)
     (define weather-dag
-      '((season     -> rain)
-        (season     -> sprinkler)
-        (rain       -> wet-grass)
-        (sprinkler  -> wet-grass)))
+      '((season -> rain) (season -> sprinkler) (rain -> wet-grass) (sprinkler -> wet-grass)))
 
     (println "")
     (println "Weather DAG:")
     (println weather-dag)
 
     (println "")
-    (print "Nodes:              ") (println (dag:nodes weather-dag))
+    (print "Nodes:              ")
+    (println (dag:nodes weather-dag))
     ; => (wet-grass sprinkler rain season)
 
     (print "Parents of wet-grass:   ")
@@ -97,9 +95,7 @@
     ;;     └─────────────────────→ stock-return
     ;;
     (define finance-dag
-      '((sector      -> market-beta)
-        (sector      -> stock-return)
-        (market-beta -> stock-return)))
+      '((sector -> market-beta) (sector -> stock-return) (market-beta -> stock-return)))
 
     (println "")
     (println "Finance DAG:")
@@ -111,9 +107,7 @@
     (print "Back-door criterion for P(stock-return | do(market-beta)):")
     (println "")
     (print "  Z = {sector}?  ")
-    (println (dag:satisfies-backdoor? finance-dag
-                                      'market-beta 'stock-return '(sector)))
-    ; => #t  — sector blocks the only back-door path
+    (println (dag:satisfies-backdoor? finance-dag 'market-beta 'stock-return '(sector)))
+  ; => #t  — sector blocks the only back-door path
 
   ))
-

@@ -131,11 +131,26 @@ namespace eta::format {
         if (node.dot) parts.push_back({*node.dot, {}});
         if (node.tail) parts.push_back({file_.nodes[*node.tail].token_begin, *node.tail});
         std::sort(parts.begin(), parts.end(), [](auto a, auto b) { return a.token < b.token; });
+        // Recognised forms keep their leading operands (name, formals, bindings,
+        // test) on the head line: `defun`/`defmacro` have two (name and
+        // formals), the rest one. A sequence has none, so its body breaks like
+        // any other list. Doc extraction relies on the name staying on the head line.
+        std::size_t head_operands = 0;
+        if (chosen != FormAlias::None && chosen != FormAlias::Sequence) {
+            const auto head_name = raw(file_, file_.nodes[node.children[0]].token_begin);
+            head_operands = chosen == FormAlias::Define && (head_name == "defun" || head_name == "defmacro") ? 2 : 1;
+        }
+        // A list headed by another list (let bindings, clause lists, alists) is
+        // data, not a call: align its elements under the first one.
+        const bool data_list = chosen == FormAlias::None && !node.children.empty()
+            && file_.nodes[node.children[0]].kind == NodeKind::List;
+        const std::size_t continuation = data_list ? 1 : options_.indent;
         for (std::size_t i = 0; i < parts.size(); ++i) {
             const auto part = parts[i];
-            auto separator = i == 0 ? DocId{0} : chosen != FormAlias::None && i == 1 ? docs_.text(" ") : docs_.line();
+            const bool on_head_line = i > 0 && i <= head_operands;
+            auto separator = i == 0 ? DocId{0} : on_head_line ? docs_.text(" ") : docs_.line();
             auto content = docs_.concat(gap(part.token, separator, body_gaps), part.node ? build(*part.node) : docs_.text(raw(file_, part.token)));
-            if (i && !(chosen != FormAlias::None && i == 1)) content = docs_.nest(options_.indent, content);
+            if (i && !on_head_line) content = docs_.nest(continuation, content);
             result = docs_.concat(result, content);
         }
         const auto close = node.token_end - 1;

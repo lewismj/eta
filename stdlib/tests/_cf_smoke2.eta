@@ -1,9 +1,5 @@
 (module causal.forest.smoke2
-  (import std.core
-          std.collections
-          std.stats
-          std.causal.cate
-          std.causal.forest)
+  (import std.core std.collections std.stats std.causal.cate std.causal.forest)
   (begin
 
     ;;@doc (make-row x z1 z2 y)
@@ -12,8 +8,7 @@
     ;; Construct `make-row`.
     ;;@example
     ;; (make-row 1 'x 'x 1)
-    (defun make-row (x z1 z2 y)
-      (list (cons 'x x) (cons 'z1 z1) (cons 'z2 z2) (cons 'y y)))
+    (defun make-row (x z1 z2 y) (list (cons 'x x) (cons 'z1 z1) (cons 'z2 z2) (cons 'y y)))
     ;;@doc (append3 a b c)
     ;;@category Tests
     ;;@module causal.forest.smoke2
@@ -27,10 +22,7 @@
     ;; Compute `%noise`.
     ;;@example
     ;; (%noise 1)
-    (defun %noise (i)
-      (cond ((= (modulo i 3) 0) 0.20)
-            ((= (modulo i 3) 1) -0.20)
-            (else 0.0)))
+    (defun %noise (i) (cond ((= (modulo i 3) 0) 0.20) ((= (modulo i 3) 1) -0.20) (else 0.0)))
     ;;@doc (%arm-rows n x z1 z2 y0 tau)
     ;;@category Tests
     ;;@module causal.forest.smoke2
@@ -38,12 +30,13 @@
     ;;@example
     ;; (%arm-rows 1 1 'x 'x 'x 'x)
     (defun %arm-rows (n x z1 z2 y0 tau)
-      (let loop ((i 0) (acc '()))
-        (if (= i n) (reverse acc)
-            (let* ((eps (%noise i))
-                   (y (+ y0 (if (= x 1) tau 0.0) eps))
-                   (row (make-row x z1 z2 y)))
-              (loop (+ i 1) (cons row acc))))))
+      (let
+        loop
+        ((i 0) (acc '()))
+        (if (= i n)
+          (reverse acc)
+          (let* ((eps (%noise i)) (y (+ y0 (if (= x 1) tau 0.0) eps)) (row (make-row x z1 z2 y)))
+            (loop (+ i 1) (cons row acc))))))
     ;;@doc (make-step-cate-data)
     ;;@category Tests
     ;;@module causal.forest.smoke2
@@ -51,30 +44,46 @@
     ;;@example
     ;; (make-step-cate-data)
     (defun make-step-cate-data ()
-      (let ((z1s '(-2 -1 0 1 2))
-            (z2s '(-1 0 1)))
-        (foldl (lambda (acc z1)
-          (append acc
-            (foldl (lambda (acc2 z2)
-              (let* ((tau (if (< z1 0) 0.6 2.1))
-                     (base (+ 2.0 (* 0.25 z1) (* 0.50 z2) (* 0.20 (* z1 z2)) (* 0.15 (* z1 z1))))
-                     (n1 (cond ((= z2 1) 18) ((= z2 0) 12) (else 6)))
-                     (n0 (cond ((= z2 1) 6)  ((= z2 0) 12) (else 18))))
-                (append3 acc2 (%arm-rows n0 0 z1 z2 base tau) (%arm-rows n1 1 z1 z2 base tau))))
-              '() z2s)))
-          '() z1s)))
+      (let ((z1s '(-2 -1 0 1 2)) (z2s '(-1 0 1)))
+        (foldl
+          (lambda (acc z1)
+            (append
+              acc
+              (foldl
+                (lambda (acc2 z2)
+                  (let* ((tau (if (< z1 0) 0.6 2.1))
+                         (base
+                           (+ 2.0 (* 0.25 z1) (* 0.50 z2) (* 0.20 (* z1 z2)) (* 0.15 (* z1 z1))))
+                         (n1 (cond ((= z2 1) 18) ((= z2 0) 12) (else 6)))
+                         (n0 (cond ((= z2 1) 6) ((= z2 0) 12) (else 18))))
+                    (append3 acc2 (%arm-rows n0 0 z1 z2 base tau) (%arm-rows n1 1 z1 z2 base tau))))
+                '()
+                z2s)))
+          '()
+          z1s)))
 
     (define d (make-step-cate-data))
-    (display "rows=") (display (length d)) (newline)
+    (display "rows=")
+    (display (length d))
+    (newline)
 
     (define cf
-      (forest:fit-causal-forest d 'y 'x '(z1 z2)
-                                'n-trees 80
-                                'nuisance-trees 2
-                                'min-leaf 4
-                                'max-depth 10
-                                'subsample 0.80
-                                'seed 42))
-    (display "fit ok") (newline)
-  ))
-
+      (forest:fit-causal-forest
+        d
+        'y
+        'x
+        '(z1 z2)
+        'n-trees
+        80
+        'nuisance-trees
+        2
+        'min-leaf
+        4
+        'max-depth
+        10
+        'subsample
+        0.80
+        'seed
+        42))
+    (display "fit ok")
+    (newline)))

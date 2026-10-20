@@ -1,8 +1,7 @@
 ;;; cookbook/xva-wwr/learn-betas.eta -- ML calibration of shock betas.
 
 (module learn-betas
-  (export
-    cp-betas-as-tensor
+  (export cp-betas-as-tensor
     generate-shock-panel
     learn-cp-betas-with-trace
     learn-cp-betas
@@ -23,10 +22,8 @@
     (defun cp-row-as-list (i)
       (let ((b (assoc-ref (cp-name i) cp-sensitivity)))
         (if (cp-betas? b)
-            (list (cp-betas-oil b)
-                  (cp-betas-usd-10y b)
-                  (cp-betas-eur-usd b))
-            (list 0.0 0.0 0.0))))
+          (list (cp-betas-oil b) (cp-betas-usd-10y b) (cp-betas-eur-usd b))
+          (list 0.0 0.0 0.0))))
 
     ;;@doc (cp-betas-as-tensor ...)
     ;;@category Xva Wwr
@@ -58,8 +55,7 @@
     ;; Compute `normalize-report-every`.
     ;;@example
     ;; (normalize-report-every 1)
-    (defun normalize-report-every (n)
-      (if (and (number? n) (> n 0)) n 25))
+    (defun normalize-report-every (n) (if (and (number? n) (> n 0)) n 25))
 
     ;;@doc (should-log-epoch? epoch report-every total-epochs)
     ;;@category Xva Wwr
@@ -68,9 +64,7 @@
     ;;@example
     ;; (should-log-epoch? 'x 8080 'x)
     (defun should-log-epoch? (epoch report-every total-epochs)
-      (or (= epoch 1)
-          (= epoch total-epochs)
-          (= (modulo epoch report-every) 0)))
+      (or (= epoch 1) (= epoch total-epochs) (= (modulo epoch report-every) 0)))
 
     ;;@doc (learn-cp-betas-with-trace x y epochs lr report-every)
     ;;@category Xva Wwr
@@ -87,26 +81,25 @@
              (model (linear 3 30))
              (opt (adam model lr)))
         (train! model)
-        (let loop ((epoch 1) (last 0.0) (trace-rev '()))
+        (let
+          loop
+          ((epoch 1) (last 0.0) (trace-rev '()))
           (if (> epoch n-epochs)
-              (begin
-                (eval! model)
-                (list
-                  (cons 'model model)
-                  (cons 'final-loss last)
-                  (cons 'trace (reverse trace-rev))
-                  (cons 'epochs n-epochs)
-                  (cons 'lr lr)
-                  (cons 'report-every step)))
-              (let* ((loss (train-step! model opt mse-loss x y))
-                     (trace-next
-                       (if (should-log-epoch? epoch step n-epochs)
-                           (cons
-                             (list (cons 'epoch epoch)
-                                   (cons 'loss loss))
-                             trace-rev)
-                           trace-rev)))
-                (loop (+ epoch 1) loss trace-next))))))
+            (begin
+              (eval! model)
+              (list
+                (cons 'model model)
+                (cons 'final-loss last)
+                (cons 'trace (reverse trace-rev))
+                (cons 'epochs n-epochs)
+                (cons 'lr lr)
+                (cons 'report-every step)))
+            (let* ((loss (train-step! model opt mse-loss x y))
+                   (trace-next
+                     (if (should-log-epoch? epoch step n-epochs)
+                       (cons (list (cons 'epoch epoch) (cons 'loss loss)) trace-rev)
+                       trace-rev)))
+              (loop (+ epoch 1) loss trace-next))))))
 
     ;;@doc (learn-cp-betas x y . opts)
     ;;@category Xva Wwr
@@ -118,9 +111,7 @@
       (let* ((epochs (if (null? opts) 300 (car opts)))
              (lr (if (or (null? opts) (null? (cdr opts))) 0.01 (cadr opts)))
              (report-every
-               (if (or (null? opts) (null? (cdr opts)) (null? (cdr (cdr opts))))
-                   25
-                   (caddr opts)))
+               (if (or (null? opts) (null? (cdr opts)) (null? (cdr (cdr opts)))) 25 (caddr opts)))
              (fit (learn-cp-betas-with-trace x y epochs lr report-every)))
         (cons (assoc-ref 'model fit) (assoc-ref 'final-loss fit))))
 
@@ -132,13 +123,13 @@
     ;; (learned-cp-sensitivity 'x)
     (defun learned-cp-sensitivity (model)
       (let ((flat (to-list (car (parameters model)))))
-        (let loop ((i 1) (vals flat) (acc '()))
+        (let
+          loop
+          ((i 1) (vals flat) (acc '()))
           (if (> i 30)
-              (reverse acc)
-              (let ((b (make-cp-betas (car vals) (cadr vals) (caddr vals))))
-                (loop (+ i 1)
-                      (cdr (cdr (cdr vals)))
-                      (cons (cons (cp-name i) b) acc)))))))
+            (reverse acc)
+            (let ((b (make-cp-betas (car vals) (cadr vals) (caddr vals))))
+              (loop (+ i 1) (cdr (cdr (cdr vals))) (cons (cons (cp-name i) b) acc)))))))
 
     ;;@doc (abs-val x)
     ;;@category Xva Wwr
@@ -146,8 +137,7 @@
     ;; Compute `abs-val`.
     ;;@example
     ;; (abs-val 1)
-    (defun abs-val (x)
-      (if (< x 0) (* -1 x) x))
+    (defun abs-val (x) (if (< x 0) (* -1 x) x))
 
     ;;@doc (max-abs-diff xs ys)
     ;;@category Xva Wwr
@@ -157,9 +147,7 @@
     ;; (max-abs-diff '() '())
     (defun max-abs-diff (xs ys)
       (foldl
-        (lambda (acc pair)
-          (let ((d (abs-val (- (car pair) (cdr pair)))))
-            (if (> d acc) d acc)))
+        (lambda (acc pair) (let ((d (abs-val (- (car pair) (cdr pair))))) (if (> d acc) d acc)))
         0.0
         (zip xs ys)))
 
@@ -171,10 +159,8 @@
     ;; (beta->list 1)
     (defun beta->list (b)
       (if (cp-betas? b)
-          (list (cp-betas-oil b)
-                (cp-betas-usd-10y b)
-                (cp-betas-eur-usd b))
-          (list 0.0 0.0 0.0)))
+        (list (cp-betas-oil b) (cp-betas-usd-10y b) (cp-betas-eur-usd b))
+        (list 0.0 0.0 0.0)))
 
     ;;@doc (cp-beta-error i learned)
     ;;@category Xva Wwr
@@ -203,25 +189,13 @@
                           (truth (beta->list (assoc-ref cp cp-sensitivity)))
                           (hat (beta->list (assoc-ref cp learned)))
                           (err (max-abs-diff truth hat)))
-                     (list
-                       (cons 'cp cp)
-                       (cons 'true truth)
-                       (cons 'hat hat)
-                       (cons 'err err))))
+                     (list (cons 'cp cp) (cons 'true truth) (cons 'hat hat) (cons 'err err))))
                  picks))
              (worst
                (foldl
                  (lambda (acc i)
-                   (let* ((cp (cp-name i))
-                          (err (cp-beta-error i learned)))
-                     (if (> err (cdr acc))
-                         (cons cp err)
-                         acc)))
+                   (let* ((cp (cp-name i)) (err (cp-beta-error i learned)))
+                     (if (> err (cdr acc)) (cons cp err) acc)))
                  (cons "n/a" 0.0)
                  (iota 30 1))))
-        (list
-          (cons 'rows rows)
-          (cons 'max-error (cdr worst))
-          (cons 'worst-cp (car worst)))))
-
-  ))
+        (list (cons 'rows rows) (cons 'max-error (cdr worst)) (cons 'worst-cp (car worst)))))))

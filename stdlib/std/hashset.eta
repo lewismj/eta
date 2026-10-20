@@ -1,11 +1,7 @@
 ;;; std/hashset.eta - Hash set helpers over runtime hash-set primitives.
 
 (module std.hashset
-  (export
-    hash-set-empty?
-    hash-set-size
-    hash-set-subset?
-    hash-set-equal?)
+  (export hash-set-empty? hash-set-size hash-set-subset? hash-set-equal?)
   (begin
 
     ;;@doc (hash-set-size s)
@@ -14,8 +10,7 @@
     ;; Hash set helpers over runtime hash-set primitives Uses `hash-set-size`.
     ;;@example
     ;; (hash-set-size s)
-    (defun hash-set-size (s)
-      (length (hash-set->list s)))
+    (defun hash-set-size (s) (length (hash-set->list s)))
 
     ;;@doc (hash-set-empty? s)
     ;;@category Hashset
@@ -23,8 +18,7 @@
     ;; Return whether `hash-set-empty?` holds.
     ;;@example
     ;; (hash-set-empty? "sample")
-    (defun hash-set-empty? (s)
-      (= 0 (hash-set-size s)))
+    (defun hash-set-empty? (s) (= 0 (hash-set-size s)))
 
     ;;@doc (hash-set-subset? left right)
     ;;@category Hashset
@@ -33,11 +27,9 @@
     ;;@example
     ;; (hash-set-subset? 'x 'x)
     (defun hash-set-subset? (left right)
-      (letrec ((loop (lambda (xs)
-                       (if (null? xs)
-                           #t
-                           (and (hash-set-contains? right (car xs))
-                                (loop (cdr xs)))))))
+      (letrec ((loop
+                 (lambda (xs)
+                   (if (null? xs) #t (and (hash-set-contains? right (car xs)) (loop (cdr xs)))))))
         (loop (hash-set->list left))))
 
     ;;@doc (hash-set-equal? a b)
@@ -47,7 +39,4 @@
     ;;@example
     ;; (hash-set-equal? 1 1)
     (defun hash-set-equal? (a b)
-      (and (= (hash-set-size a) (hash-set-size b))
-           (hash-set-subset? a b)))
-
-  ))
+      (and (= (hash-set-size a) (hash-set-size b)) (hash-set-subset? a b)))))

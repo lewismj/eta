@@ -22,13 +22,7 @@
   (import std.core)
   (import std.collections)
   (import std.stats)
-  (export
-    learn:pc
-    learn:fci
-    learn:ges
-    learn:notears
-    learn:ci-test:fisher-z
-    learn:ci-test:chi2)
+  (export learn:pc learn:fci learn:ges learn:notears learn:ci-test:fisher-z learn:ci-test:chi2)
   (begin
 
     ;; -- Basic helpers ----------------------------------------------------
@@ -40,10 +34,7 @@
     ;;@example
     ;; (%member? 1 '())
     (defun %member? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((equal? x (car xs)) #t)
-        (else (%member? x (cdr xs)))))
+      (cond ((null? xs) #f) ((equal? x (car xs)) #t) (else (%member? x (cdr xs)))))
 
     ;;@doc (%adjoin x xs)
     ;;@category Causal
@@ -51,8 +42,7 @@
     ;; Compute `%adjoin`.
     ;;@example
     ;; (%adjoin 1 '())
-    (defun %adjoin (x xs)
-      (if (%member? x xs) xs (cons x xs)))
+    (defun %adjoin (x xs) (if (%member? x xs) xs (cons x xs)))
 
     ;;@doc (%set-diff a b)
     ;;@category Causal
@@ -60,8 +50,7 @@
     ;; Compute `%set-diff`.
     ;;@example
     ;; (%set-diff 1 1)
-    (defun %set-diff (a b)
-      (filter (lambda (x) (not (%member? x b))) a))
+    (defun %set-diff (a b) (filter (lambda (x) (not (%member? x b))) a))
 
     ;;@doc (%normalize-vars vars)
     ;;@category Causal
@@ -70,13 +59,13 @@
     ;;@example
     ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
-      (let loop ((rest vars) (acc '()))
+      (let
+        loop
+        ((rest vars) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (let ((v (car rest)))
-              (if (%member? v acc)
-                  (loop (cdr rest) acc)
-                  (loop (cdr rest) (cons v acc)))))))
+          (reverse acc)
+          (let ((v (car rest)))
+            (if (%member? v acc) (loop (cdr rest) acc) (loop (cdr rest) (cons v acc)))))))
 
     ;;@doc (%as-node-set x)
     ;;@category Causal
@@ -85,8 +74,7 @@
     ;;@example
     ;; (%as-node-set 1)
     (defun %as-node-set (x)
-      (cond
-        ((null? x) '())
+      (cond ((null? x) '())
         ((symbol? x) (list x))
         ((list? x) (%normalize-vars x))
         (else (error "learn: expected symbol or list of symbols"))))
@@ -97,8 +85,7 @@
     ;; Return whether `%symbol<?` holds.
     ;;@example
     ;; (%symbol<? 1 1)
-    (defun %symbol<? (a b)
-      (string<? (symbol->string a) (symbol->string b)))
+    (defun %symbol<? (a b) (string<? (symbol->string a) (symbol->string b)))
 
     ;;@doc (%ordered-pair a b)
     ;;@category Causal
@@ -106,8 +93,7 @@
     ;; Compute `%ordered-pair`.
     ;;@example
     ;; (%ordered-pair 1 1)
-    (defun %ordered-pair (a b)
-      (if (%symbol<? a b) (list a b) (list b a)))
+    (defun %ordered-pair (a b) (if (%symbol<? a b) (list a b) (list b a)))
 
     ;;@doc (%clip x lo hi)
     ;;@category Causal
@@ -115,11 +101,7 @@
     ;; Compute `%clip`.
     ;;@example
     ;; (%clip 1 'x 'x)
-    (defun %clip (x lo hi)
-      (cond
-        ((< x lo) lo)
-        ((> x hi) hi)
-        (else x)))
+    (defun %clip (x lo hi) (cond ((< x lo) lo) ((> x hi) hi) (else x)))
 
     ;;@doc (%assoc-get-equal alist key default)
     ;;@category Causal
@@ -128,9 +110,10 @@
     ;;@example
     ;; (%assoc-get-equal 'x 'x 'x)
     (defun %assoc-get-equal (alist key default)
-      (let loop ((rest alist))
-        (cond
-          ((null? rest) default)
+      (let
+        loop
+        ((rest alist))
+        (cond ((null? rest) default)
           ((equal? key (car (car rest))) (cdr (car rest)))
           (else (loop (cdr rest))))))
 
@@ -141,18 +124,12 @@
     ;;@example
     ;; (%assoc-set-equal 'x 'x 1)
     (defun %assoc-set-equal (alist key value)
-      (let loop ((rest alist) (acc '()) (done? #f))
-        (cond
-          ((null? rest)
-           (if done?
-               (reverse acc)
-               (reverse (cons (cons key value) acc))))
-          ((equal? key (car (car rest)))
-           (loop (cdr rest)
-                 (cons (cons key value) acc)
-                 #t))
-          (else
-           (loop (cdr rest) (cons (car rest) acc) done?)))))
+      (let
+        loop
+        ((rest alist) (acc '()) (done? #f))
+        (cond ((null? rest) (if done? (reverse acc) (reverse (cons (cons key value) acc))))
+          ((equal? key (car (car rest))) (loop (cdr rest) (cons (cons key value) acc) #t))
+          (else (loop (cdr rest) (cons (car rest) acc) done?)))))
 
     ;; -- Data extraction --------------------------------------------------
 
@@ -163,10 +140,7 @@
     ;;@example
     ;; (%obs-get 'x 'x)
     (defun %obs-get (obs var)
-      (let ((p (assq var obs)))
-        (if p
-            (cdr p)
-            (error 'unknown-variable var))))
+      (let ((p (assq var obs))) (if p (cdr p) (error 'unknown-variable var))))
 
     ;;@doc (%column-values data var)
     ;;@category Causal
@@ -174,8 +148,7 @@
     ;; Compute `%column-values`.
     ;;@example
     ;; (%column-values 'x 'x)
-    (defun %column-values (data var)
-      (map* (lambda (obs) (%obs-get obs var)) data))
+    (defun %column-values (data var) (map* (lambda (obs) (%obs-get obs var)) data))
 
     ;;@doc (%all-nodes data)
     ;;@category Causal
@@ -184,14 +157,12 @@
     ;;@example
     ;; (%all-nodes 'x)
     (defun %all-nodes (data)
-      (sort %symbol<?
-            (foldl (lambda (acc obs)
-                     (foldl (lambda (acc2 kv)
-                              (%adjoin (car kv) acc2))
-                            acc
-                            obs))
-                   '()
-                   data)))
+      (sort
+        %symbol<?
+        (foldl
+          (lambda (acc obs) (foldl (lambda (acc2 kv) (%adjoin (car kv) acc2)) acc obs))
+          '()
+          data)))
 
     ;;@doc (%same-length? xss n)
     ;;@category Causal
@@ -199,8 +170,7 @@
     ;; Return whether `%same-length?` holds.
     ;;@example
     ;; (%same-length? 'x 1)
-    (defun %same-length? (xss n)
-      (every? (lambda (xs) (= (length xs) n)) xss))
+    (defun %same-length? (xss n) (every? (lambda (xs) (= (length xs) n)) xss))
 
     ;;@doc (%columns-at cols i)
     ;;@category Causal
@@ -208,8 +178,7 @@
     ;; Compute `%columns-at`.
     ;;@example
     ;; (%columns-at '() 1)
-    (defun %columns-at (cols i)
-      (map* (lambda (col) (list-ref col i)) cols))
+    (defun %columns-at (cols i) (map* (lambda (col) (list-ref col i)) cols))
 
     ;;@doc (%dot a b)
     ;;@category Causal
@@ -218,10 +187,7 @@
     ;;@example
     ;; (%dot 1 1)
     (defun %dot (a b)
-      (if (or (null? a) (null? b))
-          0.0
-          (+ (* (car a) (car b))
-             (%dot (cdr a) (cdr b)))))
+      (if (or (null? a) (null? b)) 0.0 (+ (* (car a) (car b)) (%dot (cdr a) (cdr b)))))
 
     ;; -- CI tests ---------------------------------------------------------
 
@@ -231,8 +197,7 @@
     ;; Compute `%clip-correlation`.
     ;;@example
     ;; (%clip-correlation 'x)
-    (defun %clip-correlation (r)
-      (%clip r -0.999999 0.999999))
+    (defun %clip-correlation (r) (%clip r -0.999999 0.999999))
 
     ;;@doc (%normal-cdf-approx z)
     ;;@category Causal
@@ -250,8 +215,7 @@
     ;; Compute `%two-sided-p-from-z`.
     ;;@example
     ;; (%two-sided-p-from-z 'x)
-    (defun %two-sided-p-from-z (zscore)
-      (%clip (* 2.0 (- 1.0 (%normal-cdf-approx zscore))) 0.0 1.0))
+    (defun %two-sided-p-from-z (zscore) (%clip (* 2.0 (- 1.0 (%normal-cdf-approx zscore))) 0.0 1.0))
 
     ;;@doc (%safe-correlation xs ys)
     ;;@category Causal
@@ -260,13 +224,10 @@
     ;;@example
     ;; (%safe-correlation '() '())
     (defun %safe-correlation (xs ys)
-      (let ((vx (stats:variance xs))
-            (vy (stats:variance ys)))
-        (if (or (< (length xs) 2)
-                (< (abs vx) 1e-12)
-                (< (abs vy) 1e-12))
-            0.0
-            (stats:correlation xs ys))))
+      (let ((vx (stats:variance xs)) (vy (stats:variance ys)))
+        (if (or (< (length xs) 2) (< (abs vx) 1e-12) (< (abs vy) 1e-12))
+          0.0
+          (stats:correlation xs ys))))
 
     ;;@doc (%residualize target z-cols)
     ;;@category Causal
@@ -276,19 +237,18 @@
     ;; (%residualize 'x 'x)
     (defun %residualize (target z-cols)
       (if (null? z-cols)
-          target
-          (let ((n (length target)))
-            (if (not (%same-length? z-cols n))
-                (error "learn: mismatched column lengths")
-                (let* ((fit (stats:ols-multi target z-cols))
-                       (coeffs (stats:ols-multi-coefficients fit))
-                       (intercept (if (null? coeffs) 0.0 (car coeffs)))
-                       (betas (if (null? coeffs) '() (cdr coeffs))))
-                  (map-indexed
-                    (lambda (i yv)
-                      (let ((row (%columns-at z-cols i)))
-                        (- yv (+ intercept (%dot betas row)))))
-                    target))))))
+        target
+        (let ((n (length target)))
+          (if (not (%same-length? z-cols n))
+            (error "learn: mismatched column lengths")
+            (let* ((fit (stats:ols-multi target z-cols))
+                   (coeffs (stats:ols-multi-coefficients fit))
+                   (intercept (if (null? coeffs) 0.0 (car coeffs)))
+                   (betas (if (null? coeffs) '() (cdr coeffs))))
+              (map-indexed
+                (lambda (i yv)
+                  (let ((row (%columns-at z-cols i))) (- yv (+ intercept (%dot betas row)))))
+                target))))))
 
     ;;@doc (learn:ci-test:fisher-z data x y z alpha)
     ;;@category Causal
@@ -306,15 +266,13 @@
              (k (length z-set))
              (dof (- n k 3)))
         (if (or (= n 0) (<= dof 0))
-            (cons #t 1.0)
-            (let* ((rx (%residualize xv z-cols))
-                   (ry (%residualize yv z-cols))
-                   (r (%clip-correlation (%safe-correlation rx ry)))
-                   (zscore (abs (* 0.5
-                                  (log (/ (+ 1.0 r) (- 1.0 r)))
-                                  (sqrt dof))))
-                   (p (%two-sided-p-from-z zscore)))
-              (cons (> p alpha) p)))))
+          (cons #t 1.0)
+          (let* ((rx (%residualize xv z-cols))
+                 (ry (%residualize yv z-cols))
+                 (r (%clip-correlation (%safe-correlation rx ry)))
+                 (zscore (abs (* 0.5 (log (/ (+ 1.0 r) (- 1.0 r))) (sqrt dof))))
+                 (p (%two-sided-p-from-z zscore)))
+            (cons (> p alpha) p)))))
 
     ;;@doc (%unique-values xs)
     ;;@category Causal
@@ -322,8 +280,7 @@
     ;; Compute `%unique-values`.
     ;;@example
     ;; (%unique-values '())
-    (defun %unique-values (xs)
-      (reverse (foldl (lambda (acc x) (%adjoin x acc)) '() xs)))
+    (defun %unique-values (xs) (reverse (foldl (lambda (acc x) (%adjoin x acc)) '() xs)))
 
     ;;@doc (%obs-project obs vars)
     ;;@category Causal
@@ -331,8 +288,7 @@
     ;; Compute `%obs-project`.
     ;;@example
     ;; (%obs-project 'x 'x)
-    (defun %obs-project (obs vars)
-      (map* (lambda (v) (cons v (%obs-get obs v))) vars))
+    (defun %obs-project (obs vars) (map* (lambda (v) (cons v (%obs-get obs v))) vars))
 
     ;;@doc (%obs-matches-key obs key)
     ;;@category Causal
@@ -341,10 +297,7 @@
     ;;@example
     ;; (%obs-matches-key 'x 'x)
     (defun %obs-matches-key (obs key)
-      (every? (lambda (kv)
-                (equal? (%obs-get obs (car kv))
-                        (cdr kv)))
-              key))
+      (every? (lambda (kv) (equal? (%obs-get obs (car kv)) (cdr kv))) key))
 
     ;;@doc (%chi2-for-rows rows x y)
     ;;@category Causal
@@ -359,34 +312,34 @@
              (cy (length y-levels))
              (n (length rows)))
         (if (or (= n 0) (< rx 2) (< cy 2))
-            (cons 0.0 0.0)
-            (let* ((chi2
-                     (foldl
-                       (lambda (acc xv)
-                         (let ((row-n (count (lambda (obs)
-                                               (equal? (%obs-get obs x) xv))
-                                             rows)))
-                           (+ acc
-                              (foldl
-                                (lambda (acc2 yv)
-                                  (let* ((col-n (count (lambda (obs)
-                                                         (equal? (%obs-get obs y) yv))
-                                                       rows))
-                                         (obs-n (count (lambda (obs)
-                                                         (and (equal? (%obs-get obs x) xv)
-                                                              (equal? (%obs-get obs y) yv)))
-                                                       rows))
-                                         (exp (/ (* 1.0 row-n col-n) n)))
-                                    (if (<= exp 0.0)
-                                        acc2
-                                        (+ acc2 (/ (* (- obs-n exp) (- obs-n exp))
-                                                   exp)))))
-                                0.0
-                                y-levels))))
-                       0.0
-                       x-levels))
-                   (df (* (- rx 1) (- cy 1))))
-              (cons chi2 (* 1.0 df))))))
+          (cons 0.0 0.0)
+          (let* ((chi2
+                   (foldl
+                     (lambda (acc xv)
+                       (let ((row-n (count (lambda (obs) (equal? (%obs-get obs x) xv)) rows)))
+                         (+
+                           acc
+                           (foldl
+                             (lambda (acc2 yv)
+                               (let* ((col-n
+                                        (count (lambda (obs) (equal? (%obs-get obs y) yv)) rows))
+                                      (obs-n
+                                        (count
+                                          (lambda (obs)
+                                            (and
+                                              (equal? (%obs-get obs x) xv)
+                                              (equal? (%obs-get obs y) yv)))
+                                          rows))
+                                      (exp (/ (* 1.0 row-n col-n) n)))
+                                 (if (<= exp 0.0)
+                                   acc2
+                                   (+ acc2 (/ (* (- obs-n exp) (- obs-n exp)) exp)))))
+                             0.0
+                             y-levels))))
+                     0.0
+                     x-levels))
+                 (df (* (- rx 1) (- cy 1))))
+            (cons chi2 (* 1.0 df))))))
 
     ;;@doc (%cuberoot x)
     ;;@category Causal
@@ -394,10 +347,7 @@
     ;; Compute `%cuberoot`.
     ;;@example
     ;; (%cuberoot 1)
-    (defun %cuberoot (x)
-      (if (<= x 0.0)
-          0.0
-          (exp (/ (log x) 3.0))))
+    (defun %cuberoot (x) (if (<= x 0.0) 0.0 (exp (/ (log x) 3.0))))
 
     ;;@doc (%chi2-tail-approx chi2 df)
     ;;@category Causal
@@ -407,12 +357,12 @@
     ;; (%chi2-tail-approx 'x 'x)
     (defun %chi2-tail-approx (chi2 df)
       (if (or (<= df 0.0) (<= chi2 0.0))
-          1.0
-          (let* ((a (- 1.0 (/ 2.0 (* 9.0 df))))
-                 (b (sqrt (/ 2.0 (* 9.0 df))))
-                 (z (/ (- (%cuberoot (/ chi2 df)) a) b))
-                 (cdf (%normal-cdf-approx z)))
-            (%clip (- 1.0 cdf) 0.0 1.0))))
+        1.0
+        (let* ((a (- 1.0 (/ 2.0 (* 9.0 df))))
+               (b (sqrt (/ 2.0 (* 9.0 df))))
+               (z (/ (- (%cuberoot (/ chi2 df)) a) b))
+               (cdf (%normal-cdf-approx z)))
+          (%clip (- 1.0 cdf) 0.0 1.0))))
 
     ;;@doc (learn:ci-test:chi2 data x y z alpha)
     ;;@category Causal
@@ -425,9 +375,8 @@
       (let* ((z-set (%as-node-set z))
              (strata-keys
                (if (null? z-set)
-                   (list '())
-                   (%unique-values (map* (lambda (obs) (%obs-project obs z-set))
-                                         data))))
+                 (list '())
+                 (%unique-values (map* (lambda (obs) (%obs-project obs z-set)) data))))
              (acc
                (foldl
                  (lambda (state key)
@@ -435,12 +384,10 @@
                           (df (cdr state))
                           (rows
                             (if (null? z-set)
-                                data
-                                (filter (lambda (obs) (%obs-matches-key obs key))
-                                        data)))
+                              data
+                              (filter (lambda (obs) (%obs-matches-key obs key)) data)))
                           (piece (%chi2-for-rows rows x y)))
-                     (cons (+ chi2 (car piece))
-                           (+ df (cdr piece)))))
+                     (cons (+ chi2 (car piece)) (+ df (cdr piece)))))
                  (cons 0.0 0.0)
                  strata-keys))
              (chi2 (car acc))
@@ -493,9 +440,7 @@
     ;; Construct `%make-undirected`.
     ;;@example
     ;; (%make-undirected 1 1)
-    (defun %make-undirected (a b)
-      (let ((ord (%ordered-pair a b)))
-        (list (car ord) '-- (cadr ord))))
+    (defun %make-undirected (a b) (let ((ord (%ordered-pair a b))) (list (car ord) '-- (cadr ord))))
 
     ;;@doc (%make-directed a b)
     ;;@category Causal
@@ -503,8 +448,7 @@
     ;; Construct `%make-directed`.
     ;;@example
     ;; (%make-directed 1 1)
-    (defun %make-directed (a b)
-      (list a '-> b))
+    (defun %make-directed (a b) (list a '-> b))
 
     ;;@doc (%edge-member? edge edges)
     ;;@category Causal
@@ -512,8 +456,7 @@
     ;; Return whether `%edge-member?` holds.
     ;;@example
     ;; (%edge-member? 'x 'x)
-    (defun %edge-member? (edge edges)
-      (any? (lambda (e) (equal? e edge)) edges))
+    (defun %edge-member? (edge edges) (any? (lambda (e) (equal? e edge)) edges))
 
     ;;@doc (%edge-adjoin edge edges)
     ;;@category Causal
@@ -521,8 +464,7 @@
     ;; Compute `%edge-adjoin`.
     ;;@example
     ;; (%edge-adjoin 'x 'x)
-    (defun %edge-adjoin (edge edges)
-      (if (%edge-member? edge edges) edges (cons edge edges)))
+    (defun %edge-adjoin (edge edges) (if (%edge-member? edge edges) edges (cons edge edges)))
 
     ;;@doc (%edge-remove edge edges)
     ;;@category Causal
@@ -530,8 +472,7 @@
     ;; Compute `%edge-remove`.
     ;;@example
     ;; (%edge-remove 'x 'x)
-    (defun %edge-remove (edge edges)
-      (filter (lambda (e) (not (equal? e edge))) edges))
+    (defun %edge-remove (edge edges) (filter (lambda (e) (not (equal? e edge))) edges))
 
     ;;@doc (%has-undirected-edge? g a b)
     ;;@category Causal
@@ -539,8 +480,7 @@
     ;; Return whether `%has-undirected-edge?` holds.
     ;;@example
     ;; (%has-undirected-edge? 'x 1 1)
-    (defun %has-undirected-edge? (g a b)
-      (%edge-member? (%make-undirected a b) g))
+    (defun %has-undirected-edge? (g a b) (%edge-member? (%make-undirected a b) g))
 
     ;;@doc (%has-directed-edge? g a b)
     ;;@category Causal
@@ -548,8 +488,7 @@
     ;; Return whether `%has-directed-edge?` holds.
     ;;@example
     ;; (%has-directed-edge? 'x 1 1)
-    (defun %has-directed-edge? (g a b)
-      (%edge-member? (%make-directed a b) g))
+    (defun %has-directed-edge? (g a b) (%edge-member? (%make-directed a b) g))
 
     ;;@doc (%remove-undirected-edge g a b)
     ;;@category Causal
@@ -557,8 +496,7 @@
     ;; Compute `%remove-undirected-edge`.
     ;;@example
     ;; (%remove-undirected-edge 'x 1 1)
-    (defun %remove-undirected-edge (g a b)
-      (%edge-remove (%make-undirected a b) g))
+    (defun %remove-undirected-edge (g a b) (%edge-remove (%make-undirected a b) g))
 
     ;;@doc (%adjacent? g a b)
     ;;@category Causal
@@ -567,9 +505,7 @@
     ;;@example
     ;; (%adjacent? 'x 1 1)
     (defun %adjacent? (g a b)
-      (or (%has-undirected-edge? g a b)
-          (%has-directed-edge? g a b)
-          (%has-directed-edge? g b a)))
+      (or (%has-undirected-edge? g a b) (%has-directed-edge? g a b) (%has-directed-edge? g b a)))
 
     ;;@doc (%neighbors-any g node)
     ;;@category Causal
@@ -578,15 +514,12 @@
     ;;@example
     ;; (%neighbors-any 'x 'x)
     (defun %neighbors-any (g node)
-      (foldl (lambda (acc e)
-               (let ((u (%edge-from e))
-                     (v (%edge-to e)))
-                 (cond
-                   ((eq? u node) (%adjoin v acc))
-                   ((eq? v node) (%adjoin u acc))
-                   (else acc))))
-             '()
-             g))
+      (foldl
+        (lambda (acc e)
+          (let ((u (%edge-from e)) (v (%edge-to e)))
+            (cond ((eq? u node) (%adjoin v acc)) ((eq? v node) (%adjoin u acc)) (else acc))))
+        '()
+        g))
 
     ;;@doc (%neighbors-undirected g node)
     ;;@category Causal
@@ -595,17 +528,14 @@
     ;;@example
     ;; (%neighbors-undirected 'x 'x)
     (defun %neighbors-undirected (g node)
-      (foldl (lambda (acc e)
-               (if (not (%undirected-edge? e))
-                   acc
-                   (let ((u (%edge-from e))
-                         (v (%edge-to e)))
-                     (cond
-                       ((eq? u node) (%adjoin v acc))
-                       ((eq? v node) (%adjoin u acc))
-                       (else acc)))))
-             '()
-             g))
+      (foldl
+        (lambda (acc e)
+          (if (not (%undirected-edge? e))
+            acc
+            (let ((u (%edge-from e)) (v (%edge-to e)))
+              (cond ((eq? u node) (%adjoin v acc)) ((eq? v node) (%adjoin u acc)) (else acc)))))
+        '()
+        g))
 
     ;;@doc (%directed-children g node)
     ;;@category Causal
@@ -614,12 +544,11 @@
     ;;@example
     ;; (%directed-children 'x 'x)
     (defun %directed-children (g node)
-      (foldl (lambda (acc e)
-               (if (and (%directed-edge? e) (eq? (%edge-from e) node))
-                   (%adjoin (%edge-to e) acc)
-                   acc))
-             '()
-             g))
+      (foldl
+        (lambda (acc e)
+          (if (and (%directed-edge? e) (eq? (%edge-from e) node)) (%adjoin (%edge-to e) acc) acc))
+        '()
+        g))
 
     ;;@doc (%pair-key a b)
     ;;@category Causal
@@ -627,8 +556,7 @@
     ;; Compute `%pair-key`.
     ;;@example
     ;; (%pair-key 1 1)
-    (defun %pair-key (a b)
-      (%ordered-pair a b))
+    (defun %pair-key (a b) (%ordered-pair a b))
 
     ;;@doc (%edge<? a b)
     ;;@category Causal
@@ -643,8 +571,7 @@
              (bk (symbol->string (%edge-kind b)))
              (at (symbol->string (%edge-to a)))
              (bt (symbol->string (%edge-to b))))
-        (cond
-          ((string<? af bf) #t)
+        (cond ((string<? af bf) #t)
           ((string<? bf af) #f)
           ((string<? ak bk) #t)
           ((string<? bk ak) #f)
@@ -656,8 +583,7 @@
     ;; Compute `%sort-edges`.
     ;;@example
     ;; (%sort-edges 'x)
-    (defun %sort-edges (edges)
-      (sort %edge<? edges))
+    (defun %sort-edges (edges) (sort %edge<? edges))
 
     ;;@doc (%unordered-pairs xs)
     ;;@category Causal
@@ -667,10 +593,8 @@
     ;; (%unordered-pairs '())
     (defun %unordered-pairs (xs)
       (if (null? xs)
-          '()
-          (append
-            (map* (lambda (y) (list (car xs) y)) (cdr xs))
-            (%unordered-pairs (cdr xs)))))
+        '()
+        (append (map* (lambda (y) (list (car xs) y)) (cdr xs)) (%unordered-pairs (cdr xs)))))
 
     ;;@doc (%choose-k xs k)
     ;;@category Causal
@@ -679,15 +603,13 @@
     ;;@example
     ;; (%choose-k '() 1)
     (defun %choose-k (xs k)
-      (cond
-        ((= k 0) (list '()))
+      (cond ((= k 0) (list '()))
         ((null? xs) '())
         ((< k 0) '())
         (else
-         (append
-           (map* (lambda (s) (cons (car xs) s))
-                 (%choose-k (cdr xs) (- k 1)))
-           (%choose-k (cdr xs) k)))))
+          (append
+            (map* (lambda (s) (cons (car xs) s)) (%choose-k (cdr xs) (- k 1)))
+            (%choose-k (cdr xs) k)))))
 
     ;;@doc (%complete-undirected nodes)
     ;;@category Causal
@@ -696,9 +618,7 @@
     ;;@example
     ;; (%complete-undirected 'x)
     (defun %complete-undirected (nodes)
-      (map* (lambda (p)
-              (%make-undirected (car p) (cadr p)))
-            (%unordered-pairs nodes)))
+      (map* (lambda (p) (%make-undirected (car p) (cadr p))) (%unordered-pairs nodes)))
 
     ;; -- PC skeleton ------------------------------------------------------
 
@@ -708,10 +628,7 @@
     ;; Return whether `%ci-independent?` holds.
     ;;@example
     ;; (%ci-independent? 'x)
-    (defun %ci-independent? (result)
-      (if (pair? result)
-          (car result)
-          (if result #t #f)))
+    (defun %ci-independent? (result) (if (pair? result) (car result) (if result #t #f)))
 
     ;;@doc (%find-separating-set data alpha ci-test x y neigh k)
     ;;@category Causal
@@ -720,13 +637,13 @@
     ;;@example
     ;; (%find-separating-set 'x 'x 'x 1 1 'x 1)
     (defun %find-separating-set (data alpha ci-test x y neigh k)
-      (let loop ((subs (%choose-k neigh k)))
+      (let
+        loop
+        ((subs (%choose-k neigh k)))
         (if (null? subs)
-            #f
-            (let ((s (car subs)))
-              (if (%ci-independent? (ci-test data x y s alpha))
-                  s
-                  (loop (cdr subs)))))))
+          #f
+          (let ((s (car subs)))
+            (if (%ci-independent? (ci-test data x y s alpha)) s (loop (cdr subs)))))))
 
     ;;@doc (%has-candidate-depth? g nodes depth)
     ;;@category Causal
@@ -735,13 +652,11 @@
     ;;@example
     ;; (%has-candidate-depth? 'x 'x 'x)
     (defun %has-candidate-depth? (g nodes depth)
-      (any? (lambda (p)
-              (let* ((x (car p))
-                     (y (cadr p))
-                     (nbrs (%set-diff (%neighbors-any g x) (list y))))
-                (and (%has-undirected-edge? g x y)
-                     (>= (length nbrs) depth))))
-            (%unordered-pairs nodes)))
+      (any?
+        (lambda (p)
+          (let* ((x (car p)) (y (cadr p)) (nbrs (%set-diff (%neighbors-any g x) (list y))))
+            (and (%has-undirected-edge? g x y) (>= (length nbrs) depth))))
+        (%unordered-pairs nodes)))
 
     ;;@doc (%skeleton-pass pairs g seps data alpha ci-test depth)
     ;;@category Causal
@@ -751,26 +666,19 @@
     ;; (%skeleton-pass '() 'x 'x 'x 'x 'x 'x)
     (defun %skeleton-pass (pairs g seps data alpha ci-test depth)
       (if (null? pairs)
-          (list g seps)
-          (let* ((p (car pairs))
-                 (x (car p))
-                 (y (cadr p)))
-            (if (not (%has-undirected-edge? g x y))
+        (list g seps)
+        (let* ((p (car pairs)) (x (car p)) (y (cadr p)))
+          (if (not (%has-undirected-edge? g x y))
+            (%skeleton-pass (cdr pairs) g seps data alpha ci-test depth)
+            (let ((nbrs (%set-diff (%neighbors-any g x) (list y))))
+              (if (< (length nbrs) depth)
                 (%skeleton-pass (cdr pairs) g seps data alpha ci-test depth)
-                (let ((nbrs (%set-diff (%neighbors-any g x) (list y))))
-                  (if (< (length nbrs) depth)
-                      (%skeleton-pass (cdr pairs) g seps data alpha ci-test depth)
-                      (let ((sep (%find-separating-set
-                                   data alpha ci-test x y nbrs depth)))
-                        (if sep
-                            (let* ((g2 (%remove-undirected-edge g x y))
-                                   (seps2 (%assoc-set-equal seps
-                                                            (%pair-key x y)
-                                                            sep)))
-                              (%skeleton-pass (cdr pairs)
-                                              g2 seps2 data alpha ci-test depth))
-                            (%skeleton-pass (cdr pairs)
-                                            g seps data alpha ci-test depth)))))))))
+                (let ((sep (%find-separating-set data alpha ci-test x y nbrs depth)))
+                  (if sep
+                    (let* ((g2 (%remove-undirected-edge g x y))
+                           (seps2 (%assoc-set-equal seps (%pair-key x y) sep)))
+                      (%skeleton-pass (cdr pairs) g2 seps2 data alpha ci-test depth))
+                    (%skeleton-pass (cdr pairs) g seps data alpha ci-test depth)))))))))
 
     ;;@doc (%pc-skeleton data alpha ci-test nodes)
     ;;@category Causal
@@ -779,16 +687,15 @@
     ;;@example
     ;; (%pc-skeleton 'x 'x 'x 'x)
     (defun %pc-skeleton (data alpha ci-test nodes)
-      (let loop ((g (%complete-undirected nodes))
-                 (seps '())
-                 (depth 0))
+      (let
+        loop
+        ((g (%complete-undirected nodes)) (seps '()) (depth 0))
         (if (not (%has-candidate-depth? g nodes depth))
-            (list g seps)
-            (let* ((pass (%skeleton-pass (%unordered-pairs nodes)
-                                         g seps data alpha ci-test depth))
-                   (g2 (car pass))
-                   (seps2 (cadr pass)))
-              (loop g2 seps2 (+ depth 1))))))
+          (list g seps)
+          (let* ((pass (%skeleton-pass (%unordered-pairs nodes) g seps data alpha ci-test depth))
+                 (g2 (car pass))
+                 (seps2 (cadr pass)))
+            (loop g2 seps2 (+ depth 1))))))
 
     ;; -- Orientation ------------------------------------------------------
 
@@ -800,9 +707,8 @@
     ;; (%orient-edge 'x 'x 'x)
     (defun %orient-edge (g from to)
       (if (%has-undirected-edge? g from to)
-          (%edge-adjoin (%make-directed from to)
-                        (%remove-undirected-edge g from to))
-          g))
+        (%edge-adjoin (%make-directed from to) (%remove-undirected-edge g from to))
+        g))
 
     ;;@doc (%orient-colliders-node g seps z)
     ;;@category Causal
@@ -811,19 +717,19 @@
     ;;@example
     ;; (%orient-colliders-node 'x 'x 1)
     (defun %orient-colliders-node (g seps z)
-      (let loop ((pairs (%unordered-pairs (%neighbors-any g z)))
-                 (acc g))
+      (let
+        loop
+        ((pairs (%unordered-pairs (%neighbors-any g z))) (acc g))
         (if (null? pairs)
-            acc
-            (let* ((p (car pairs))
-                   (x (car p))
-                   (y (cadr p))
-                   (key (%pair-key x y))
-                   (sep (%assoc-get-equal seps key '())))
-              (if (or (%adjacent? acc x y) (%member? z sep))
-                  (loop (cdr pairs) acc)
-                  (loop (cdr pairs)
-                        (%orient-edge (%orient-edge acc x z) y z)))))))
+          acc
+          (let* ((p (car pairs))
+                 (x (car p))
+                 (y (cadr p))
+                 (key (%pair-key x y))
+                 (sep (%assoc-get-equal seps key '())))
+            (if (or (%adjacent? acc x y) (%member? z sep))
+              (loop (cdr pairs) acc)
+              (loop (cdr pairs) (%orient-edge (%orient-edge acc x z) y z)))))))
 
     ;;@doc (%pc-orient-colliders g seps nodes)
     ;;@category Causal
@@ -832,10 +738,7 @@
     ;;@example
     ;; (%pc-orient-colliders 'x 'x 'x)
     (defun %pc-orient-colliders (g seps nodes)
-      (foldl (lambda (acc z)
-               (%orient-colliders-node acc seps z))
-             g
-             nodes))
+      (foldl (lambda (acc z) (%orient-colliders-node acc seps z)) g nodes))
 
     ;;@doc (%exists-directed-chain? g a b nodes)
     ;;@category Causal
@@ -844,12 +747,14 @@
     ;;@example
     ;; (%exists-directed-chain? 'x 1 1 'x)
     (defun %exists-directed-chain? (g a b nodes)
-      (any? (lambda (c)
-              (and (not (eq? c a))
-                   (not (eq? c b))
-                   (%has-directed-edge? g a c)
-                   (%has-directed-edge? g c b)))
-            nodes))
+      (any?
+        (lambda (c)
+          (and
+            (not (eq? c a))
+            (not (eq? c b))
+            (%has-directed-edge? g a c)
+            (%has-directed-edge? g c b)))
+        nodes))
 
     ;;@doc (%apply-meek-r1 g)
     ;;@category Causal
@@ -858,27 +763,24 @@
     ;; (%apply-meek-r1 'x)
     ;; Meek rule R1: a->b, b--c, a and c non-adjacent => b->c
     (defun %apply-meek-r1 (g)
-      (let loop-dir ((dirs (filter %directed-edge? g))
-                     (acc g)
-                     (changed? #f))
+      (let
+        loop-dir
+        ((dirs (filter %directed-edge? g)) (acc g) (changed? #f))
         (if (null? dirs)
-            (list acc changed?)
-            (let* ((e (car dirs))
-                   (a (%edge-from e))
-                   (b (%edge-to e)))
-              (let loop-c ((cs (%neighbors-undirected acc b))
-                           (acc2 acc)
-                           (changed2 changed?))
-                (if (null? cs)
-                    (loop-dir (cdr dirs) acc2 changed2)
-                    (let ((c (car cs)))
-                      (if (and (not (eq? c a))
-                               (not (%adjacent? acc2 a c))
-                               (%has-undirected-edge? acc2 b c))
-                          (loop-c (cdr cs)
-                                  (%orient-edge acc2 b c)
-                                  #t)
-                          (loop-c (cdr cs) acc2 changed2)))))))))
+          (list acc changed?)
+          (let* ((e (car dirs)) (a (%edge-from e)) (b (%edge-to e)))
+            (let
+              loop-c
+              ((cs (%neighbors-undirected acc b)) (acc2 acc) (changed2 changed?))
+              (if (null? cs)
+                (loop-dir (cdr dirs) acc2 changed2)
+                (let ((c (car cs)))
+                  (if (and
+                        (not (eq? c a))
+                        (not (%adjacent? acc2 a c))
+                        (%has-undirected-edge? acc2 b c))
+                    (loop-c (cdr cs) (%orient-edge acc2 b c) #t)
+                    (loop-c (cdr cs) acc2 changed2)))))))))
 
     ;;@doc (%apply-meek-r2 g nodes)
     ;;@category Causal
@@ -887,27 +789,17 @@
     ;; (%apply-meek-r2 'x 'x)
     ;; Meek rule R2: a--b and a->c->b => a->b (and symmetric).
     (defun %apply-meek-r2 (g nodes)
-      (let loop-und ((unds (filter %undirected-edge? g))
-                     (acc g)
-                     (changed? #f))
+      (let
+        loop-und
+        ((unds (filter %undirected-edge? g)) (acc g) (changed? #f))
         (if (null? unds)
-            (list acc changed?)
-            (let* ((e (car unds))
-                   (a (%edge-from e))
-                   (b (%edge-to e)))
-              (cond
-                ((and (%has-undirected-edge? acc a b)
-                      (%exists-directed-chain? acc a b nodes))
-                 (loop-und (cdr unds)
-                           (%orient-edge acc a b)
-                           #t))
-                ((and (%has-undirected-edge? acc a b)
-                      (%exists-directed-chain? acc b a nodes))
-                 (loop-und (cdr unds)
-                           (%orient-edge acc b a)
-                           #t))
-                (else
-                 (loop-und (cdr unds) acc changed?)))))))
+          (list acc changed?)
+          (let* ((e (car unds)) (a (%edge-from e)) (b (%edge-to e)))
+            (cond ((and (%has-undirected-edge? acc a b) (%exists-directed-chain? acc a b nodes))
+                   (loop-und (cdr unds) (%orient-edge acc a b) #t))
+              ((and (%has-undirected-edge? acc a b) (%exists-directed-chain? acc b a nodes))
+               (loop-und (cdr unds) (%orient-edge acc b a) #t))
+              (else (loop-und (cdr unds) acc changed?)))))))
 
     ;;@doc (%meek-rules g nodes)
     ;;@category Causal
@@ -916,16 +808,16 @@
     ;;@example
     ;; (%meek-rules 'x 'x)
     (defun %meek-rules (g nodes)
-      (let loop ((curr g))
+      (let
+        loop
+        ((curr g))
         (let* ((r1 (%apply-meek-r1 curr))
                (g1 (car r1))
                (c1 (cadr r1))
                (r2 (%apply-meek-r2 g1 nodes))
                (g2 (car r2))
                (c2 (cadr r2)))
-          (if (or c1 c2)
-              (loop g2)
-              g2))))
+          (if (or c1 c2) (loop g2) g2))))
 
     ;; -- NOTEARS hook -----------------------------------------------------
 
@@ -936,14 +828,12 @@
     ;;@example
     ;; (%directed-path? 'x 'x 'x)
     (defun %directed-path? (g src dst)
-      (letrec ((dfs (lambda (node seen)
-                      (cond
-                        ((eq? node dst) #t)
-                        ((%member? node seen) #f)
-                        (else
-                         (any? (lambda (n)
-                                 (dfs n (%adjoin node seen)))
-                               (%directed-children g node)))))))
+      (letrec ((dfs
+                 (lambda (node seen)
+                   (cond ((eq? node dst) #t)
+                     ((%member? node seen) #f)
+                     (else
+                       (any? (lambda (n) (dfs n (%adjoin node seen))) (%directed-children g node)))))))
         (dfs src '())))
 
     ;;@doc (%transitive-reduce g)
@@ -953,17 +843,13 @@
     ;;@example
     ;; (%transitive-reduce 'x)
     (defun %transitive-reduce (g)
-      (let loop ((rest (%sort-edges g))
-                 (acc g))
+      (let
+        loop
+        ((rest (%sort-edges g)) (acc g))
         (if (null? rest)
-            acc
-            (let* ((e (car rest))
-                   (u (%edge-from e))
-                   (v (%edge-to e))
-                   (acc2 (%edge-remove e acc)))
-              (if (%directed-path? acc2 u v)
-                  (loop (cdr rest) acc2)
-                  (loop (cdr rest) acc))))))
+          acc
+          (let* ((e (car rest)) (u (%edge-from e)) (v (%edge-to e)) (acc2 (%edge-remove e acc)))
+            (if (%directed-path? acc2 u v) (loop (cdr rest) acc2) (loop (cdr rest) acc))))))
 
     ;; -- Public API -------------------------------------------------------
 
@@ -976,13 +862,13 @@
     (defun learn:pc (data alpha ci-test)
       (let ((nodes (%all-nodes data)))
         (if (< (length nodes) 2)
-            '()
-            (let* ((skel+sep (%pc-skeleton data alpha ci-test nodes))
-                   (skeleton (car skel+sep))
-                   (seps (cadr skel+sep))
-                   (colliders (%pc-orient-colliders skeleton seps nodes))
-                   (cpdag (%meek-rules colliders nodes)))
-              (%sort-edges cpdag)))))
+          '()
+          (let* ((skel+sep (%pc-skeleton data alpha ci-test nodes))
+                 (skeleton (car skel+sep))
+                 (seps (cadr skel+sep))
+                 (colliders (%pc-orient-colliders skeleton seps nodes))
+                 (cpdag (%meek-rules colliders nodes)))
+            (%sort-edges cpdag)))))
 
     ;;@doc (learn:fci data alpha ci-test)
     ;;@category Causal
@@ -991,8 +877,7 @@
     ;; (learn:fci 'x 'x 'x)
     ;; Latent-confounding aware hook. This keeps the same callable shape while
     ;; preserving conservative CPDAG output.
-    (defun learn:fci (data alpha ci-test)
-      (learn:pc data alpha ci-test))
+    (defun learn:fci (data alpha ci-test) (learn:pc data alpha ci-test))
 
     ;;@doc (learn:ges data . rest)
     ;;@category Causal
@@ -1002,9 +887,7 @@
     ;; Score-search hook with compatibility defaults.
     (defun learn:ges (data . rest)
       (let* ((alpha (if (null? rest) 0.05 (car rest)))
-             (ci-test (if (or (null? rest) (null? (cdr rest)))
-                          learn:ci-test:fisher-z
-                          (cadr rest))))
+             (ci-test (if (or (null? rest) (null? (cdr rest))) learn:ci-test:fisher-z (cadr rest))))
         (learn:pc data alpha ci-test)))
 
     ;;@doc (learn:notears data lambda1 max-iter)
@@ -1019,27 +902,23 @@
              (threshold (if (< lambda1 0.0) 0.0 lambda1))
              (pairs (%unordered-pairs nodes))
              (scores
-               (map* (lambda (p)
-                       (let* ((u (car p))
-                              (v (cadr p))
-                              (rho (abs (%safe-correlation
-                                          (%column-values data u)
-                                          (%column-values data v)))))
-                         (list rho u v)))
-                     pairs))
+               (map*
+                 (lambda (p)
+                   (let* ((u (car p))
+                          (v (cadr p))
+                          (rho
+                            (abs
+                              (%safe-correlation (%column-values data u) (%column-values data v)))))
+                     (list rho u v)))
+                 pairs))
              (sorted (sort (lambda (a b) (> (car a) (car b))) scores)))
-        (let loop ((rest sorted) (g '()))
+        (let
+          loop
+          ((rest sorted) (g '()))
           (if (null? rest)
-              (%sort-edges (%transitive-reduce g))
-              (let* ((row (car rest))
-                     (score (car row))
-                     (u (cadr row))
-                     (v (caddr row)))
-                (if (< score threshold)
-                    (loop (cdr rest) g)
-                    (let ((edge (if (%symbol<? u v)
-                                    (%make-directed u v)
-                                    (%make-directed v u))))
-                      (loop (cdr rest) (%edge-adjoin edge g)))))))))
-
-  ))
+            (%sort-edges (%transitive-reduce g))
+            (let* ((row (car rest)) (score (car row)) (u (cadr row)) (v (caddr row)))
+              (if (< score threshold)
+                (loop (cdr rest) g)
+                (let ((edge (if (%symbol<? u v) (%make-directed u v) (%make-directed v u))))
+                  (loop (cdr rest) (%edge-adjoin edge g)))))))))))

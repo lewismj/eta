@@ -15,8 +15,7 @@
 ;;; `eprintln` are Eta extensions (non-R7RS convenience helpers).
 
 (module std.io
-  (export
-    display->string
+  (export display->string
     println
     eprintln
     read-line
@@ -46,9 +45,7 @@
     ;;@example
     ;; (println 1)
     ;; Display followed by a newline.
-    (defun println (x)
-      (display x)
-      (newline))
+    (defun println (x) (display x) (newline))
 
     ;;@doc (eprintln x)
     ;;@category Io
@@ -56,9 +53,7 @@
     ;;@example
     ;; (eprintln 1)
     ;; Print to the current error port.
-    (defun eprintln (x)
-      (display x (current-error-port))
-      (newline (current-error-port)))
+    (defun eprintln (x) (display x (current-error-port)) (newline (current-error-port)))
 
     ;;@doc (display->string x)
     ;;@category Io
@@ -66,10 +61,7 @@
     ;;@example
     ;; (display->string 1)
     ;; Format a value into a string using write representation.
-    (defun display->string (x)
-      (let ((p (open-output-string)))
-        (display x p)
-        (get-output-string p)))
+    (defun display->string (x) (let ((p (open-output-string))) (display x p) (get-output-string p)))
 
     ;; -- Deprecated aliases --------------------------------------------------
 
@@ -81,25 +73,20 @@
     ;; Read characters until a newline (or EOF) and return a string.
     ;; The newline is consumed but not included in the result.
     (defun read-line args
-      (let ((port (if (null? args) (current-input-port) (car args)))
-            (out  (open-output-string)))
-        (let loop ()
+      (let ((port (if (null? args) (current-input-port) (car args))) (out (open-output-string)))
+        (let
+          loop
+          ()
           (let ((ch (read-char port)))
             (cond
-              ;; EOF -> return what we have (#f if nothing)
-              ((eq? ch #f)
-               (let ((s (get-output-string out)))
-                 (if (= (string-length s) 0) #f s)))
+            ;; EOF -> return what we have (#f if nothing)
+            ((eq? ch #f) (let ((s (get-output-string out))) (if (= (string-length s) 0) #f s)))
               ;; newline -> done
-              ((eq? ch #\newline)
-               (get-output-string out))
+              ((eq? ch #\newline) (get-output-string out))
               ;; carriage-return -> skip
-              ((eq? ch #\return)
-               (loop))
+              ((eq? ch #\return) (loop))
               ;; normal char -> accumulate via display
-              (else
-               (display ch out)
-               (loop)))))))
+              (else (display ch out) (loop)))))))
 
     ;; -- Dynamic port redirection -------------------------------------------
 
@@ -109,8 +96,7 @@
     ;;@example
     ;; (with-port 8080 (lambda (x) x))
     ;; Convenience wrapper around with-output-to-port.
-    (defun with-port (port thunk)
-      (with-output-to-port port thunk))
+    (defun with-port (port thunk) (with-output-to-port port thunk))
 
     ;;@doc (with-input-port port thunk)
     ;;@category Io
@@ -118,8 +104,7 @@
     ;;@example
     ;; (with-input-port 8080 (lambda (x) x))
     ;; Convenience wrapper around with-input-from-port.
-    (defun with-input-port (port thunk)
-      (with-input-from-port port thunk))
+    (defun with-input-port (port thunk) (with-input-from-port port thunk))
 
     ;;@doc (with-output-to-port port thunk)
     ;;@category Io
@@ -158,6 +143,4 @@
         (dynamic-wind
           (lambda () (set-current-error-port! port))
           thunk
-          (lambda () (set-current-error-port! old)))))
-
-  ))
+          (lambda () (set-current-error-port! old)))))))

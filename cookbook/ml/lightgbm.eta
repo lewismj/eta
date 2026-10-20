@@ -2,12 +2,7 @@
   (import std.io)
   (import ml.lightgbm)
   (begin
-    (define dataset
-      (dataset-from-list
-        '((1.0 2.0)
-          (1.5 1.2)
-          (2.1 0.9))
-        '(0.0 1.0 1.0)))
+    (define dataset (dataset-from-list '((1.0 2.0) (1.5 1.2) (2.1 0.9)) '(0.0 1.0 1.0)))
 
     (define booster (booster-create dataset))
     (train! booster dataset)

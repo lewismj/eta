@@ -33,10 +33,7 @@
     ;;@example
     ;; (%member? 1 '())
     (defun %member? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((equal? x (car xs)) #t)
-        (else (%member? x (cdr xs)))))
+      (cond ((null? xs) #f) ((equal? x (car xs)) #t) (else (%member? x (cdr xs)))))
 
     ;;@doc (%adjoin x xs)
     ;;@category Causal
@@ -44,8 +41,7 @@
     ;; Compute `%adjoin`.
     ;;@example
     ;; (%adjoin 1 '())
-    (defun %adjoin (x xs)
-      (if (%member? x xs) xs (cons x xs)))
+    (defun %adjoin (x xs) (if (%member? x xs) xs (cons x xs)))
 
     ;;@doc (%as-node-set x)
     ;;@category Causal
@@ -54,8 +50,7 @@
     ;;@example
     ;; (%as-node-set 1)
     (defun %as-node-set (x)
-      (cond
-        ((null? x) '())
+      (cond ((null? x) '())
         ((symbol? x) (list x))
         ((list? x) x)
         (else (error "id: expected symbol or list"))))
@@ -66,8 +61,7 @@
     ;; Compute `%subset-in-order`.
     ;;@example
     ;; (%subset-in-order 'x '())
-    (defun %subset-in-order (order xs)
-      (filter (lambda (n) (%member? n xs)) order))
+    (defun %subset-in-order (order xs) (filter (lambda (n) (%member? n xs)) order))
 
     ;;@doc (%set-union a b)
     ;;@category Causal
@@ -75,8 +69,7 @@
     ;; Compute `%set-union`.
     ;;@example
     ;; (%set-union 1 1)
-    (defun %set-union (a b)
-      (foldl (lambda (acc x) (%adjoin x acc)) a b))
+    (defun %set-union (a b) (foldl (lambda (acc x) (%adjoin x acc)) a b))
 
     ;;@doc (%set-intersect a b)
     ;;@category Causal
@@ -84,8 +77,7 @@
     ;; Compute `%set-intersect`.
     ;;@example
     ;; (%set-intersect 1 1)
-    (defun %set-intersect (a b)
-      (filter (lambda (x) (%member? x b)) a))
+    (defun %set-intersect (a b) (filter (lambda (x) (%member? x b)) a))
 
     ;;@doc (%set-diff a b)
     ;;@category Causal
@@ -93,8 +85,7 @@
     ;; Compute `%set-diff`.
     ;;@example
     ;; (%set-diff 1 1)
-    (defun %set-diff (a b)
-      (filter (lambda (x) (not (%member? x b))) a))
+    (defun %set-diff (a b) (filter (lambda (x) (not (%member? x b))) a))
 
     ;;@doc (%set-subset? a b)
     ;;@category Causal
@@ -102,8 +93,7 @@
     ;; Return whether `%set-subset?` holds.
     ;;@example
     ;; (%set-subset? 1 1)
-    (defun %set-subset? (a b)
-      (every? (lambda (x) (%member? x b)) a))
+    (defun %set-subset? (a b) (every? (lambda (x) (%member? x b)) a))
 
     ;;@doc (%set-equal? a b)
     ;;@category Causal
@@ -111,8 +101,7 @@
     ;; Return whether `%set-equal?` holds.
     ;;@example
     ;; (%set-equal? 1 1)
-    (defun %set-equal? (a b)
-      (and (%set-subset? a b) (%set-subset? b a)))
+    (defun %set-equal? (a b) (and (%set-subset? a b) (%set-subset? b a)))
 
     ;;@doc (%assert-vars nodes vars)
     ;;@category Causal
@@ -122,12 +111,10 @@
     ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes vars)
       (if (null? vars)
-          'ok
-          (begin
-            (if (%member? (car vars) nodes)
-                'ok
-                (error 'unknown-variable (car vars)))
-            (%assert-vars nodes (cdr vars)))))
+        'ok
+        (begin
+          (if (%member? (car vars) nodes) 'ok (error 'unknown-variable (car vars)))
+          (%assert-vars nodes (cdr vars)))))
 
     ;; -- ADMG helpers ----------------------------------------------------
 
@@ -151,7 +138,7 @@
     ;; Compute `%edge-to`.
     ;;@example
     ;; (%edge-to 'x)
-    (defun %edge-to (e)   (caddr e))
+    (defun %edge-to (e) (caddr e))
 
     ;;@doc (%directed-edge? e)
     ;;@category Causal
@@ -175,9 +162,7 @@
     ;;@example
     ;; (%admg-edge? 'x)
     (defun %admg-edge? (e)
-      (and (list? e)
-           (= (length e) 3)
-           (or (%directed-edge? e) (%bidirected-edge? e))))
+      (and (list? e) (= (length e) 3) (or (%directed-edge? e) (%bidirected-edge? e))))
 
     ;;@doc (%assert-admg g)
     ;;@category Causal
@@ -185,10 +170,7 @@
     ;; Compute `%assert-admg`.
     ;;@example
     ;; (%assert-admg 'x)
-    (defun %assert-admg (g)
-      (if (every? %admg-edge? g)
-          g
-          (error 'invalid-admg g)))
+    (defun %assert-admg (g) (if (every? %admg-edge? g) g (error 'invalid-admg g)))
 
     ;;@doc (%admg-remove-nodes g nodes)
     ;;@category Causal
@@ -197,10 +179,9 @@
     ;;@example
     ;; (%admg-remove-nodes 'x 'x)
     (defun %admg-remove-nodes (g nodes)
-      (filter (lambda (e)
-                (and (not (%member? (%edge-from e) nodes))
-                     (not (%member? (%edge-to e) nodes))))
-              g))
+      (filter
+        (lambda (e) (and (not (%member? (%edge-from e) nodes)) (not (%member? (%edge-to e) nodes))))
+        g))
 
     ;;@doc (%admg-induced-subgraph g nodes)
     ;;@category Causal
@@ -209,10 +190,7 @@
     ;;@example
     ;; (%admg-induced-subgraph 'x 'x)
     (defun %admg-induced-subgraph (g nodes)
-      (filter (lambda (e)
-                (and (%member? (%edge-from e) nodes)
-                     (%member? (%edge-to e) nodes)))
-              g))
+      (filter (lambda (e) (and (%member? (%edge-from e) nodes) (%member? (%edge-to e) nodes))) g))
 
     ;;@doc (%admg-mutilate-do g x-set)
     ;;@category Causal
@@ -221,10 +199,7 @@
     ;;@example
     ;; (%admg-mutilate-do 'x 'x)
     (defun %admg-mutilate-do (g x-set)
-      (filter (lambda (e)
-                (not (and (%directed-edge? e)
-                          (%member? (%edge-to e) x-set))))
-              g))
+      (filter (lambda (e) (not (and (%directed-edge? e) (%member? (%edge-to e) x-set)))) g))
 
     ;;@doc (%admg-mutilate-see g x-set)
     ;;@category Causal
@@ -233,10 +208,7 @@
     ;;@example
     ;; (%admg-mutilate-see 'x 'x)
     (defun %admg-mutilate-see (g x-set)
-      (filter (lambda (e)
-                (not (and (%directed-edge? e)
-                          (%member? (%edge-from e) x-set))))
-              g))
+      (filter (lambda (e) (not (and (%directed-edge? e) (%member? (%edge-from e) x-set)))) g))
 
     ;; DAG-only Bayes-ball utilities used by IDC Rule 2 checks.
     ;; These helpers intentionally tolerate isolated nodes that may not
@@ -249,13 +221,11 @@
     ;;@example
     ;; (%dag-parents-raw 'x 'x)
     (defun %dag-parents-raw (dag node)
-      (foldl (lambda (acc e)
-               (if (and (%directed-edge? e)
-                        (eq? (%edge-to e) node))
-                   (%adjoin (%edge-from e) acc)
-                   acc))
-             '()
-             dag))
+      (foldl
+        (lambda (acc e)
+          (if (and (%directed-edge? e) (eq? (%edge-to e) node)) (%adjoin (%edge-from e) acc) acc))
+        '()
+        dag))
 
     ;;@doc (%dag-children-raw dag node)
     ;;@category Causal
@@ -264,13 +234,11 @@
     ;;@example
     ;; (%dag-children-raw 'x 'x)
     (defun %dag-children-raw (dag node)
-      (foldl (lambda (acc e)
-               (if (and (%directed-edge? e)
-                        (eq? (%edge-from e) node))
-                   (%adjoin (%edge-to e) acc)
-                   acc))
-             '()
-             dag))
+      (foldl
+        (lambda (acc e)
+          (if (and (%directed-edge? e) (eq? (%edge-from e) node)) (%adjoin (%edge-to e) acc) acc))
+        '()
+        dag))
 
     ;;@doc (%dag-ancestors-lite dag node)
     ;;@category Causal
@@ -279,15 +247,15 @@
     ;;@example
     ;; (%dag-ancestors-lite 'x 'x)
     (defun %dag-ancestors-lite (dag node)
-      (let loop ((stack (%dag-parents-raw dag node))
-                 (seen '()))
+      (let
+        loop
+        ((stack (%dag-parents-raw dag node)) (seen '()))
         (if (null? stack)
-            seen
-            (let ((n (car stack)))
-              (if (%member? n seen)
-                  (loop (cdr stack) seen)
-                  (loop (append (%dag-parents-raw dag n) (cdr stack))
-                        (%adjoin n seen)))))))
+          seen
+          (let ((n (car stack)))
+            (if (%member? n seen)
+              (loop (cdr stack) seen)
+              (loop (append (%dag-parents-raw dag n) (cdr stack)) (%adjoin n seen)))))))
 
     ;;@doc (%ancestor-closure-lite dag z-set)
     ;;@category Causal
@@ -296,12 +264,11 @@
     ;;@example
     ;; (%ancestor-closure-lite 'x 'x)
     (defun %ancestor-closure-lite (dag z-set)
-      (foldl (lambda (acc z)
-               (foldl (lambda (acc2 a) (%adjoin a acc2))
-                      (%adjoin z acc)
-                      (%dag-ancestors-lite dag z)))
-             '()
-             z-set))
+      (foldl
+        (lambda (acc z)
+          (foldl (lambda (acc2 a) (%adjoin a acc2)) (%adjoin z acc) (%dag-ancestors-lite dag z)))
+        '()
+        z-set))
 
     ;;@doc (%as-up-states nodes)
     ;;@category Causal
@@ -309,8 +276,7 @@
     ;; Compute `%as-up-states`.
     ;;@example
     ;; (%as-up-states 'x)
-    (defun %as-up-states (nodes)
-      (map* (lambda (n) (cons n 'up)) nodes))
+    (defun %as-up-states (nodes) (map* (lambda (n) (cons n 'up)) nodes))
 
     ;;@doc (%as-down-states nodes)
     ;;@category Causal
@@ -318,8 +284,7 @@
     ;; Compute `%as-down-states`.
     ;;@example
     ;; (%as-down-states 'x)
-    (defun %as-down-states (nodes)
-      (map* (lambda (n) (cons n 'down)) nodes))
+    (defun %as-down-states (nodes) (map* (lambda (n) (cons n 'down)) nodes))
 
     ;;@doc (%bayes-ball-step-lite dag node dir observed? anc-z)
     ;;@category Causal
@@ -328,20 +293,16 @@
     ;;@example
     ;; (%bayes-ball-step-lite 'x 'x 'x #t 'x)
     (defun %bayes-ball-step-lite (dag node dir observed? anc-z)
-      (cond
-        ((eq? dir 'up)
-         (if observed?
-             (%as-up-states (%dag-parents-raw dag node))
-             (append (%as-up-states (%dag-parents-raw dag node))
-                     (%as-down-states (%dag-children-raw dag node)))))
+      (cond ((eq? dir 'up)
+             (if observed?
+               (%as-up-states (%dag-parents-raw dag node))
+               (append
+                 (%as-up-states (%dag-parents-raw dag node))
+                 (%as-down-states (%dag-children-raw dag node)))))
         ((eq? dir 'down)
          (append
-           (if observed?
-               '()
-               (%as-down-states (%dag-children-raw dag node)))
-           (if (%member? node anc-z)
-               (%as-up-states (%dag-parents-raw dag node))
-               '())))
+           (if observed? '() (%as-down-states (%dag-children-raw dag node)))
+           (if (%member? node anc-z) (%as-up-states (%dag-parents-raw dag node)) '())))
         (else '())))
 
     ;;@doc (%bayes-ball-lite dag start z-set)
@@ -352,25 +313,21 @@
     ;; (%bayes-ball-lite 'x 'x 'x)
     (defun %bayes-ball-lite (dag start z-set)
       (let* ((anc-z (%ancestor-closure-lite dag z-set))
-             (queue (foldl (lambda (acc s)
-                             (append acc (list (cons s 'up) (cons s 'down))))
-                           '()
-                           start)))
-        (let loop ((q queue) (visited '()) (reachable '()))
+             (queue
+               (foldl (lambda (acc s) (append acc (list (cons s 'up) (cons s 'down)))) '() start)))
+        (let
+          loop
+          ((q queue) (visited '()) (reachable '()))
           (if (null? q)
-              reachable
-              (let* ((state (car q))
-                     (node (car state))
-                     (dir (cdr state)))
-                (if (%member? state visited)
-                    (loop (cdr q) visited reachable)
-                    (let* ((visited2 (cons state visited))
-                           (observed? (%member? node z-set))
-                           (reachable2 (if observed?
-                                           reachable
-                                           (%adjoin node reachable)))
-                           (next (%bayes-ball-step-lite dag node dir observed? anc-z)))
-                      (loop (append (cdr q) next) visited2 reachable2))))))))
+            reachable
+            (let* ((state (car q)) (node (car state)) (dir (cdr state)))
+              (if (%member? state visited)
+                (loop (cdr q) visited reachable)
+                (let* ((visited2 (cons state visited))
+                       (observed? (%member? node z-set))
+                       (reachable2 (if observed? reachable (%adjoin node reachable)))
+                       (next (%bayes-ball-step-lite dag node dir observed? anc-z)))
+                  (loop (append (cdr q) next) visited2 reachable2))))))))
 
     ;;@doc (%dag-d-connected-lite? dag x-set y-set z-set)
     ;;@category Causal
@@ -380,9 +337,9 @@
     ;; (%dag-d-connected-lite? 'x 'x 'x 'x)
     (defun %dag-d-connected-lite? (dag x-set y-set z-set)
       (if (or (null? x-set) (null? y-set))
-          #f
-          (let ((reachable (%bayes-ball-lite dag x-set z-set)))
-            (any? (lambda (target) (%member? target reachable)) y-set))))
+        #f
+        (let ((reachable (%bayes-ball-lite dag x-set z-set)))
+          (any? (lambda (target) (%member? target reachable)) y-set))))
 
     ;;@doc (%rule2-applies-dag-lite? g y-set x-set z-set w-set)
     ;;@category Causal
@@ -403,14 +360,13 @@
     ;;@example
     ;; (%directed-parents-in 'x 'x 'x)
     (defun %directed-parents-in (g nodes node)
-      (foldl (lambda (acc e)
-               (if (and (%directed-edge? e)
-                        (eq? (%edge-to e) node)
-                        (%member? (%edge-from e) nodes))
-                   (%adjoin (%edge-from e) acc)
-                   acc))
-             '()
-             g))
+      (foldl
+        (lambda (acc e)
+          (if (and (%directed-edge? e) (eq? (%edge-to e) node) (%member? (%edge-from e) nodes))
+            (%adjoin (%edge-from e) acc)
+            acc))
+        '()
+        g))
 
     ;;@doc (%ancestors-one-in g nodes node)
     ;;@category Causal
@@ -419,18 +375,18 @@
     ;;@example
     ;; (%ancestors-one-in 'x 'x 'x)
     (defun %ancestors-one-in (g nodes node)
-      (let loop ((stack (%directed-parents-in g nodes node))
-                 (seen '())
-                 (acc '()))
+      (let
+        loop
+        ((stack (%directed-parents-in g nodes node)) (seen '()) (acc '()))
         (if (null? stack)
-            acc
-            (let ((p (car stack)))
-              (if (%member? p seen)
-                  (loop (cdr stack) seen acc)
-                  (loop (append (%directed-parents-in g nodes p)
-                                (cdr stack))
-                        (cons p seen)
-                        (%adjoin p acc)))))))
+          acc
+          (let ((p (car stack)))
+            (if (%member? p seen)
+              (loop (cdr stack) seen acc)
+              (loop
+                (append (%directed-parents-in g nodes p) (cdr stack))
+                (cons p seen)
+                (%adjoin p acc)))))))
 
     ;;@doc (%ancestors-in g nodes vars)
     ;;@category Causal
@@ -439,10 +395,7 @@
     ;;@example
     ;; (%ancestors-in 'x 'x 'x)
     (defun %ancestors-in (g nodes vars)
-      (foldl (lambda (acc v)
-               (%set-union acc (%ancestors-one-in g nodes v)))
-             '()
-             vars))
+      (foldl (lambda (acc v) (%set-union acc (%ancestors-one-in g nodes v))) '() vars))
 
     ;;@doc (%bidirected-neighbors-in g nodes node)
     ;;@category Causal
@@ -451,19 +404,16 @@
     ;;@example
     ;; (%bidirected-neighbors-in 'x 'x 'x)
     (defun %bidirected-neighbors-in (g nodes node)
-      (foldl (lambda (acc e)
-               (if (not (%bidirected-edge? e))
-                   acc
-                   (let ((a (%edge-from e))
-                         (b (%edge-to e)))
-                     (cond
-                       ((and (eq? a node) (%member? b nodes))
-                        (%adjoin b acc))
-                       ((and (eq? b node) (%member? a nodes))
-                        (%adjoin a acc))
-                       (else acc)))))
-             '()
-             g))
+      (foldl
+        (lambda (acc e)
+          (if (not (%bidirected-edge? e))
+            acc
+            (let ((a (%edge-from e)) (b (%edge-to e)))
+              (cond ((and (eq? a node) (%member? b nodes)) (%adjoin b acc))
+                ((and (eq? b node) (%member? a nodes)) (%adjoin a acc))
+                (else acc)))))
+        '()
+        g))
 
     ;;@doc (%district-in g nodes seed)
     ;;@category Causal
@@ -472,18 +422,18 @@
     ;;@example
     ;; (%district-in 'x 'x 'x)
     (defun %district-in (g nodes seed)
-      (let loop ((stack (list seed))
-                 (seen '())
-                 (acc '()))
+      (let
+        loop
+        ((stack (list seed)) (seen '()) (acc '()))
         (if (null? stack)
-            (%subset-in-order nodes acc)
-            (let ((n (car stack)))
-              (if (%member? n seen)
-                  (loop (cdr stack) seen acc)
-                  (loop (append (%bidirected-neighbors-in g nodes n)
-                                (cdr stack))
-                        (cons n seen)
-                        (%adjoin n acc)))))))
+          (%subset-in-order nodes acc)
+          (let ((n (car stack)))
+            (if (%member? n seen)
+              (loop (cdr stack) seen acc)
+              (loop
+                (append (%bidirected-neighbors-in g nodes n) (cdr stack))
+                (cons n seen)
+                (%adjoin n acc)))))))
 
     ;;@doc (%c-components-over g nodes)
     ;;@category Causal
@@ -492,17 +442,17 @@
     ;;@example
     ;; (%c-components-over 'x 'x)
     (defun %c-components-over (g nodes)
-      (let loop ((rest nodes) (remaining nodes) (acc '()))
+      (let
+        loop
+        ((rest nodes) (remaining nodes) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (let ((n (car rest)))
-              (if (not (%member? n remaining))
-                  (loop (cdr rest) remaining acc)
-                  (let* ((district (%district-in g remaining n))
-                         (remaining2 (%set-diff remaining district)))
-                    (loop (cdr rest)
-                          remaining2
-                          (cons district acc))))))))
+          (reverse acc)
+          (let ((n (car rest)))
+            (if (not (%member? n remaining))
+              (loop (cdr rest) remaining acc)
+              (let* ((district (%district-in g remaining n))
+                     (remaining2 (%set-diff remaining district)))
+                (loop (cdr rest) remaining2 (cons district acc))))))))
 
     ;;@doc (%has-directed-edge? g a b)
     ;;@category Causal
@@ -511,11 +461,7 @@
     ;;@example
     ;; (%has-directed-edge? 'x 1 1)
     (defun %has-directed-edge? (g a b)
-      (any? (lambda (e)
-              (and (%directed-edge? e)
-                   (eq? (%edge-from e) a)
-                   (eq? (%edge-to e) b)))
-            g))
+      (any? (lambda (e) (and (%directed-edge? e) (eq? (%edge-from e) a) (eq? (%edge-to e) b))) g))
 
     ;;@doc (%has-bidirected-edge? g a b)
     ;;@category Causal
@@ -524,11 +470,14 @@
     ;;@example
     ;; (%has-bidirected-edge? 'x 1 1)
     (defun %has-bidirected-edge? (g a b)
-      (any? (lambda (e)
-              (and (%bidirected-edge? e)
-                   (or (and (eq? (%edge-from e) a) (eq? (%edge-to e) b))
-                       (and (eq? (%edge-from e) b) (eq? (%edge-to e) a)))))
-            g))
+      (any?
+        (lambda (e)
+          (and
+            (%bidirected-edge? e)
+            (or
+              (and (eq? (%edge-from e) a) (eq? (%edge-to e) b))
+              (and (eq? (%edge-from e) b) (eq? (%edge-to e) a)))))
+        g))
 
     ;; -- Estimand helpers ------------------------------------------------
 
@@ -538,10 +487,7 @@
     ;; Compute `%mk-sum`.
     ;;@example
     ;; (%mk-sum 'x 'x)
-    (defun %mk-sum (vars expr)
-      (if (null? vars)
-          expr
-          (list 'sum vars expr)))
+    (defun %mk-sum (vars expr) (if (null? vars) expr (list 'sum vars expr)))
 
     ;;@doc (%mk-prod factors)
     ;;@category Causal
@@ -550,8 +496,7 @@
     ;;@example
     ;; (%mk-prod 'x)
     (defun %mk-prod (factors)
-      (cond
-        ((null? factors) '(prod))
+      (cond ((null? factors) '(prod))
         ((null? (cdr factors)) (car factors))
         (else (cons 'prod factors))))
 
@@ -561,8 +506,7 @@
     ;; Return whether `%fail?` holds.
     ;;@example
     ;; (%fail? 'x)
-    (defun %fail? (expr)
-      (and (pair? expr) (eq? (car expr) 'fail)))
+    (defun %fail? (expr) (and (pair? expr) (eq? (car expr) 'fail)))
 
     ;;@doc (%prob-vars expr)
     ;;@category Causal
@@ -571,12 +515,9 @@
     ;;@example
     ;; (%prob-vars 'x)
     (defun %prob-vars (expr)
-      (if (and (pair? expr)
-               (eq? (car expr) 'P)
-               (pair? (cdr expr))
-               (list? (cadr expr)))
-          (cadr expr)
-          #f))
+      (if (and (pair? expr) (eq? (car expr) 'P) (pair? (cdr expr)) (list? (cadr expr)))
+        (cadr expr)
+        #f))
 
     ;;@doc (%empty-prob? expr)
     ;;@category Causal
@@ -584,9 +525,7 @@
     ;; Return whether `%empty-prob?` holds.
     ;;@example
     ;; (%empty-prob? 'x)
-    (defun %empty-prob? (expr)
-      (let ((vars (%prob-vars expr)))
-        (and vars (null? vars))))
+    (defun %empty-prob? (expr) (let ((vars (%prob-vars expr))) (and vars (null? vars))))
 
     ;;@doc (%normalize-vars vars)
     ;;@category Causal
@@ -595,13 +534,13 @@
     ;;@example
     ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
-      (let loop ((rest vars) (acc '()))
+      (let
+        loop
+        ((rest vars) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (let ((v (car rest)))
-              (if (%member? v acc)
-                  (loop (cdr rest) acc)
-                  (loop (cdr rest) (cons v acc)))))))
+          (reverse acc)
+          (let ((v (car rest)))
+            (if (%member? v acc) (loop (cdr rest) acc) (loop (cdr rest) (cons v acc)))))))
 
     ;;@doc (%graph-has-bidirected? g)
     ;;@category Causal
@@ -609,8 +548,7 @@
     ;; Return whether `%graph-has-bidirected?` holds.
     ;;@example
     ;; (%graph-has-bidirected? 'x)
-    (defun %graph-has-bidirected? (g)
-      (any? %bidirected-edge? g))
+    (defun %graph-has-bidirected? (g) (any? %bidirected-edge? g))
 
     ;;@doc (%before x xs)
     ;;@category Causal
@@ -619,9 +557,10 @@
     ;;@example
     ;; (%before 1 '())
     (defun %before (x xs)
-      (let loop ((rest xs) (acc '()))
-        (cond
-          ((null? rest) (reverse acc))
+      (let
+        loop
+        ((rest xs) (acc '()))
+        (cond ((null? rest) (reverse acc))
           ((equal? x (car rest)) (reverse acc))
           (else (loop (cdr rest) (cons (car rest) acc))))))
 
@@ -635,9 +574,7 @@
       (let* ((directed (admg:directed g))
              (order-dir (dag:topo-sort directed))
              (order-dir2 (%subset-in-order order-dir nodes)))
-        (append order-dir2
-                (filter (lambda (n) (not (%member? n order-dir)))
-                        nodes))))
+        (append order-dir2 (filter (lambda (n) (not (%member? n order-dir))) nodes))))
 
     ;;@doc (%line6-estimand g v s y)
     ;;@category Causal
@@ -648,9 +585,7 @@
     (defun %line6-estimand (g v s y)
       (let* ((order (%topo-order-over g v))
              (s-order (%subset-in-order order s))
-             (factors (map* (lambda (vi)
-                              (list 'P (cons vi (%before vi order))))
-                            s-order)))
+             (factors (map* (lambda (vi) (list 'P (cons vi (%before vi order)))) s-order)))
         (%mk-sum (%set-diff s y) (%mk-prod factors))))
 
     ;;@doc (%maybe-front-door-estimand g x y)
@@ -664,29 +599,28 @@
     (defun %maybe-front-door-estimand (g x y)
       (let* ((nodes (admg:nodes g))
              (mediators
-               (filter (lambda (m)
-                         (and (not (eq? m x))
-                              (not (eq? m y))
-                              (%has-directed-edge? g x m)
-                              (%has-directed-edge? g m y)))
-                       nodes)))
-        (if (and (= (length nodes) 3)
-                 (= (length mediators) 1)
-                 (%has-bidirected-edge? g x y)
-                 (not (%has-directed-edge? g x y)))
-            (let* ((m (car mediators))
-                   (x* (string->symbol
-                         (string-append (symbol->string x) "*"))))
-              (list 'sum
-                    (list m)
-                    (list 'prod
-                          (list 'P (list m x))
-                          (list 'sum
-                                (list x*)
-                                (list 'prod
-                                      (list 'P (list y x* m))
-                                      (list 'P (list x*)))))))
-            #f)))
+               (filter
+                 (lambda (m)
+                   (and
+                     (not (eq? m x))
+                     (not (eq? m y))
+                     (%has-directed-edge? g x m)
+                     (%has-directed-edge? g m y)))
+                 nodes)))
+        (if (and
+              (= (length nodes) 3)
+              (= (length mediators) 1)
+              (%has-bidirected-edge? g x y)
+              (not (%has-directed-edge? g x y)))
+          (let* ((m (car mediators)) (x* (string->symbol (string-append (symbol->string x) "*"))))
+            (list
+              'sum
+              (list m)
+              (list
+                'prod
+                (list 'P (list m x))
+                (list 'sum (list x*) (list 'prod (list 'P (list y x* m)) (list 'P (list x*)))))))
+          #f)))
 
     ;;@doc (%find pred xs)
     ;;@category Causal
@@ -695,10 +629,7 @@
     ;;@example
     ;; (%find (lambda (x) x) '())
     (defun %find (pred xs)
-      (cond
-        ((null? xs) #f)
-        ((pred (car xs)) (car xs))
-        (else (%find pred (cdr xs)))))
+      (cond ((null? xs) #f) ((pred (car xs)) (car xs)) (else (%find pred (cdr xs)))))
 
     ;; -- Estimand simplifier --------------------------------------------
 
@@ -709,54 +640,39 @@
     ;;@example
     ;; (do:simplify (caddr estimand)
     (defun do:simplify (estimand)
-      (cond
-        ((not (pair? estimand)) estimand)
+      (cond ((not (pair? estimand)) estimand)
         ((eq? (car estimand) 'fail) estimand)
-
         ((eq? (car estimand) 'sum)
-         (if (or (null? (cdr estimand))
-                 (null? (cdr (cdr estimand))))
-             estimand
-             (let* ((vars (%normalize-vars (cadr estimand)))
-                    (expr (do:simplify (caddr estimand))))
-               (cond
-                 ((null? vars) expr)
-                 ((%fail? expr) expr)
-                 ((and (pair? expr)
-                       (eq? (car expr) 'sum)
-                       (pair? (cdr expr))
-                       (pair? (cdr (cdr expr))))
-                  (do:simplify
-                    (list 'sum
-                          (%set-union vars (%normalize-vars (cadr expr)))
-                          (caddr expr))))
-                 (else
-                  (list 'sum vars expr))))))
-
+         (if (or (null? (cdr estimand)) (null? (cdr (cdr estimand))))
+           estimand
+           (let* ((vars (%normalize-vars (cadr estimand))) (expr (do:simplify (caddr estimand))))
+             (cond ((null? vars) expr)
+               ((%fail? expr) expr)
+               ((and (pair? expr) (eq? (car expr) 'sum) (pair? (cdr expr)) (pair? (cdr (cdr expr))))
+                (do:simplify
+                  (list 'sum (%set-union vars (%normalize-vars (cadr expr))) (caddr expr))))
+               (else (list 'sum vars expr))))))
         ((eq? (car estimand) 'prod)
-         (let loop ((rest (cdr estimand)) (acc '()))
+         (let
+           loop
+           ((rest (cdr estimand)) (acc '()))
            (if (null? rest)
-               (let ((factors (reverse acc)))
-                 (cond
-                   ((null? factors) '(prod))
-                   ((null? (cdr factors)) (car factors))
-                   (else (cons 'prod factors))))
-               (let ((factor (do:simplify (car rest))))
-                 (if (and (pair? factor) (eq? (car factor) 'prod))
-                     (loop (append (cdr factor) (cdr rest)) acc)
-                     (loop (cdr rest) (cons factor acc)))))))
-
+             (let ((factors (reverse acc)))
+               (cond ((null? factors) '(prod))
+                 ((null? (cdr factors)) (car factors))
+                 (else (cons 'prod factors))))
+             (let ((factor (do:simplify (car rest))))
+               (if (and (pair? factor) (eq? (car factor) 'prod))
+                 (loop (append (cdr factor) (cdr rest)) acc)
+                 (loop (cdr rest) (cons factor acc)))))))
         ((eq? (car estimand) 'cond-on)
-         (if (or (null? (cdr estimand))
-                 (null? (cdr (cdr estimand))))
-             estimand
-             (let* ((numerator (do:simplify (cadr estimand)))
-                    (conditioning (do:simplify (caddr estimand))))
-               (cond
-                 ((%fail? numerator) numerator)
-                 ((%empty-prob? conditioning) numerator)
-                 (else (list 'cond-on numerator conditioning))))))
-
+         (if (or (null? (cdr estimand)) (null? (cdr (cdr estimand))))
+           estimand
+           (let* ((numerator (do:simplify (cadr estimand)))
+                  (conditioning (do:simplify (caddr estimand))))
+             (cond ((%fail? numerator) numerator)
+               ((%empty-prob? conditioning) numerator)
+               (else (list 'cond-on numerator conditioning))))))
         (else estimand)))
 
     ;; -- IDC algorithm ---------------------------------------------------
@@ -769,15 +685,11 @@
     ;; (%idc-moveable 'x 1 1 1)
     (defun %idc-moveable (g y x z)
       (if (%graph-has-bidirected? g)
-          #f
-          (%find
-            (lambda (zi)
-              (%rule2-applies-dag-lite? g
-                                        y
-                                        (%set-union x (%set-diff z (list zi)))
-                                        (list zi)
-                                        '()))
-            z)))
+        #f
+        (%find
+          (lambda (zi)
+            (%rule2-applies-dag-lite? g y (%set-union x (%set-diff z (list zi))) (list zi) '()))
+          z)))
 
     ;;@doc (%idc-rec g y x z)
     ;;@category Causal
@@ -788,16 +700,11 @@
     (defun %idc-rec (g y x z)
       (let ((moveable (%idc-moveable g y x z)))
         (if moveable
-            (%idc-rec g y
-                      (%set-union x (list moveable))
-                      (%set-diff z (list moveable)))
-            (let ((joint (id g (%set-union y z) x)))
-              (if (%fail? joint)
-                  joint
-                  (do:simplify
-                    (if (null? z)
-                        joint
-                        (list 'cond-on joint (list 'P z)))))))))
+          (%idc-rec g y (%set-union x (list moveable)) (%set-diff z (list moveable)))
+          (let ((joint (id g (%set-union y z) x)))
+            (if (%fail? joint)
+              joint
+              (do:simplify (if (null? z) joint (list 'cond-on joint (list 'P z)))))))))
 
     ;; -- ID algorithm ----------------------------------------------------
 
@@ -809,133 +716,107 @@
     ;; Internal recursive implementation. Assumes v/y/x are normalized
     ;; node sets in the order of v.
     (defun %id-rec (g v y x)
-      (let* ((anc-y (%subset-in-order
-                      v
-                      (%set-union y (%ancestors-in g v y))))
+      (let* ((anc-y (%subset-in-order v (%set-union y (%ancestors-in g v y))))
              (gx (%admg-mutilate-do g x))
-             (anc-y-gx (%subset-in-order
-                          v
-                         (%set-union y (%ancestors-in gx v y))))
+             (anc-y-gx (%subset-in-order v (%set-union y (%ancestors-in gx v y))))
              (w (%set-diff (%set-diff v x) anc-y-gx)))
         (cond
-          ;; Line 1: X is empty.
-          ((null? x)
-           (%mk-sum (%set-diff v y)
-                    (list 'P v)))
+        ;; Line 1: X is empty.
+        ((null? x) (%mk-sum (%set-diff v y) (list 'P v)))
 
           ;; Line 2: restrict to An(Y)_G.
           ((not (%set-equal? v anc-y))
-           (let* ((g2 (%admg-induced-subgraph g anc-y))
-                  (x2 (%set-intersect x anc-y)))
+           (let* ((g2 (%admg-induced-subgraph g anc-y)) (x2 (%set-intersect x anc-y)))
              (%id-rec g2 anc-y y x2)))
 
           ;; Line 3: augment intervention with W.
-          ((not (null? w))
-           (%id-rec g v y (%set-union x w)))
-
+          ((not (null? w)) (%id-rec g v y (%set-union x w)))
           (else
-           (let* ((g-no-x (%admg-remove-nodes g x))
-                  (v-no-x (%set-diff v x))
-                  (cs-no-x (%c-components-over g-no-x v-no-x))
-                  (cs-g (%c-components-over g v)))
-             (cond
-               ;; Line 4: factor over c-components of G \ X.
-               ((> (length cs-no-x) 1)
-                (let* ((factors (map* (lambda (s)
-                                        (%id-rec g v s (%set-diff v s)))
-                                      cs-no-x))
-                       (failed (%find %fail? factors)))
-                  (if failed
-                      failed
-                      (%mk-sum (%set-diff v (%set-union y x))
-                               (%mk-prod factors)))))
+            (let* ((g-no-x (%admg-remove-nodes g x))
+                   (v-no-x (%set-diff v x))
+                   (cs-no-x (%c-components-over g-no-x v-no-x))
+                   (cs-g (%c-components-over g v)))
+              (cond
+              ;; Line 4: factor over c-components of G \ X.
+              ((> (length cs-no-x) 1)
+               (let* ((factors (map* (lambda (s) (%id-rec g v s (%set-diff v s))) cs-no-x))
+                      (failed (%find %fail? factors)))
+                 (if failed failed (%mk-sum (%set-diff v (%set-union y x)) (%mk-prod factors)))))
 
-               ;; Line 5: hedge witness.
-               ((and (= (length cs-g) 1)
-                     (%set-equal? (car cs-g) v))
-                (list 'fail
-                      (list 'hedge
-                            v
-                            cs-no-x)))
+                ;; Line 5: hedge witness.
+                ((and (= (length cs-g) 1) (%set-equal? (car cs-g) v))
+                 (list 'fail (list 'hedge v cs-no-x)))
 
-               ;; Lines 6-7.
-               (else
-                (let* ((s (if (null? cs-no-x) '() (car cs-no-x)))
-                       (s* (%find (lambda (c) (%set-subset? s c)) cs-g)))
-                      (if (or (null? s) (not s*))
-                          (list 'fail (list 'invalid-id-state v x y))
-                          (if (%set-equal? s s*)
-                          (%line6-estimand g v s y)
-                          (let* ((g* (%admg-induced-subgraph g s*))
-                                 (x* (%set-intersect x s*))
-                                 (y* (%set-intersect y s*)))
-                            (%id-rec g* s* y* x*)))))))))))))
+                ;; Lines 6-7.
+                (else
+                  (let* ((s (if (null? cs-no-x) '() (car cs-no-x)))
+                         (s* (%find (lambda (c) (%set-subset? s c)) cs-g)))
+                    (if (or (null? s) (not s*))
+                      (list 'fail (list 'invalid-id-state v x y))
+                      (if (%set-equal? s s*)
+                        (%line6-estimand g v s y)
+                        (let* ((g* (%admg-induced-subgraph g s*))
+                               (x* (%set-intersect x s*))
+                               (y* (%set-intersect y s*)))
+                          (%id-rec g* s* y* x*)))))))))))))
 
-    ;;@doc (id-rec g v y x)
-    ;;@category Causal
-    ;;@module std.causal.identify
-    ;;@example
-    ;; (id-rec 'x 1 1 1)
-    ;; Public recursive entry point (normalizes and validates inputs).
-    (defun id-rec (g v y x)
-      (%assert-admg g)
-      (let* ((v-raw (%as-node-set v))
-             (nodes (%set-union (admg:nodes g) v-raw))
-             (y-raw (%as-node-set y))
-             (x-raw (%as-node-set x)))
-        (%assert-vars nodes v-raw)
-        (%assert-vars nodes y-raw)
-        (%assert-vars nodes x-raw)
-        (let* ((v-set (%subset-in-order nodes v-raw))
-               (y-set (%subset-in-order v-set y-raw))
-               (x-set (%subset-in-order v-set x-raw)))
-          (%id-rec g v-set y-set x-set))))
+  ;;@doc (id-rec g v y x)
+  ;;@category Causal
+  ;;@module std.causal.identify
+  ;;@example
+  ;; (id-rec 'x 1 1 1)
+  ;; Public recursive entry point (normalizes and validates inputs).
+  (defun id-rec (g v y x)
+    (%assert-admg g)
+    (let* ((v-raw (%as-node-set v))
+           (nodes (%set-union (admg:nodes g) v-raw))
+           (y-raw (%as-node-set y))
+           (x-raw (%as-node-set x)))
+      (%assert-vars nodes v-raw)
+      (%assert-vars nodes y-raw)
+      (%assert-vars nodes x-raw)
+      (let* ((v-set (%subset-in-order nodes v-raw))
+             (y-set (%subset-in-order v-set y-raw))
+             (x-set (%subset-in-order v-set x-raw)))
+        (%id-rec g v-set y-set x-set))))
 
-    ;;@doc (id g y x)
-    ;;@category Causal
-    ;;@module std.causal.identify
-    ;;@example
-    ;; (id 'x 1 1)
-    ;; Public API: (id G Y X) -> estimand for P(Y | do(X)).
-    (defun id (g y x)
-      (%assert-admg g)
-      (let* ((nodes (admg:nodes g))
-             (y-raw (%as-node-set y))
-             (x-raw (%as-node-set x)))
-        (%assert-vars nodes y-raw)
-        (%assert-vars nodes x-raw)
-        (let* ((y-set (%subset-in-order nodes y-raw))
-               (x-set (%subset-in-order nodes x-raw)))
-          (if (or (null? y-set) (null? x-set))
-              (error "id: expected non-empty Y and X")
-              (if (and (= (length y-set) 1) (= (length x-set) 1))
-                  (let ((front-door (%maybe-front-door-estimand
-                                      g (car x-set) (car y-set))))
-                    (if front-door
-                        front-door
-                        (%id-rec g nodes y-set x-set)))
-                  (%id-rec g nodes y-set x-set))))))
+  ;;@doc (id g y x)
+  ;;@category Causal
+  ;;@module std.causal.identify
+  ;;@example
+  ;; (id 'x 1 1)
+  ;; Public API: (id G Y X) -> estimand for P(Y | do(X)).
+  (defun id (g y x)
+    (%assert-admg g)
+    (let* ((nodes (admg:nodes g)) (y-raw (%as-node-set y)) (x-raw (%as-node-set x)))
+      (%assert-vars nodes y-raw)
+      (%assert-vars nodes x-raw)
+      (let* ((y-set (%subset-in-order nodes y-raw)) (x-set (%subset-in-order nodes x-raw)))
+        (if (or (null? y-set) (null? x-set))
+          (error "id: expected non-empty Y and X")
+          (if (and (= (length y-set) 1) (= (length x-set) 1))
+            (let ((front-door (%maybe-front-door-estimand g (car x-set) (car y-set))))
+              (if front-door front-door (%id-rec g nodes y-set x-set)))
+            (%id-rec g nodes y-set x-set))))))
 
-    ;;@doc (idc g y x z)
-    ;;@category Causal
-    ;;@module std.causal.identify
-    ;;@example
-    ;; (idc 'x 1 1 1)
-    ;; Public API: (idc G Y X Z) -> estimand for P(Y | do(X), Z).
-    (defun idc (g y x z)
-      (%assert-admg g)
-      (let* ((nodes (admg:nodes g))
-             (y-raw (%as-node-set y))
-             (x-raw (%as-node-set x))
-             (z-raw (%as-node-set z)))
-        (%assert-vars nodes y-raw)
-        (%assert-vars nodes x-raw)
-        (%assert-vars nodes z-raw)
-        (let* ((y-set (%subset-in-order nodes y-raw))
-               (x-set (%subset-in-order nodes x-raw))
-               (z-set (%set-diff (%subset-in-order nodes z-raw) x-set)))
-          (if (or (null? y-set) (null? x-set))
-              (error "idc: expected non-empty Y and X")
-              (%idc-rec g y-set x-set z-set)))))
-
-  )
+  ;;@doc (idc g y x z)
+  ;;@category Causal
+  ;;@module std.causal.identify
+  ;;@example
+  ;; (idc 'x 1 1 1)
+  ;; Public API: (idc G Y X Z) -> estimand for P(Y | do(X), Z).
+  (defun idc (g y x z)
+    (%assert-admg g)
+    (let* ((nodes (admg:nodes g))
+           (y-raw (%as-node-set y))
+           (x-raw (%as-node-set x))
+           (z-raw (%as-node-set z)))
+      (%assert-vars nodes y-raw)
+      (%assert-vars nodes x-raw)
+      (%assert-vars nodes z-raw)
+      (let* ((y-set (%subset-in-order nodes y-raw))
+             (x-set (%subset-in-order nodes x-raw))
+             (z-set (%set-diff (%subset-in-order nodes z-raw) x-set)))
+        (if (or (null? y-set) (null? x-set))
+          (error "idc: expected non-empty Y and X")
+          (%idc-rec g y-set x-set z-set))))))

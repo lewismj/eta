@@ -17,12 +17,7 @@
   (import std.core)
   (import std.collections)
   (import std.causal)
-  (export
-    dag:gac?
-    dag:minimal-adjustments
-    front-door?
-    do:front-door-formula
-    iv?)
+  (export dag:gac? dag:minimal-adjustments front-door? do:front-door-formula iv?)
   (begin
 
     ;; -- Basic helpers ----------------------------------------------------
@@ -34,10 +29,7 @@
     ;;@example
     ;; (%member? 1 '())
     (defun %member? (x xs)
-      (cond
-        ((null? xs) #f)
-        ((equal? x (car xs)) #t)
-        (else (%member? x (cdr xs)))))
+      (cond ((null? xs) #f) ((equal? x (car xs)) #t) (else (%member? x (cdr xs)))))
 
     ;;@doc (%adjoin x xs)
     ;;@category Causal
@@ -45,8 +37,7 @@
     ;; Compute `%adjoin`.
     ;;@example
     ;; (%adjoin 1 '())
-    (defun %adjoin (x xs)
-      (if (%member? x xs) xs (cons x xs)))
+    (defun %adjoin (x xs) (if (%member? x xs) xs (cons x xs)))
 
     ;;@doc (%set-union a b)
     ;;@category Causal
@@ -54,8 +45,7 @@
     ;; Compute `%set-union`.
     ;;@example
     ;; (%set-union 1 1)
-    (defun %set-union (a b)
-      (foldl (lambda (acc x) (%adjoin x acc)) a b))
+    (defun %set-union (a b) (foldl (lambda (acc x) (%adjoin x acc)) a b))
 
     ;;@doc (%set-diff a b)
     ;;@category Causal
@@ -63,8 +53,7 @@
     ;; Compute `%set-diff`.
     ;;@example
     ;; (%set-diff 1 1)
-    (defun %set-diff (a b)
-      (filter (lambda (x) (not (%member? x b))) a))
+    (defun %set-diff (a b) (filter (lambda (x) (not (%member? x b))) a))
 
     ;;@doc (%subset? a b)
     ;;@category Causal
@@ -72,8 +61,7 @@
     ;; Return whether `%subset?` holds.
     ;;@example
     ;; (%subset? 1 1)
-    (defun %subset? (a b)
-      (every? (lambda (x) (%member? x b)) a))
+    (defun %subset? (a b) (every? (lambda (x) (%member? x b)) a))
 
     ;;@doc (%proper-subset? a b)
     ;;@category Causal
@@ -81,8 +69,7 @@
     ;; Return whether `%proper-subset?` holds.
     ;;@example
     ;; (%proper-subset? 1 1)
-    (defun %proper-subset? (a b)
-      (and (%subset? a b) (< (length a) (length b))))
+    (defun %proper-subset? (a b) (and (%subset? a b) (< (length a) (length b))))
 
     ;;@doc (%normalize-vars vars)
     ;;@category Causal
@@ -91,13 +78,13 @@
     ;;@example
     ;; (%normalize-vars 'x)
     (defun %normalize-vars (vars)
-      (let loop ((rest vars) (acc '()))
+      (let
+        loop
+        ((rest vars) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (let ((v (car rest)))
-              (if (%member? v acc)
-                  (loop (cdr rest) acc)
-                  (loop (cdr rest) (cons v acc)))))))
+          (reverse acc)
+          (let ((v (car rest)))
+            (if (%member? v acc) (loop (cdr rest) acc) (loop (cdr rest) (cons v acc)))))))
 
     ;;@doc (%as-node-set x)
     ;;@category Causal
@@ -106,8 +93,7 @@
     ;;@example
     ;; (%as-node-set 1)
     (defun %as-node-set (x)
-      (cond
-        ((null? x) '())
+      (cond ((null? x) '())
         ((symbol? x) (list x))
         ((list? x) (%normalize-vars x))
         (else (error "expected symbol or list of symbols"))))
@@ -120,12 +106,10 @@
     ;; (%assert-vars 'x 'x)
     (defun %assert-vars (nodes vs)
       (if (null? vs)
-          'ok
-          (begin
-            (if (%member? (car vs) nodes)
-                'ok
-                (error 'unknown-variable (car vs)))
-            (%assert-vars nodes (cdr vs)))))
+        'ok
+        (begin
+          (if (%member? (car vs) nodes) 'ok (error 'unknown-variable (car vs)))
+          (%assert-vars nodes (cdr vs)))))
 
     ;;@doc (%find pred xs)
     ;;@category Causal
@@ -134,10 +118,7 @@
     ;;@example
     ;; (%find (lambda (x) x) '())
     (defun %find (pred xs)
-      (cond
-        ((null? xs) #f)
-        ((pred (car xs)) (car xs))
-        (else (%find pred (cdr xs)))))
+      (cond ((null? xs) #f) ((pred (car xs)) (car xs)) (else (%find pred (cdr xs)))))
 
     ;;@doc (%contains-set? sets s)
     ;;@category Causal
@@ -145,8 +126,7 @@
     ;; Return whether `%contains-set?` holds.
     ;;@example
     ;; (%contains-set? 'x "sample")
-    (defun %contains-set? (sets s)
-      (any? (lambda (x) (equal? x s)) sets))
+    (defun %contains-set? (sets s) (any? (lambda (x) (equal? x s)) sets))
 
     ;; -- Mixed-graph helpers ----------------------------------------------
 
@@ -194,9 +174,7 @@
     ;;@example
     ;; (%mixed-edge? 'x)
     (defun %mixed-edge? (e)
-      (and (list? e)
-           (= (length e) 3)
-           (or (%directed-edge? e) (%bidirected-edge? e))))
+      (and (list? e) (= (length e) 3) (or (%directed-edge? e) (%bidirected-edge? e))))
 
     ;;@doc (%graph-nodes g)
     ;;@category Causal
@@ -205,10 +183,7 @@
     ;;@example
     ;; (%graph-nodes 'x)
     (defun %graph-nodes (g)
-      (foldl (lambda (acc e)
-               (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc)))
-             '()
-             g))
+      (foldl (lambda (acc e) (%adjoin (%edge-from e) (%adjoin (%edge-to e) acc))) '() g))
 
     ;;@doc (%directed-only g)
     ;;@category Causal
@@ -216,8 +191,7 @@
     ;; Compute `%directed-only`.
     ;;@example
     ;; (%directed-only 'x)
-    (defun %directed-only (g)
-      (filter %directed-edge? g))
+    (defun %directed-only (g) (filter %directed-edge? g))
 
     ;;@doc (%bidirected-only g)
     ;;@category Causal
@@ -225,8 +199,7 @@
     ;; Compute `%bidirected-only`.
     ;;@example
     ;; (%bidirected-only 'x)
-    (defun %bidirected-only (g)
-      (filter %bidirected-edge? g))
+    (defun %bidirected-only (g) (filter %bidirected-edge? g))
 
     ;;@doc (%assert-mixed-graph g)
     ;;@category Causal
@@ -236,11 +209,8 @@
     ;; (%assert-mixed-graph 'x)
     (defun %assert-mixed-graph (g)
       (if (every? %mixed-edge? g)
-          (let ((d (%directed-only g)))
-            (if (dag:valid? d)
-                g
-                (error 'invalid-admg g)))
-          (error 'invalid-admg g)))
+        (let ((d (%directed-only g))) (if (dag:valid? d) g (error 'invalid-admg g)))
+        (error 'invalid-admg g)))
 
     ;;@doc (%edge-member? e edges)
     ;;@category Causal
@@ -248,8 +218,7 @@
     ;; Return whether `%edge-member?` holds.
     ;;@example
     ;; (%edge-member? 'x 'x)
-    (defun %edge-member? (e edges)
-      (any? (lambda (x) (equal? e x)) edges))
+    (defun %edge-member? (e edges) (any? (lambda (x) (equal? e x)) edges))
 
     ;;@doc (%edge-adjoin e edges)
     ;;@category Causal
@@ -257,8 +226,7 @@
     ;; Compute `%edge-adjoin`.
     ;;@example
     ;; (%edge-adjoin 'x 'x)
-    (defun %edge-adjoin (e edges)
-      (if (%edge-member? e edges) edges (cons e edges)))
+    (defun %edge-adjoin (e edges) (if (%edge-member? e edges) edges (cons e edges)))
 
     ;;@doc (%children dag node)
     ;;@category Causal
@@ -267,13 +235,13 @@
     ;;@example
     ;; (%children 'x 'x)
     (defun %children (dag node)
-      (foldl (lambda (acc e)
-               (if (and (eq? (%edge-kind e) '->)
-                        (eq? (%edge-from e) node))
-                   (%adjoin (%edge-to e) acc)
-                   acc))
-             '()
-             dag))
+      (foldl
+        (lambda (acc e)
+          (if (and (eq? (%edge-kind e) '->) (eq? (%edge-from e) node))
+            (%adjoin (%edge-to e) acc)
+            acc))
+        '()
+        dag))
 
     ;;@doc (%neighbors dag node)
     ;;@category Causal
@@ -282,13 +250,13 @@
     ;;@example
     ;; (%neighbors 'x 'x)
     (defun %neighbors (dag node)
-      (foldl (lambda (acc e)
-               (cond
-                 ((eq? (%edge-from e) node) (%adjoin (%edge-to e) acc))
-                 ((eq? (%edge-to e) node) (%adjoin (%edge-from e) acc))
-                 (else acc)))
-             '()
-             dag))
+      (foldl
+        (lambda (acc e)
+          (cond ((eq? (%edge-from e) node) (%adjoin (%edge-to e) acc))
+            ((eq? (%edge-to e) node) (%adjoin (%edge-from e) acc))
+            (else acc)))
+        '()
+        dag))
 
     ;;@doc (%has-directed-edge? dag from to)
     ;;@category Causal
@@ -297,11 +265,9 @@
     ;;@example
     ;; (%has-directed-edge? 'x 'x 'x)
     (defun %has-directed-edge? (dag from to)
-      (any? (lambda (e)
-              (and (eq? (%edge-kind e) '->)
-                   (eq? (%edge-from e) from)
-                   (eq? (%edge-to e) to)))
-            dag))
+      (any?
+        (lambda (e) (and (eq? (%edge-kind e) '->) (eq? (%edge-from e) from) (eq? (%edge-to e) to)))
+        dag))
 
     ;;@doc (%filter-present nodes xs)
     ;;@category Causal
@@ -309,8 +275,7 @@
     ;; Compute `%filter-present`.
     ;;@example
     ;; (%filter-present 'x '())
-    (defun %filter-present (nodes xs)
-      (filter (lambda (x) (%member? x nodes)) xs))
+    (defun %filter-present (nodes xs) (filter (lambda (x) (%member? x nodes)) xs))
 
     ;;@doc (%d-separated-lite? dag x-set y-set z-set)
     ;;@category Causal
@@ -324,9 +289,7 @@
              (x2 (%filter-present nodes x-set))
              (y2 (%filter-present nodes y-set))
              (z2 (%filter-present nodes z-set)))
-        (if (or (null? x2) (null? y2))
-            #t
-            (dag:d-separated? dag x2 y2 z2))))
+        (if (or (null? x2) (null? y2)) #t (dag:d-separated? dag x2 y2 z2))))
 
     ;; -- ADMG -> DAG expansion for d-separation checks --------------------
 
@@ -337,11 +300,8 @@
     ;;@example
     ;; (%fresh-latent 'x 1)
     (defun %fresh-latent (used idx)
-      (let ((n (string->symbol
-                 (string-append "__u" (number->string idx)))))
-        (if (%member? n used)
-            (%fresh-latent used (+ idx 1))
-            n)))
+      (let ((n (string->symbol (string-append "__u" (number->string idx)))))
+        (if (%member? n used) (%fresh-latent used (+ idx 1)) n)))
 
     ;;@doc (%admg->latent-dag g)
     ;;@category Causal
@@ -353,22 +313,18 @@
       (let* ((directed (%directed-only g))
              (bidirected (%bidirected-only g))
              (used0 (%graph-nodes g)))
-        (let loop ((rest bidirected)
-                   (used used0)
-                   (idx 0)
-                   (acc directed))
+        (let
+          loop
+          ((rest bidirected) (used used0) (idx 0) (acc directed))
           (if (null? rest)
-              (reverse acc)
-              (let* ((e (car rest))
-                     (u (%edge-from e))
-                     (v (%edge-to e))
-                     (latent (%fresh-latent used idx))
-                     (acc1 (%edge-adjoin (list latent '-> u) acc))
-                     (acc2 (%edge-adjoin (list latent '-> v) acc1)))
-                (loop (cdr rest)
-                      (%adjoin latent used)
-                      (+ idx 1)
-                      acc2))))))
+            (reverse acc)
+            (let* ((e (car rest))
+                   (u (%edge-from e))
+                   (v (%edge-to e))
+                   (latent (%fresh-latent used idx))
+                   (acc1 (%edge-adjoin (list latent '-> u) acc))
+                   (acc2 (%edge-adjoin (list latent '-> v) acc1)))
+              (loop (cdr rest) (%adjoin latent used) (+ idx 1) acc2))))))
 
     ;; -- Path enumeration / activity --------------------------------------
 
@@ -379,19 +335,16 @@
     ;;@example
     ;; (%all-simple-undirected-paths 'x 'x 'x)
     (defun %all-simple-undirected-paths (dag src dst)
-      (letrec ((dfs (lambda (curr visited path-rev)
-                      (if (eq? curr dst)
-                          (list (reverse path-rev))
-                          (let ((nexts (filter (lambda (n)
-                                                 (not (%member? n visited)))
-                                               (%neighbors dag curr))))
-                            (foldr append
-                                   '()
-                                   (map* (lambda (n)
-                                           (dfs n
-                                                (%adjoin n visited)
-                                                (cons n path-rev)))
-                                         nexts)))))))
+      (letrec ((dfs
+                 (lambda (curr visited path-rev)
+                   (if (eq? curr dst)
+                     (list (reverse path-rev))
+                     (let ((nexts
+                             (filter (lambda (n) (not (%member? n visited))) (%neighbors dag curr))))
+                       (foldr
+                         append
+                         '()
+                         (map* (lambda (n) (dfs n (%adjoin n visited) (cons n path-rev))) nexts)))))))
         (dfs src (list src) (list src))))
 
     ;;@doc (%all-directed-paths dag src dst)
@@ -401,19 +354,16 @@
     ;;@example
     ;; (%all-directed-paths 'x 'x 'x)
     (defun %all-directed-paths (dag src dst)
-      (letrec ((dfs (lambda (curr visited path-rev)
-                      (if (eq? curr dst)
-                          (list (reverse path-rev))
-                          (let ((nexts (filter (lambda (n)
-                                                 (not (%member? n visited)))
-                                               (%children dag curr))))
-                            (foldr append
-                                   '()
-                                   (map* (lambda (n)
-                                           (dfs n
-                                                (%adjoin n visited)
-                                                (cons n path-rev)))
-                                         nexts)))))))
+      (letrec ((dfs
+                 (lambda (curr visited path-rev)
+                   (if (eq? curr dst)
+                     (list (reverse path-rev))
+                     (let ((nexts
+                             (filter (lambda (n) (not (%member? n visited))) (%children dag curr))))
+                       (foldr
+                         append
+                         '()
+                         (map* (lambda (n) (dfs n (%adjoin n visited) (cons n path-rev))) nexts)))))))
         (dfs src (list src) (list src))))
 
     ;;@doc (%path-collider? dag a b c)
@@ -423,8 +373,7 @@
     ;;@example
     ;; (%path-collider? 'x 1 1 'x)
     (defun %path-collider? (dag a b c)
-      (and (%has-directed-edge? dag a b)
-           (%has-directed-edge? dag c b)))
+      (and (%has-directed-edge? dag a b) (%has-directed-edge? dag c b)))
 
     ;;@doc (%desc-or-self-in-z? dag node z-set)
     ;;@category Causal
@@ -433,9 +382,7 @@
     ;;@example
     ;; (%desc-or-self-in-z? 'x 'x 'x)
     (defun %desc-or-self-in-z? (dag node z-set)
-      (or (%member? node z-set)
-          (any? (lambda (d) (%member? d z-set))
-                (dag:descendants dag node))))
+      (or (%member? node z-set) (any? (lambda (d) (%member? d z-set)) (dag:descendants dag node))))
 
     ;;@doc (%path-active? dag path z-set)
     ;;@category Causal
@@ -445,17 +392,19 @@
     ;; d-separation path activity on DAG paths.
     (defun %path-active? (dag path z-set)
       (if (< (length path) 3)
-          #t
-          (letrec ((walk (lambda (a b rest)
-                           (if (null? rest)
-                               #t
-                               (let* ((c (car rest))
-                                      (collider? (%path-collider? dag a b c))
-                                      (open? (if collider?
-                                                 (%desc-or-self-in-z? dag b z-set)
-                                                 (not (%member? b z-set)))))
-                                 (and open? (walk b c (cdr rest))))))))
-            (walk (car path) (cadr path) (cdr (cdr path))))))
+        #t
+        (letrec ((walk
+                   (lambda (a b rest)
+                     (if (null? rest)
+                       #t
+                       (let* ((c (car rest))
+                              (collider? (%path-collider? dag a b c))
+                              (open?
+                                (if collider?
+                                  (%desc-or-self-in-z? dag b z-set)
+                                  (not (%member? b z-set)))))
+                         (and open? (walk b c (cdr rest))))))))
+          (walk (car path) (cadr path) (cdr (cdr path))))))
 
     ;;@doc (%causal-directed-path? dag path)
     ;;@category Causal
@@ -465,13 +414,13 @@
     ;; (%causal-directed-path? 'x "sample")
     (defun %causal-directed-path? (dag path)
       (if (< (length path) 2)
-          #f
-          (let loop ((a (car path)) (rest (cdr path)))
-            (if (null? rest)
-                #t
-                (let ((b (car rest)))
-                  (and (%has-directed-edge? dag a b)
-                       (loop b (cdr rest))))))))
+        #f
+        (let
+          loop
+          ((a (car path)) (rest (cdr path)))
+          (if (null? rest)
+            #t
+            (let ((b (car rest))) (and (%has-directed-edge? dag a b) (loop b (cdr rest))))))))
 
     ;; -- GAC helpers ------------------------------------------------------
 
@@ -482,15 +431,12 @@
     ;;@example
     ;; (%proper-causal-paths 'x 'x 'x)
     (defun %proper-causal-paths (dag x-set y-set)
-      (foldr append
-             '()
-             (map* (lambda (x)
-                     (foldr append
-                            '()
-                            (map* (lambda (y)
-                                    (%all-directed-paths dag x y))
-                                  y-set)))
-                   x-set)))
+      (foldr
+        append
+        '()
+        (map*
+          (lambda (x) (foldr append '() (map* (lambda (y) (%all-directed-paths dag x y)) y-set)))
+          x-set)))
 
     ;;@doc (%proper-non-causal-paths dag x-set y-set)
     ;;@category Causal
@@ -499,17 +445,15 @@
     ;;@example
     ;; (%proper-non-causal-paths 'x 'x 'x)
     (defun %proper-non-causal-paths (dag x-set y-set)
-      (filter (lambda (p)
-                (not (%causal-directed-path? dag p)))
-              (foldr append
-                     '()
-                     (map* (lambda (x)
-                             (foldr append
-                                    '()
-                                    (map* (lambda (y)
-                                            (%all-simple-undirected-paths dag x y))
-                                          y-set)))
-                           x-set))))
+      (filter
+        (lambda (p) (not (%causal-directed-path? dag p)))
+        (foldr
+          append
+          '()
+          (map*
+            (lambda (x)
+              (foldr append '() (map* (lambda (y) (%all-simple-undirected-paths dag x y)) y-set)))
+            x-set))))
 
     ;;@doc (%proper-forbidden-nodes dag x-set y-set)
     ;;@category Causal
@@ -520,19 +464,15 @@
     (defun %proper-forbidden-nodes (dag x-set y-set)
       (let* ((causal-paths (%proper-causal-paths dag x-set y-set))
              (causal-nodes
-               (foldl (lambda (acc p)
-                        (foldl (lambda (acc2 v)
-                                 (if (%member? v x-set)
-                                     acc2
-                                     (%adjoin v acc2)))
-                               acc
-                               p))
-                      '()
-                      causal-paths)))
-        (foldl (lambda (acc v)
-                 (%set-union (%adjoin v acc) (dag:descendants dag v)))
-               '()
-               causal-nodes)))
+               (foldl
+                 (lambda (acc p)
+                   (foldl (lambda (acc2 v) (if (%member? v x-set) acc2 (%adjoin v acc2))) acc p))
+                 '()
+                 causal-paths)))
+        (foldl
+          (lambda (acc v) (%set-union (%adjoin v acc) (dag:descendants dag v)))
+          '()
+          causal-nodes)))
 
     ;;@doc (dag:gac? g x y z)
     ;;@category Causal
@@ -550,14 +490,13 @@
         (%assert-vars nodes y-set)
         (%assert-vars nodes z-set)
         (if (or (null? x-set) (null? y-set))
-            #f
-            (let* ((dag* (%admg->latent-dag g))
-                   (forbidden (%proper-forbidden-nodes dag* x-set y-set))
-                   (non-causal-paths (%proper-non-causal-paths dag* x-set y-set)))
-              (and
-                (every? (lambda (zi) (not (%member? zi forbidden))) z-set)
-                (every? (lambda (p) (not (%path-active? dag* p z-set)))
-                        non-causal-paths))))))
+          #f
+          (let* ((dag* (%admg->latent-dag g))
+                 (forbidden (%proper-forbidden-nodes dag* x-set y-set))
+                 (non-causal-paths (%proper-non-causal-paths dag* x-set y-set)))
+            (and
+              (every? (lambda (zi) (not (%member? zi forbidden))) z-set)
+              (every? (lambda (p) (not (%path-active? dag* p z-set))) non-causal-paths))))))
 
     ;; -- Minimal adjustment-set enumeration -------------------------------
 
@@ -568,15 +507,13 @@
     ;;@example
     ;; (%choose-k '() 1)
     (defun %choose-k (xs k)
-      (cond
-        ((= k 0) (list '()))
+      (cond ((= k 0) (list '()))
         ((null? xs) '())
         ((< k 0) '())
         (else
-         (append
-           (map* (lambda (s) (cons (car xs) s))
-                 (%choose-k (cdr xs) (- k 1)))
-           (%choose-k (cdr xs) k)))))
+          (append
+            (map* (lambda (s) (cons (car xs) s)) (%choose-k (cdr xs) (- k 1)))
+            (%choose-k (cdr xs) k)))))
 
     ;;@doc (%subsets-all xs)
     ;;@category Causal
@@ -585,11 +522,9 @@
     ;;@example
     ;; (%subsets-all '())
     (defun %subsets-all (xs)
-      (letrec ((loop (lambda (k acc)
-                       (if (> k (length xs))
-                           acc
-                           (loop (+ k 1)
-                                 (append acc (%choose-k xs k)))))))
+      (letrec ((loop
+                 (lambda (k acc)
+                   (if (> k (length xs)) acc (loop (+ k 1) (append acc (%choose-k xs k)))))))
         (loop 0 '())))
 
     ;;@doc (%minimal-sets sets)
@@ -599,10 +534,7 @@
     ;;@example
     ;; (%minimal-sets 'x)
     (defun %minimal-sets (sets)
-      (filter
-        (lambda (s)
-          (not (any? (lambda (t) (%proper-subset? t s)) sets)))
-        sets))
+      (filter (lambda (s) (not (any? (lambda (t) (%proper-subset? t s)) sets))) sets))
 
     ;;@doc (dag:minimal-adjustments g x y observed)
     ;;@category Causal
@@ -620,10 +552,7 @@
         (%assert-vars nodes y-set)
         (%assert-vars nodes obs-set)
         (let* ((cands (%set-diff (%set-diff obs-set x-set) y-set))
-               (valid
-                 (filter (lambda (z-set)
-                           (dag:gac? g x-set y-set z-set))
-                         (%subsets-all cands))))
+               (valid (filter (lambda (z-set) (dag:gac? g x-set y-set z-set)) (%subsets-all cands))))
           (%minimal-sets valid))))
 
     ;; -- Front-door / IV criteria ----------------------------------------
@@ -634,8 +563,7 @@
     ;; Return whether `%path-intersects?` holds.
     ;;@example
     ;; (%path-intersects? "sample" 'x)
-    (defun %path-intersects? (path nodes)
-      (any? (lambda (n) (%member? n nodes)) path))
+    (defun %path-intersects? (path nodes) (any? (lambda (n) (%member? n nodes)) path))
 
     ;;@doc (%fresh-star base used idx)
     ;;@category Causal
@@ -645,13 +573,11 @@
     ;; (%fresh-star 'x 'x 1)
     (defun %fresh-star (base used idx)
       (let* ((s0 (symbol->string base))
-             (name (if (= idx 0)
-                       (string->symbol (string-append s0 "*"))
-                       (string->symbol
-                         (string-append s0 "*" (number->string idx))))))
-        (if (%member? name used)
-            (%fresh-star base used (+ idx 1))
-            name)))
+             (name
+               (if (= idx 0)
+                 (string->symbol (string-append s0 "*"))
+                 (string->symbol (string-append s0 "*" (number->string idx))))))
+        (if (%member? name used) (%fresh-star base used (+ idx 1)) name)))
 
     ;;@doc (front-door? g x y m)
     ;;@category Causal
@@ -663,26 +589,20 @@
     (defun front-door? (g x y m)
       (%assert-mixed-graph g)
       (if (or (not (symbol? x)) (not (symbol? y)))
-          (error "front-door?: expected symbol x and y")
-          (let* ((nodes (%graph-nodes g))
-                 (m-set (%as-node-set m)))
-            (%assert-vars nodes (list x y))
-            (%assert-vars nodes m-set)
-            (if (null? m-set)
-                #f
-                (let* ((dir (%directed-only g))
-                       (x-y-paths (%all-directed-paths dir x y))
-                       (dag* (%admg->latent-dag g)))
-                  (and
-                    (not (null? x-y-paths))
-                    (every? (lambda (p) (%path-intersects? p m-set))
-                            x-y-paths)
-                    (every? (lambda (mi)
-                              (dag:satisfies-backdoor? dag* x mi '()))
-                            m-set)
-                    (every? (lambda (mi)
-                              (dag:satisfies-backdoor? dag* mi y (list x)))
-                            m-set)))))))
+        (error "front-door?: expected symbol x and y")
+        (let* ((nodes (%graph-nodes g)) (m-set (%as-node-set m)))
+          (%assert-vars nodes (list x y))
+          (%assert-vars nodes m-set)
+          (if (null? m-set)
+            #f
+            (let* ((dir (%directed-only g))
+                   (x-y-paths (%all-directed-paths dir x y))
+                   (dag* (%admg->latent-dag g)))
+              (and
+                (not (null? x-y-paths))
+                (every? (lambda (p) (%path-intersects? p m-set)) x-y-paths)
+                (every? (lambda (mi) (dag:satisfies-backdoor? dag* x mi '())) m-set)
+                (every? (lambda (mi) (dag:satisfies-backdoor? dag* mi y (list x))) m-set)))))))
 
     ;;@doc (do:front-door-formula y x m)
     ;;@category Causal
@@ -696,16 +616,17 @@
              (used (%set-union m-set (list y x)))
              (x-star (%fresh-star x used 0)))
         (if (null? m-set)
-            (error "do:front-door-formula: expected non-empty mediator set")
-            (list 'sum
-                  m-set
-                  (list 'prod
-                        (list 'P (append m-set (list x)))
-                        (list 'sum
-                              (list x-star)
-                              (list 'prod
-                                    (list 'P (append (list y x-star) m-set))
-                                    (list 'P (list x-star)))))))))
+          (error "do:front-door-formula: expected non-empty mediator set")
+          (list
+            'sum
+            m-set
+            (list
+              'prod
+              (list 'P (append m-set (list x)))
+              (list
+                'sum
+                (list x-star)
+                (list 'prod (list 'P (append (list y x-star) m-set)) (list 'P (list x-star)))))))))
 
     ;;@doc (iv? g z x y)
     ;;@category Causal
@@ -721,9 +642,7 @@
       (let ((nodes (%graph-nodes g)))
         (%assert-vars nodes (list z x y))
         (let ((dag* (%admg->latent-dag g)))
-          (and (%has-directed-edge? g z x)
-               (%d-separated-lite? (dag:mutilate-do dag* (list x))
-                                   (list z) (list y) '())
-               (not (%d-separated-lite? dag* (list z) (list x) '()))))))
-
-  ))
+          (and
+            (%has-directed-edge? g z x)
+            (%d-separated-lite? (dag:mutilate-do dag* (list x)) (list z) (list y) '())
+            (not (%d-separated-lite? dag* (list z) (list x) '()))))))))

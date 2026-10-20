@@ -1,5 +1,6 @@
 ;;; stdlib/tests/causal.test.eta -- Unit tests for std.causal
 
+;; eta-lint:disable-file=ETA501
 (module causal.tests
   (import std.test std.causal std.core std.collections)
   (begin
@@ -10,27 +11,15 @@
     ;; Unit tests for std.causal Uses `chain-dag`.
     ;;@example
     ;; (display chain-dag)
-    (define chain-dag
-      '((a -> b)
-        (b -> c)))
+    (define chain-dag '((a -> b) (b -> c)))
 
-    (define collider-dag
-      '((a -> c)
-        (b -> c)
-        (c -> d)))
+    (define collider-dag '((a -> c) (b -> c) (c -> d)))
 
-    (define backdoor-dag
-      '((z -> x)
-        (z -> y)
-        (x -> y)))
+    (define backdoor-dag '((z -> x) (z -> y) (x -> y)))
 
-    (define direct-dag
-      '((x -> y)))
+    (define direct-dag '((x -> y)))
 
-    (define latent-backdoor-dag
-      '((latent -> x)
-        (latent -> y)
-        (x -> y)))
+    (define latent-backdoor-dag '((latent -> x) (latent -> y) (x -> y)))
 
     ;;@doc (contains-edge? dag edge)
     ;;@category Tests
@@ -38,8 +27,7 @@
     ;; Return whether `contains-edge?` holds.
     ;;@example
     ;; (contains-edge? 'x 'x)
-    (defun contains-edge? (dag edge)
-      (any? (lambda (e) (equal? e edge)) dag))
+    (defun contains-edge? (dag edge) (any? (lambda (e) (equal? e edge)) dag))
 
     ;;@doc (index-of x xs)
     ;;@category Tests
@@ -48,184 +36,167 @@
     ;;@example
     ;; (index-of 1 '())
     (defun index-of (x xs)
-      (let loop ((rest xs) (i 0))
-        (cond
-          ((null? rest) #f)
-          ((equal? x (car rest)) i)
-          (else (loop (cdr rest) (+ i 1))))))
+      (let
+        loop
+        ((rest xs) (i 0))
+        (cond ((null? rest) #f) ((equal? x (car rest)) i) (else (loop (cdr rest) (+ i 1))))))
 
     (define suite
-      (make-group "std.causal"
+      (make-group
+        "std.causal"
         (list
-          (make-group "graph perturbations"
+          (make-group
+            "graph perturbations"
             (list
-              (make-test "add-edge inserts missing edge once"
+              (make-test
+                "add-edge inserts missing edge once"
                 (lambda ()
-                  (let* ((d0 '((a -> b)))
-                         (d1 (dag:add-edge d0 'b 'c))
-                         (d2 (dag:add-edge d1 'b 'c)))
+                  (let* ((d0 '((a -> b))) (d1 (dag:add-edge d0 'b 'c)) (d2 (dag:add-edge d1 'b 'c)))
                     (assert-true (contains-edge? d1 '(b -> c)))
                     (assert-equal d1 d2))))
-              (make-test "remove-edge removes directed edge"
+              (make-test
+                "remove-edge removes directed edge"
                 (lambda ()
                   (let ((d1 (dag:remove-edge '((a -> b) (b -> c)) 'b 'c)))
                     (assert-false (contains-edge? d1 '(b -> c)))
                     (assert-true (contains-edge? d1 '(a -> b))))))
-              (make-test "flip-edge reverses orientation"
+              (make-test
+                "flip-edge reverses orientation"
                 (lambda ()
                   (let ((d1 (dag:flip-edge '((a -> b) (b -> c)) 'a 'b)))
                     (assert-false (contains-edge? d1 '(a -> b)))
                     (assert-true (contains-edge? d1 '(b -> a))))))))
-
-          (make-group "d-separation"
+          (make-group
+            "d-separation"
             (list
-              (make-test "chain is d-connected without conditioning"
-                (lambda ()
-                  (assert-true (dag:d-connected? chain-dag 'a 'c '()))))
-              (make-test "conditioning on chain middle node blocks path"
-                (lambda ()
-                  (assert-true (dag:d-separated? chain-dag 'a 'c '(b)))))
-              (make-test "collider blocks path by default"
-                (lambda ()
-                  (assert-true (dag:d-separated? collider-dag 'a 'b '()))))
-              (make-test "conditioning on collider opens path"
-                (lambda ()
-                  (assert-true (dag:d-connected? collider-dag 'a 'b '(c)))))
-              (make-test "conditioning on collider descendant opens path"
-                (lambda ()
-                  (assert-true (dag:d-connected? collider-dag 'a 'b '(d)))))))
-
-          (make-group "do-calculus rule predicates"
+              (make-test
+                "chain is d-connected without conditioning"
+                (lambda () (assert-true (dag:d-connected? chain-dag 'a 'c '()))))
+              (make-test
+                "conditioning on chain middle node blocks path"
+                (lambda () (assert-true (dag:d-separated? chain-dag 'a 'c '(b)))))
+              (make-test
+                "collider blocks path by default"
+                (lambda () (assert-true (dag:d-separated? collider-dag 'a 'b '()))))
+              (make-test
+                "conditioning on collider opens path"
+                (lambda () (assert-true (dag:d-connected? collider-dag 'a 'b '(c)))))
+              (make-test
+                "conditioning on collider descendant opens path"
+                (lambda () (assert-true (dag:d-connected? collider-dag 'a 'b '(d)))))))
+          (make-group
+            "do-calculus rule predicates"
             (list
-              (make-test "mutilate-do removes incoming edges to intervention nodes"
+              (make-test
+                "mutilate-do removes incoming edges to intervention nodes"
+                (lambda () (assert-equal '((x -> y)) (dag:mutilate-do '((z -> x) (x -> y)) '(x)))))
+              (make-test
+                "mutilate-see removes outgoing edges from observation nodes"
+                (lambda () (assert-equal '((z -> x)) (dag:mutilate-see '((z -> x) (x -> y)) '(x)))))
+              (make-test
+                "rule 1 holds when z is blocked after intervention on x"
                 (lambda ()
-                  (assert-equal '((x -> y))
-                                (dag:mutilate-do
-                                  '((z -> x) (x -> y))
-                                  '(x)))))
-              (make-test "mutilate-see removes outgoing edges from observation nodes"
+                  (assert-true (do-rule1-applies? '((w -> z) (z -> x) (x -> y)) '(y) '(x) '(z) '()))))
+              (make-test
+                "rule 2 holds when observing z equals intervening on z"
                 (lambda ()
-                  (assert-equal '((z -> x))
-                                (dag:mutilate-see
-                                  '((z -> x) (x -> y))
-                                  '(x)))))
-              (make-test "rule 1 holds when z is blocked after intervention on x"
+                  (assert-true (do-rule2-applies? '((x -> z) (x -> y) (z -> y)) '(y) '(x) '(z) '()))))
+              (make-test
+                "rule 3 is false when intervention target remains causally relevant"
                 (lambda ()
-                  (assert-true (do-rule1-applies?
-                                 '((w -> z) (z -> x) (x -> y))
-                                 '(y)
-                                 '(x)
-                                 '(z)
-                                 '()))))
-              (make-test "rule 2 holds when observing z equals intervening on z"
-                (lambda ()
-                  (assert-true (do-rule2-applies?
-                                 '((x -> z) (x -> y) (z -> y))
-                                 '(y)
-                                 '(x)
-                                 '(z)
-                                 '()))))
-              (make-test "rule 3 is false when intervention target remains causally relevant"
-                (lambda ()
-                  (assert-false (do-rule3-applies?
-                                  '((w -> z) (z -> y))
-                                  '(y)
-                                  '()
-                                  '(z)
-                                  '()))))))
-
-          (make-group "back-door"
+                  (assert-false (do-rule3-applies? '((w -> z) (z -> y)) '(y) '() '(z) '()))))))
+          (make-group
+            "back-door"
             (list
-              (make-test "empty set fails back-door criterion when confounding exists"
+              (make-test
+                "empty set fails back-door criterion when confounding exists"
+                (lambda () (assert-false (dag:satisfies-backdoor? backdoor-dag 'x 'y '()))))
+              (make-test
+                "z satisfies back-door criterion"
+                (lambda () (assert-true (dag:satisfies-backdoor? backdoor-dag 'x 'y '(z)))))
+              (make-test
+                "adjustment set enumeration returns minimal valid set"
+                (lambda () (assert-equal '((z)) (dag:adjustment-sets backdoor-dag 'x 'y))))
+              (make-test
+                "identify returns expected adjustment formula"
                 (lambda ()
-                  (assert-false (dag:satisfies-backdoor? backdoor-dag 'x 'y '()))))
-              (make-test "z satisfies back-door criterion"
-                (lambda ()
-                  (assert-true (dag:satisfies-backdoor? backdoor-dag 'x 'y '(z)))))
-              (make-test "adjustment set enumeration returns minimal valid set"
-                (lambda ()
-                  (assert-equal '((z))
-                                (dag:adjustment-sets backdoor-dag 'x 'y))))
-              (make-test "identify returns expected adjustment formula"
-                (lambda ()
-                  (assert-equal
-                    '(adjust (z) (P y x (z)) (P (z)))
-                    (do:identify backdoor-dag 'y 'x))))
-              (make-test "identify-details returns metadata"
+                  (assert-equal '(adjust (z) (P y x (z)) (P (z))) (do:identify backdoor-dag 'y 'x))))
+              (make-test
+                "identify-details returns metadata"
                 (lambda ()
                   (let ((details (do:identify-details backdoor-dag 'y 'x)))
                     (assert-equal 'adjust (assoc-ref 'status details))
                     (assert-equal '(z) (assoc-ref 'chosen-z details))
                     (assert-equal '((z)) (assoc-ref 'all-z-sets details)))))
-              (make-test "identify with max-size=0 reports unidentified when confounding exists"
-                (lambda ()
-                  (assert-equal #f (do:identify backdoor-dag 'y 'x 0))))))
-
-          (make-group "observed-set identification"
+              (make-test
+                "identify with max-size=0 reports unidentified when confounding exists"
+                (lambda () (assert-equal #f (do:identify backdoor-dag 'y 'x 0))))))
+          (make-group
+            "observed-set identification"
             (list
-              (make-test "observed-adjustment enumeration excludes latent variables"
+              (make-test
+                "observed-adjustment enumeration excludes latent variables"
                 (lambda ()
-                  (assert-equal '()
-                                (dag:adjustment-sets-observed
-                                  latent-backdoor-dag 'x 'y '(x y)))))
-              (make-test "identify-observed returns unidentified with latent confounder"
+                  (assert-equal '() (dag:adjustment-sets-observed latent-backdoor-dag 'x 'y '(x y)))))
+              (make-test
+                "identify-observed returns unidentified with latent confounder"
                 (lambda ()
-                  (let ((details (do:identify-details-observed
-                                   latent-backdoor-dag 'y 'x '(x y))))
+                  (let ((details (do:identify-details-observed latent-backdoor-dag 'y 'x '(x y))))
                     (assert-equal 'unidentified (assoc-ref 'status details))
                     (assert-equal #f (assoc-ref 'result details)))))
-              (make-test "identify-observed succeeds when confounder is marked observed"
+              (make-test
+                "identify-observed succeeds when confounder is marked observed"
                 (lambda ()
-                  (let ((details (do:identify-details-observed
-                                   latent-backdoor-dag 'y 'x '(x y latent))))
+                  (let ((details
+                          (do:identify-details-observed latent-backdoor-dag 'y 'x '(x y latent))))
                     (assert-equal 'adjust (assoc-ref 'status details))
                     (assert-equal '(latent) (assoc-ref 'chosen-z details))
-                    (assert-equal '(adjust (latent) (P y x (latent)) (P (latent)))
-                                  (do:identify-observed
-                                    latent-backdoor-dag 'y 'x '(x y latent))))))))
-
-          (make-group "direct effects"
+                    (assert-equal
+                      '(adjust (latent) (P y x (latent)) (P (latent)))
+                      (do:identify-observed latent-backdoor-dag 'y 'x '(x y latent))))))))
+          (make-group
+            "direct effects"
             (list
-              (make-test "identify returns direct when no back-door path exists"
-                (lambda ()
-                  (assert-equal '(direct) (do:identify direct-dag 'y 'x))))
-              (make-test "identify-details direct status"
+              (make-test
+                "identify returns direct when no back-door path exists"
+                (lambda () (assert-equal '(direct) (do:identify direct-dag 'y 'x))))
+              (make-test
+                "identify-details direct status"
                 (lambda ()
                   (let ((details (do:identify-details direct-dag 'y 'x)))
                     (assert-equal 'direct (assoc-ref 'status details))
                     (assert-equal '(direct) (assoc-ref 'result details))
                     (assert-equal '() (assoc-ref 'chosen-z details)))))))
-
-          (make-group "estimation and DAG validation regressions"
+          (make-group
+            "estimation and DAG validation regressions"
             (list
-              (make-test "do:estimate-effect marginalises over z strata"
+              (make-test
+                "do:estimate-effect marginalises over z strata"
                 (lambda ()
-                  (let ((d '(((x . 1) (z . 0) (y . 4))
-                             ((x . 1) (z . 1) (y . 8))
-                             ((x . 0) (z . 0) (y . 1))
-                             ((x . 0) (z . 1) (y . 2)))))
-                    (assert-approx-equal 6.0
-                                         (do:estimate-effect 'y 'x 1 '(z) d)
-                                         1e-12))))
-              (make-test "do:marginal-prob performs floating-point division"
+                  (let ((d
+                          '(((x . 1) (z . 0) (y . 4))
+                            ((x . 1) (z . 1) (y . 8))
+                            ((x . 0) (z . 0) (y . 1))
+                            ((x . 0) (z . 1) (y . 2)))))
+                    (assert-approx-equal 6.0 (do:estimate-effect 'y 'x 1 '(z) d) 1e-12))))
+              (make-test
+                "do:marginal-prob performs floating-point division"
                 (lambda ()
-                  (assert-approx-equal (/ 2.0 3.0)
-                                       (do:marginal-prob
-                                         '(((z . 0)) ((z . 1)) ((z . 1)))
-                                         '(z)
-                                         '((z . 1)))
-                                       1e-12)))
-              (make-test "dag:cyclic? detects a two-node cycle"
-                (lambda ()
-                  (assert-true (dag:cyclic? '((a -> b) (b -> a))))))
-              (make-test "dag:topo-sort yields a valid linear extension"
+                  (assert-approx-equal
+                    (/ 2.0 3.0)
+                    (do:marginal-prob '(((z . 0)) ((z . 1)) ((z . 1))) '(z) '((z . 1)))
+                    1e-12)))
+              (make-test
+                "dag:cyclic? detects a two-node cycle"
+                (lambda () (assert-true (dag:cyclic? '((a -> b) (b -> a))))))
+              (make-test
+                "dag:topo-sort yields a valid linear extension"
                 (lambda ()
                   (let* ((order (dag:topo-sort '((a -> b) (b -> c) (a -> c))))
                          (ia (index-of 'a order))
                          (ib (index-of 'b order))
                          (ic (index-of 'c order)))
                     (assert-true (< ia ib))
-                    (assert-true (< ib ic)))))))))
-          )
+                    (assert-true (< ib ic))))))))))
 
     (print-tap (run suite))))

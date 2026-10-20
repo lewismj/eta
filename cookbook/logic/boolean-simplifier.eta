@@ -55,48 +55,41 @@
     ;; ── One-step simplifier ─────────────────────────────────────────
     (defun simplify-bool (e)
       (cond
-        ;; Atoms (variables or constants) return as-is
-        ((non-pair? e) e)
+      ;; Atoms (variables or constants) return as-is
+      ((non-pair? e) e)
 
         ;; ── not ───────────────────────────────────────────────────
         ((eq? (op e) 'not)
-          (let ((u (simplify-bool (a1 e))))
-            (cond
-              ((and (non-pair? u) (eq? u #t)) #f)
-              ((and (non-pair? u) (eq? u #f)) #t)
-              ;; Double negation: ¬(¬x) = x
-              ((and (pair? u) (eq? (op u) 'not)) (a1 u))
-              ;; De Morgan: ¬(a ∧ b) = (¬a) ∨ (¬b)
-              ((and (pair? u) (eq? (op u) 'and))
-                (list 'or  (list 'not (a1 u)) (list 'not (a2 u))))
-              ;; De Morgan: ¬(a ∨ b) = (¬a) ∧ (¬b)
-              ((and (pair? u) (eq? (op u) 'or))
-                (list 'and (list 'not (a1 u)) (list 'not (a2 u))))
-              (#t (list 'not u)))))
+         (let ((u (simplify-bool (a1 e))))
+           (cond ((and (non-pair? u) (eq? u #t)) #f)
+             ((and (non-pair? u) (eq? u #f)) #t)
+             ;; Double negation: ¬(¬x) = x
+             ((and (pair? u) (eq? (op u) 'not)) (a1 u))
+             ;; De Morgan: ¬(a ∧ b) = (¬a) ∨ (¬b)
+             ((and (pair? u) (eq? (op u) 'and)) (list 'or (list 'not (a1 u)) (list 'not (a2 u))))
+             ;; De Morgan: ¬(a ∨ b) = (¬a) ∧ (¬b)
+             ((and (pair? u) (eq? (op u) 'or)) (list 'and (list 'not (a1 u)) (list 'not (a2 u))))
+             (#t (list 'not u)))))
 
         ;; ── and ──────────────────────────────────────────────────
         ((eq? (op e) 'and)
-          (let ((sa (simplify-bool (a1 e)))
-                (sb (simplify-bool (a2 e))))
-            (cond
-              ((eq? sa #f) #f)           ; x ∧ ⊥ = ⊥
-              ((eq? sb #f) #f)           ; ⊥ ∧ x = ⊥
-              ((eq? sa #t) sb)           ; ⊤ ∧ x = x
-              ((eq? sb #t) sa)           ; x ∧ ⊤ = x
-              ((equal? sa sb) sa)        ; x ∧ x = x
-              (#t (list 'and sa sb)))))
+         (let ((sa (simplify-bool (a1 e))) (sb (simplify-bool (a2 e))))
+           (cond ((eq? sa #f) #f) ; x ∧ ⊥ = ⊥
+             ((eq? sb #f) #f) ; ⊥ ∧ x = ⊥
+             ((eq? sa #t) sb) ; ⊤ ∧ x = x
+             ((eq? sb #t) sa) ; x ∧ ⊤ = x
+             ((equal? sa sb) sa) ; x ∧ x = x
+             (#t (list 'and sa sb)))))
 
         ;; ── or ───────────────────────────────────────────────────
         ((eq? (op e) 'or)
-          (let ((sa (simplify-bool (a1 e)))
-                (sb (simplify-bool (a2 e))))
-            (cond
-              ((eq? sa #t) #t)           ; ⊤ ∨ x = ⊤
-              ((eq? sb #t) #t)           ; x ∨ ⊤ = ⊤
-              ((eq? sa #f) sb)           ; ⊥ ∨ x = x
-              ((eq? sb #f) sa)           ; x ∨ ⊥ = x
-              ((equal? sa sb) sa)        ; x ∨ x = x
-              (#t (list 'or sa sb)))))
+         (let ((sa (simplify-bool (a1 e))) (sb (simplify-bool (a2 e))))
+           (cond ((eq? sa #t) #t) ; ⊤ ∨ x = ⊤
+             ((eq? sb #t) #t) ; x ∨ ⊤ = ⊤
+             ((eq? sa #f) sb) ; ⊥ ∨ x = x
+             ((eq? sb #f) sa) ; x ∨ ⊥ = x
+             ((equal? sa sb) sa) ; x ∨ x = x
+             (#t (list 'or sa sb)))))
 
         ;; Anything else passes through unchanged
         (#t e)))
@@ -107,9 +100,7 @@
     ;;@example
     ;; (simplify-bool* 'x)
     ;; ── Fixed-point wrapper: keep simplifying until stable ──────────
-    (defun simplify-bool* (e)
-      (let ((s (simplify-bool e)))
-        (if (equal? s e) s (simplify-bool* s))))
+    (defun simplify-bool* (e) (let ((s (simplify-bool e))) (if (equal? s e) s (simplify-bool* s))))
 
     ;; ── Demonstrations ──────────────────────────────────────────────
 
@@ -145,7 +136,6 @@
 
     (display (if win "NOT(NOT(p AND q)) = " "¬(¬(p ∧ q))   = "))
     (println (simplify-bool* '(not (not (and p q)))))
-    ;; => (and p q)
+  ;; => (and p q)
 
   ))
-

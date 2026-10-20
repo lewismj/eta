@@ -14,7 +14,7 @@
     ;;@example
     ;; (sq 1)
     (defun sq (x) (* x x))
-    (println (sq 7))         ; => 49
+    (println (sq 7)) ; => 49
 
     ;;@doc (factorial n)
     ;;@category Basics
@@ -22,10 +22,8 @@
     ;;@example
     ;; (factorial 1)
     ;; ── Recursive functions ─────────────────────────────────────────
-    (defun factorial (n)
-      (if (= n 0) 1
-          (* n (factorial (- n 1)))))
-    (println (factorial 10))     ; => 3628800
+    (defun factorial (n) (if (= n 0) 1 (* n (factorial (- n 1)))))
+    (println (factorial 10)) ; => 3628800
 
     ;;@doc (factorial-tr n)
     ;;@category Basics
@@ -34,15 +32,12 @@
     ;; (factorial-tr 1)
     ;; ── Tail-recursive with accumulator ─────────────────────────────
     (defun factorial-tr (n)
-      (letrec ((go (lambda (n acc)
-                     (if (= n 0) acc
-                         (go (- n 1) (* acc n))))))
-        (go n 1)))
-    (println (factorial-tr 20))  ; => 2432902008176640000
+      (letrec ((go (lambda (n acc) (if (= n 0) acc (go (- n 1) (* acc n)))))) (go n 1)))
+    (println (factorial-tr 20)) ; => 2432902008176640000
 
     ;; ── Anonymous functions (lambda) ────────────────────────────────
     (define double (lambda (x) (* 2 x)))
-    (println (double 21))        ; => 42
+    (println (double 21)) ; => 42
 
     ;;@doc (make-adder n)
     ;;@category Basics
@@ -50,13 +45,12 @@
     ;;@example
     ;; (make-adder 1)
     ;; ── Closures capture their environment ──────────────────────────
-    (defun make-adder (n)
-      (lambda (x) (+ n x)))
+    (defun make-adder (n) (lambda (x) (+ n x)))
 
     (define add5 (make-adder 5))
     (define add10 (make-adder 10))
-    (println (add5 3))           ; => 8
-    (println (add10 3))          ; => 13
+    (println (add5 3)) ; => 8
+    (println (add10 3)) ; => 13
 
     ;;@doc (sum-all first . rest)
     ;;@category Basics
@@ -65,20 +59,14 @@
     ;; (sum-all 'x '())
     ;; ── Variadic functions (rest args) ──────────────────────────────
     (defun sum-all (first . rest)
-      (letrec ((go (lambda (xs acc)
-                     (if (null? xs) acc
-                         (go (cdr xs) (+ acc (car xs)))))))
+      (letrec ((go (lambda (xs acc) (if (null? xs) acc (go (cdr xs) (+ acc (car xs)))))))
         (go rest first)))
     (println (sum-all 1 2 3 4 5)) ; => 15
 
     ;; ── Mutual recursion via letrec ─────────────────────────────────
-    (letrec
-      ((is-even? (lambda (n)
-         (if (= n 0) #t (is-odd? (- n 1)))))
-       (is-odd? (lambda (n)
-         (if (= n 0) #f (is-even? (- n 1))))))
-      (println (is-even? 42))    ; => #t
-      (println (is-odd? 13)))    ; => #t
+    (letrec ((is-even? (lambda (n) (if (= n 0) #t (is-odd? (- n 1)))))
+             (is-odd? (lambda (n) (if (= n 0) #f (is-even? (- n 1))))))
+      (println (is-even? 42)) ; => #t
+      (println (is-odd? 13))) ; => #t
 
   ))
-

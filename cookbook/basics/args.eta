@@ -15,27 +15,22 @@
     (define parse-level
       (lambda (raw)
         (let ((n (string->number raw)))
-          (if (and (number? n) (integer? n))
-              n
-              (error "level must be an integer")))))
+          (if (and (number? n) (integer? n)) n (error "level must be an integer")))))
 
-    (define level-in-range?
-      (lambda (n)
-        (and (>= n 0) (<= n 5))))
+    (define level-in-range? (lambda (n) (and (>= n 0) (<= n 5))))
 
     (define spec
       (list
         '(v (--verbose -v) flag)
-        '(o (--out -o)     string "report.txt")
-        '(n (--num)        int    0)
-        '(t (--tag)        list)
-        (list 'level
-              (list '--level)
-              'int
-              1
-              (list
-                (cons 'parse parse-level)
-                (cons 'validate level-in-range?)))))
+        '(o (--out -o) string "report.txt")
+        '(n (--num) int 0)
+        '(t (--tag) list)
+        (list
+          'level
+          (list '--level)
+          'int
+          1
+          (list (cons 'parse parse-level) (cons 'validate level-in-range?)))))
 
     ;;@doc (run-demo)
     ;;@category Basics
@@ -46,10 +41,7 @@
     (defun run-demo ()
       (args:parse
         spec
-        '("-v" "--out=demo.txt" "--num" "3"
-          "--tag" "risk" "--tag" "stress"
-          "--level=4"
-          "--" "-z")))
+        '("-v" "--out=demo.txt" "--num" "3" "--tag" "risk" "--tag" "stress" "--level=4" "--" "-z")))
 
     ;;@doc (summarize r)
     ;;@category Basics
@@ -68,4 +60,3 @@
 
     (define result (summarize (run-demo)))
     (println result)))
-

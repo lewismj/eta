@@ -5,16 +5,24 @@
 ;;; This module adds constants and common helpers not provided as builtins.
 
 (module std.math
-  (export
-    pi e
-    square cube
-    even? odd?
-    sign clamp
+  (export pi
+    e
+    square
+    cube
+    even?
+    odd?
+    sign
+    clamp
     quotient
-    gcd lcm
-    floor ceiling truncate round
+    gcd
+    lcm
+    floor
+    ceiling
+    truncate
+    round
     expt
-    sum product)
+    sum
+    product)
   (begin
 
     ;;  Constants 
@@ -26,7 +34,7 @@
     ;;@example
     ;; (display pi)
     (define pi 3.141592653589793)
-    (define e  2.718281828459045)
+    (define e 2.718281828459045)
 
     ;;  Basic helpers 
 
@@ -43,7 +51,7 @@
     ;; Compute `cube`.
     ;;@example
     ;; (cube 1)
-    (defun cube   (x) (* x x x))
+    (defun cube (x) (* x x x))
 
     ;;@doc (even? n)
     ;;@category Math
@@ -58,7 +66,7 @@
     ;; Return whether `odd?` holds.
     ;;@example
     ;; (odd? 1)
-    (defun odd?  (n) (not (= (modulo n 2) 0)))
+    (defun odd? (n) (not (= (modulo n 2) 0)))
 
     ;;@doc (sign x)
     ;;@category Math
@@ -66,10 +74,7 @@
     ;;@example
     ;; (sign 1)
     ;; Returns -1, 0, or 1.
-    (defun sign (x)
-      (cond ((positive? x) 1)
-            ((negative? x) -1)
-            (else 0)))
+    (defun sign (x) (cond ((positive? x) 1) ((negative? x) -1) (else 0)))
 
     ;;@doc (clamp x lo hi)
     ;;@category Math
@@ -77,8 +82,7 @@
     ;;@example
     ;; (clamp 1 'x 'x)
     ;; Restrict x to the range [lo, hi].
-    (defun clamp (x lo hi)
-      (min hi (max lo x)))
+    (defun clamp (x lo hi) (min hi (max lo x)))
 
     ;;@doc (quotient a b)
     ;;@category Math
@@ -91,12 +95,11 @@
         ;; If both are integers and divide evenly, / returns fixnum.
         ;; Otherwise, truncate the float toward zero.
         (if (integer? r)
-            r
-            ;; manual truncate toward zero
-            (if (negative? r)
-                (- 0 (let ((pos (- 0 r)))
-                        (- pos (modulo (let ((m (* pos 1.0))) m) 1.0))))
-                (- r (modulo (* r 1.0) 1.0))))))
+          r
+          ;; manual truncate toward zero
+          (if (negative? r)
+            (- 0 (let ((pos (- 0 r))) (- pos (modulo (let ((m (* pos 1.0))) m) 1.0))))
+            (- r (modulo (* r 1.0) 1.0))))))
 
     ;;@doc (gcd a b)
     ;;@category Math
@@ -104,9 +107,7 @@
     ;;@example
     ;; (gcd 1 1)
     ;; Greatest common divisor (Euclidean algorithm).
-    (defun gcd (a b)
-      (let ((a (abs a)) (b (abs b)))
-        (if (= b 0) a (gcd b (modulo a b)))))
+    (defun gcd (a b) (let ((a (abs a)) (b (abs b))) (if (= b 0) a (gcd b (modulo a b)))))
 
     ;;@doc (lcm a b)
     ;;@category Math
@@ -114,10 +115,7 @@
     ;;@example
     ;; (lcm 1 1)
     ;; Least common multiple.
-    (defun lcm (a b)
-      (if (or (= a 0) (= b 0))
-          0
-          (abs (/ (* a b) (gcd a b)))))
+    (defun lcm (a b) (if (or (= a 0) (= b 0)) 0 (abs (/ (* a b) (gcd a b)))))
 
     ;;  Rounding (integer-producing) 
     ;; These operate on the float representation; for fixnums they are
@@ -130,9 +128,7 @@
     ;;@example
     ;; (floor 1)
     (defun floor (x)
-      (if (integer? x) x
-          (let ((t (- x (modulo (* x 1.0) 1.0))))
-            (if (negative? x) (- t 1) t))))
+      (if (integer? x) x (let ((t (- x (modulo (* x 1.0) 1.0)))) (if (negative? x) (- t 1) t))))
 
     ;;@doc (ceiling x)
     ;;@category Math
@@ -140,10 +136,7 @@
     ;; Compute `ceiling`.
     ;;@example
     ;; (ceiling 1)
-    (defun ceiling (x)
-      (if (integer? x) x
-          (let ((f (floor x)))
-            (+ f 1))))
+    (defun ceiling (x) (if (integer? x) x (let ((f (floor x))) (+ f 1))))
 
     ;;@doc (truncate x)
     ;;@category Math
@@ -151,9 +144,7 @@
     ;; Compute `truncate`.
     ;;@example
     ;; (truncate 1)
-    (defun truncate (x)
-      (if (integer? x) x
-          (if (negative? x) (ceiling x) (floor x))))
+    (defun truncate (x) (if (integer? x) x (if (negative? x) (ceiling x) (floor x))))
 
     ;;@doc (round x)
     ;;@category Math
@@ -161,9 +152,7 @@
     ;; Compute `round`.
     ;;@example
     ;; (round 1)
-    (defun round (x)
-      (if (integer? x) x
-          (floor (+ x 0.5))))
+    (defun round (x) (if (integer? x) x (floor (+ x 0.5))))
 
     ;;  Exponentiation 
 
@@ -174,11 +163,8 @@
     ;; (expt 'x 'x)
     ;; Integer exponentiation by squaring (non-negative exp only).
     (defun expt (base exp)
-      (cond
-        ((= exp 0) 1)
-        ((even? exp)
-         (let ((half (expt base (/ exp 2))))
-           (* half half)))
+      (cond ((= exp 0) 1)
+        ((even? exp) (let ((half (expt base (/ exp 2)))) (* half half)))
         (else (* base (expt base (- exp 1))))))
 
     ;;  Summation helpers 
@@ -190,10 +176,7 @@
     ;; (sum '())
     ;; Sum a list of numbers.
     (defun sum (xs)
-      (let loop ((rest xs) (acc 0))
-        (if (null? rest)
-            acc
-            (loop (cdr rest) (+ acc (car rest))))))
+      (let loop ((rest xs) (acc 0)) (if (null? rest) acc (loop (cdr rest) (+ acc (car rest))))))
 
     ;;@doc (product xs)
     ;;@category Math
@@ -202,10 +185,4 @@
     ;; (product '())
     ;; Product of a list of numbers.
     (defun product (xs)
-      (let loop ((rest xs) (acc 1))
-        (if (null? rest)
-            acc
-            (loop (cdr rest) (* acc (car rest))))))
-
-  ))
-
+      (let loop ((rest xs) (acc 1)) (if (null? rest) acc (loop (cdr rest) (* acc (car rest))))))))

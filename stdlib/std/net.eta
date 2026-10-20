@@ -16,14 +16,14 @@
 
 (module std.net
   (export
-    ;; High-level patterns
-    nng-monitor       ; explicit socket monitor wrapper
-    nng-demonitor     ; explicit socket demonitor wrapper
-    with-socket        ; dynamic-wind wrapper for safe socket lifetime
-    request-reply      ; synchronous single request/reply round-trip
-    worker-pool        ; distribute tasks across N spawned workers
-    pub-sub            ; subscribe and drive an event loop
-    survey)            ; scatter-gather query via SURVEYOR/RESPONDENT
+  ;; High-level patterns
+  nng-monitor ; explicit socket monitor wrapper
+    nng-demonitor ; explicit socket demonitor wrapper
+    with-socket ; dynamic-wind wrapper for safe socket lifetime
+    request-reply ; synchronous single request/reply round-trip
+    worker-pool ; distribute tasks across N spawned workers
+    pub-sub ; subscribe and drive an event loop
+    survey) ; scatter-gather query via SURVEYOR/RESPONDENT
   (begin
 
     ;; Explicit socket monitor wrappers.
@@ -59,9 +59,7 @@
         (dynamic-wind
           (lambda () (vector-set! box 0 (nng-socket type)))
           (lambda () (thunk (vector-ref box 0)))
-          (lambda ()
-            (let ((s (vector-ref box 0)))
-              (when s (nng-close s)))))))
+          (lambda () (let ((s (vector-ref box 0))) (when s (nng-close s)))))))
 
     ;;@doc (request-reply endpoint message)
     ;;@category Net
@@ -78,11 +76,9 @@
     ;; Example:
     ;;   (request-reply "tcp://localhost:5555" '(compute 42))
     (defun request-reply (endpoint message)
-      (with-socket 'req
-        (lambda (sock)
-          (nng-dial sock endpoint)
-          (send! sock message)
-          (recv! sock 'wait))))
+      (with-socket
+        'req
+        (lambda (sock) (nng-dial sock endpoint) (send! sock message) (recv! sock 'wait))))
 
     ;;@doc (worker-pool module-path tasks)
     ;;@category Net
@@ -107,10 +103,9 @@
       ;; Spawn one worker per task
       (let ((workers (map (lambda (dummy) (spawn module-path)) tasks)))
         ;; Dispatch: send each task to its dedicated worker
-        (letrec ((dispatch (lambda (ws ts)
-                             (when (not (null? ws))
-                               (send! (car ws) (car ts))
-                               (dispatch (cdr ws) (cdr ts))))))
+        (letrec ((dispatch
+                   (lambda (ws ts)
+                     (when (not (null? ws)) (send! (car ws) (car ts)) (dispatch (cdr ws) (cdr ts))))))
           (dispatch workers tasks))
         ;; Collect: wait for each worker's result (in spawn order)
         (let ((results (map (lambda (w) (recv! w 'wait)) workers)))
@@ -140,14 +135,12 @@
     ;;            '("prices" "alerts")
     ;;            (lambda (msg) (display msg) (newline)))
     (defun pub-sub (listen-endpoint topics handler)
-      (with-socket 'sub
+      (with-socket
+        'sub
         (lambda (sock)
           (nng-dial sock listen-endpoint)
           (for-each (lambda (t) (nng-subscribe sock t)) topics)
-          (letrec ((loop (lambda ()
-                           (let ((msg (recv! sock)))
-                             (when msg (handler msg)))
-                           (loop))))
+          (letrec ((loop (lambda () (let ((msg (recv! sock))) (when msg (handler msg))) (loop))))
             (loop)))))
 
     ;;@doc (survey endpoint question timeout-ms)
@@ -170,17 +163,14 @@
     ;;   (survey "tcp://*:5557" '(status?) 1000)
     ;;    '((ok worker-2) (ok worker-1))   ; order may vary
     (defun survey (endpoint question timeout-ms)
-      (with-socket 'surveyor
+      (with-socket
+        'surveyor
         (lambda (sock)
           (nng-listen sock endpoint)
           (nng-set-option sock 'survey-time timeout-ms)
           (send! sock question)
-          (letrec ((collect (lambda (responses)
-                              (let ((r (recv! sock)))
-                                (if r
-                                    (collect (cons r responses))
-                                    (reverse responses))))))
-            (collect '())))))
-
-  ))
-
+          (letrec ((collect
+                     (lambda (responses)
+                       (let ((r (recv! sock)))
+                         (if r (collect (cons r responses)) (reverse responses))))))
+            (collect '())))))))

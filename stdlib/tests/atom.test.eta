@@ -11,31 +11,33 @@
     ;;@example
     ;; (display suite)
     (define suite
-      (make-group "atom"
+      (make-group
+        "atom"
         (list
-          (make-test "wrapper smoke"
+          (make-test
+            "wrapper smoke"
             (lambda ()
               (let ((a (atom 10)))
                 (assert-true (atom? a))
                 (assert-equal 10 (deref a))
                 (assert-equal 42 (reset! a 42))
                 (assert-equal 42 (deref a)))))
-
-          (make-test "compare-and-set true and false"
+          (make-test
+            "compare-and-set true and false"
             (lambda ()
               (let ((a (atom 'x)))
                 (assert-true (compare-and-set! a 'x 'y))
                 (assert-false (compare-and-set! a 'x 'z))
                 (assert-equal 'y (deref a)))))
-
-          (make-test "swap updates and forwards extra args"
+          (make-test
+            "swap updates and forwards extra args"
             (lambda ()
               (let ((a (atom 1)))
                 (assert-equal 6 (swap! a (lambda (old inc) (+ old inc)) 5))
                 (assert-equal 10 (swap! a (lambda (old x y) (+ old x y)) 2 2))
                 (assert-equal 10 (deref a)))))
-
-          (make-test "collision-safe atom namespace aliases"
+          (make-test
+            "collision-safe atom namespace aliases"
             (lambda ()
               (let ((a (atom:new 3)))
                 (assert-true (atom:atom? a))
@@ -46,4 +48,3 @@
                 (assert-equal 12 (atom:deref a))))))))
 
     (print-tap (run suite))))
-

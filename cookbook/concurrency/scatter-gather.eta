@@ -8,40 +8,39 @@
   (begin
 
     (defun %vector->list (vec)
-      (let loop ((i 0) (acc '()))
-        (if (= i (vector-length vec))
-            (reverse acc)
-            (loop (+ i 1) (cons (vector-ref vec i) acc)))))
+      (let
+        loop
+        ((i 0) (acc '()))
+        (if (= i (vector-length vec)) (reverse acc) (loop (+ i 1) (cons (vector-ref vec i) acc)))))
 
     (defun %status-for-ref? (ref)
       (lambda (msg)
-        (and (pair? msg)
-             (eq? (car msg) 'status)
-             (pair? (cdr msg))
-             (equal? (car (cdr msg)) ref)
-             (pair? (cdr (cdr msg)))
-             (pair? (cdr (cdr (cdr msg))))
-             (pair? (cdr (cdr (cdr (cdr msg)))))
-             (null? (cdr (cdr (cdr (cdr (cdr msg)))))))))
+        (and
+          (pair? msg)
+          (eq? (car msg) 'status)
+          (pair? (cdr msg))
+          (equal? (car (cdr msg)) ref)
+          (pair? (cdr (cdr msg)))
+          (pair? (cdr (cdr (cdr msg))))
+          (pair? (cdr (cdr (cdr (cdr msg)))))
+          (null? (cdr (cdr (cdr (cdr (cdr msg)))))))))
 
     (defun make-responder (index name delay-ms)
       (spawn
         (lambda ()
-          (let loop ()
+          (let
+            loop
+            ()
             (receive
               (list
                 (match-case
                   (match-list 'status 2)
                   (lambda (msg)
-                    (let ((from (car (cdr msg)))
-                          (ref (car (cdr (cdr msg)))))
+                    (let ((from (car (cdr msg))) (ref (car (cdr (cdr msg)))))
                       (time:sleep-ms delay-ms)
                       (send from (list 'status ref index name 'idle))
                       (loop))))
-                (match-case
-                  (match-symbol 'stop)
-                  (lambda (msg)
-                    'ok)))
+                (match-case (match-symbol 'stop) (lambda (msg) 'ok)))
               'wait)))))
 
     (define responders
@@ -51,18 +50,15 @@
         (make-responder 2 'worker-2 90)))
 
     (define survey-ref 'survey-ref)
-    (for-each
-      (lambda (pid)
-        (send pid (list 'status (self) survey-ref)))
-      responders)
+    (for-each (lambda (pid) (send pid (list 'status (self) survey-ref))) responders)
 
     (define replies (make-vector (length responders) #f))
-    (let collect ((remaining (length responders)))
+    (let
+      collect
+      ((remaining (length responders)))
       (when (> remaining 0)
         (let ((msg (receive-match (%status-for-ref? survey-ref) 200)))
-          (when msg
-            (vector-set! replies (car (cdr (cdr msg))) msg)
-            (collect (- remaining 1))))))
+          (when msg (vector-set! replies (car (cdr (cdr msg))) msg) (collect (- remaining 1))))))
 
     (println (%vector->list replies))
     (for-each (lambda (pid) (send pid 'stop)) responders)))

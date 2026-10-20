@@ -11,7 +11,8 @@
     ;;@example
     ;; (display test-read-string-default)
     (define test-read-string-default
-      (make-test "json:read-string defaults numbers to flonums"
+      (make-test
+        "json:read-string defaults numbers to flonums"
         (lambda ()
           (let* ((obj (json:read-string "{\"a\":1,\"b\":[2,3.5],\"ok\":true,\"z\":null}"))
                  (arr (hash-map-ref obj "b")))
@@ -24,7 +25,8 @@
             (assert-equal '() (hash-map-ref obj "z"))))))
 
     (define test-read-string-keep-exact
-      (make-test "json:read-string keep-integers-exact? preserves integers"
+      (make-test
+        "json:read-string keep-integers-exact? preserves integers"
         (lambda ()
           (let* ((obj (json:read-string "{\"x\":1,\"arr\":[2,3.25]}" 'keep-integers-exact? #t))
                  (arr (hash-map-ref obj "arr")))
@@ -33,7 +35,8 @@
             (assert-approx-equal 3.25 (vector-ref arr 1) 1e-12)))))
 
     (define test-read-from-port
-      (make-test "json:read reads from a port"
+      (make-test
+        "json:read reads from a port"
         (lambda ()
           (let* ((p (open-input-string "{\"msg\":\"ok\",\"n\":7}"))
                  (obj (json:read p 'keep-integers-exact? #t)))
@@ -41,7 +44,8 @@
             (assert-equal 7 (hash-map-ref obj "n"))))))
 
     (define test-write-and-roundtrip
-      (make-test "json:write-string round-trips hash-map content"
+      (make-test
+        "json:write-string round-trips hash-map content"
         (lambda ()
           (let* ((src (hash-map "name" "eta" 'count 2))
                  (text (json:write-string src))
@@ -50,14 +54,16 @@
             (assert-equal 2 (hash-map-ref dst "count"))))))
 
     (define test-write-to-port
-      (make-test "json:write writes to the provided output port"
+      (make-test
+        "json:write writes to the provided output port"
         (lambda ()
           (let ((p (open-output-string)))
             (json:write (hash-map "a" 1) p)
             (assert-equal "{\"a\":1}" (get-output-string p))))))
 
     (define suite
-      (make-group "std.json"
+      (make-group
+        "std.json"
         (list
           test-read-string-default
           test-read-string-keep-exact
@@ -66,4 +72,3 @@
           test-write-to-port)))
 
     (print-tap (run suite))))
-

@@ -12,13 +12,9 @@
     ;; ── Fibonacci (naive) ───────────────────────────────────────────
     ;;@example
     ;; (fib 1)
-    (defun fib (n)
-      (cond
-        ((= n 0) 0)
-        ((= n 1) 1)
-        (#t (+ (fib (- n 1)) (fib (- n 2))))))
+    (defun fib (n) (cond ((= n 0) 0) ((= n 1) 1) (#t (+ (fib (- n 1)) (fib (- n 2))))))
 
-    (println (fib 10))           ; => 55
+    (println (fib 10)) ; => 55
 
     ;;@doc (fib-fast n)
     ;;@category Basics
@@ -27,12 +23,9 @@
     ;; (fib-fast 1)
     ;; ── Fibonacci (tail-recursive) ──────────────────────────────────
     (defun fib-fast (n)
-      (letrec ((go (lambda (i a b)
-                     (if (= i 0) a
-                         (go (- i 1) b (+ a b))))))
-        (go n 0 1)))
+      (letrec ((go (lambda (i a b) (if (= i 0) a (go (- i 1) b (+ a b)))))) (go n 0 1)))
 
-    (println (fib-fast 30))      ; => 832040
+    (println (fib-fast 30)) ; => 832040
 
     ;;@doc (my-reverse xs)
     ;;@category Basics
@@ -41,12 +34,10 @@
     ;; (my-reverse '())
     ;; ── List reversal ───────────────────────────────────────────────
     (defun my-reverse (xs)
-      (letrec ((go (lambda (xs acc)
-                     (if (null? xs) acc
-                         (go (cdr xs) (cons (car xs) acc))))))
+      (letrec ((go (lambda (xs acc) (if (null? xs) acc (go (cdr xs) (cons (car xs) acc))))))
         (go xs '())))
 
-    (println (my-reverse '(1 2 3 4 5)))  ; => (5 4 3 2 1)
+    (println (my-reverse '(1 2 3 4 5))) ; => (5 4 3 2 1)
 
     ;;@doc (my-length xs)
     ;;@category Basics
@@ -54,11 +45,9 @@
     ;;@example
     ;; (my-length '())
     ;; ── Length of a list ────────────────────────────────────────────
-    (defun my-length (xs)
-      (if (null? xs) 0
-          (+ 1 (my-length (cdr xs)))))
+    (defun my-length (xs) (if (null? xs) 0 (+ 1 (my-length (cdr xs)))))
 
-    (println (my-length '(a b c d)))   ; => 4
+    (println (my-length '(a b c d))) ; => 4
 
     ;;@doc (deep-flatten xs)
     ;;@category Basics
@@ -67,11 +56,8 @@
     ;; (deep-flatten '())
     ;; ── Flatten nested lists ────────────────────────────────────────
     (defun deep-flatten (xs)
-      (cond
-        ((null? xs) '())
-        ((pair? (car xs))
-         (append (deep-flatten (car xs))
-                 (deep-flatten (cdr xs))))
+      (cond ((null? xs) '())
+        ((pair? (car xs)) (append (deep-flatten (car xs)) (deep-flatten (cdr xs))))
         (#t (cons (car xs) (deep-flatten (cdr xs))))))
 
     (println (deep-flatten '((1 (2 3)) (4) 5)))
@@ -84,12 +70,11 @@
     ;; (ackermann 1 1)
     ;; ── Ackermann function ──────────────────────────────────────────
     (defun ackermann (m n)
-      (cond
-        ((= m 0) (+ n 1))
+      (cond ((= m 0) (+ n 1))
         ((= n 0) (ackermann (- m 1) 1))
         (#t (ackermann (- m 1) (ackermann m (- n 1))))))
 
-    (println (ackermann 3 4))    ; => 125
+    (println (ackermann 3 4)) ; => 125
 
     ;;@doc (hanoi n from to via)
     ;;@category Basics
@@ -109,7 +94,4 @@
         (newline)
         (hanoi (- n 1) via to from)))
 
-    (hanoi 3 'A 'C 'B)
-
-  ))
-
+    (hanoi 3 'A 'C 'B)))

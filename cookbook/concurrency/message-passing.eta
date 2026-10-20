@@ -10,26 +10,22 @@
     (define worker
       (spawn
         (lambda ()
-          (let loop ()
+          (let
+            loop
+            ()
             (receive
               (list
                 (match-case
                   (match-list 'hello 1)
                   (lambda (msg)
-                    (let ((from (car (cdr msg))))
-                      (send from '(hello from-worker))
-                      (loop))))
+                    (let ((from (car (cdr msg)))) (send from '(hello from-worker)) (loop))))
                 (match-case
                   (match-list 'compute 2)
                   (lambda (msg)
-                    (let ((from (car (cdr msg)))
-                          (n (car (cdr (cdr msg)))))
+                    (let ((from (car (cdr msg))) (n (car (cdr (cdr msg)))))
                       (send from (list 'result n (* n 2)))
                       (loop))))
-                (match-case
-                  (match-symbol 'stop)
-                  (lambda (msg)
-                    'ok)))
+                (match-case (match-symbol 'stop) (lambda (msg) 'ok)))
               'wait)))))
 
     (send worker (list 'hello (self)))

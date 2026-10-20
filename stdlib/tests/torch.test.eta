@@ -1,5 +1,6 @@
 ;;; stdlib/tests/torch.test.eta - Unit tests for std.torch
 
+;; eta-lint:disable-file=ETA501
 (module torch.tests
   (import std.test std.core std.torch std.fact_table)
   (begin
@@ -11,24 +12,21 @@
     ;;@example
     ;; (display suite)
     (define suite
-      (make-group "std.torch"
+      (make-group
+        "std.torch"
         (list
-
-          (make-test "cholesky returns lower-triangular factor"
+          (make-test
+            "cholesky returns lower-triangular factor"
             (lambda ()
-              (let* ((cov (reshape (from-list '(4.0 2.0
-                                                2.0 3.0))
-                                   '(2 2)))
+              (let* ((cov (reshape (from-list '(4.0 2.0 2.0 3.0)) '(2 2)))
                      (l (cholesky cov))
                      (flat (to-list l)))
                 (assert-equal '(2 2) (shape l))
                 (assert-approx-equal 0.0 (list-ref flat 1) 1e-10))))
-
-          (make-test "cholesky factor reconstructs covariance"
+          (make-test
+            "cholesky factor reconstructs covariance"
             (lambda ()
-              (let* ((cov (reshape (from-list '(4.0 2.0
-                                                2.0 3.0))
-                                   '(2 2)))
+              (let* ((cov (reshape (from-list '(4.0 2.0 2.0 3.0)) '(2 2)))
                      (l (cholesky cov))
                      (recon (matmul l (transpose l 0 1)))
                      (vals (to-list recon)))
@@ -36,20 +34,18 @@
                 (assert-approx-equal 2.0 (list-ref vals 1) 1e-8)
                 (assert-approx-equal 2.0 (list-ref vals 2) 1e-8)
                 (assert-approx-equal 3.0 (list-ref vals 3) 1e-8))))
-
-          (make-test "mvnormal returns one sample with mean shape"
+          (make-test
+            "mvnormal returns one sample with mean shape"
             (lambda ()
               (let* ((mean (from-list '(0.0 1.0)))
-                     (cov (reshape (from-list '(1.0 0.2
-                                                0.2 2.0))
-                                   '(2 2)))
+                     (cov (reshape (from-list '(1.0 0.2 0.2 2.0)) '(2 2)))
                      (sample (mvnormal mean cov))
                      (vals (to-list sample)))
                 (assert-equal '(2) (shape sample))
                 (assert-true (number? (list-ref vals 0)))
                 (assert-true (number? (list-ref vals 1))))))
-
-          (make-test "manual-seed makes randn deterministic"
+          (make-test
+            "manual-seed makes randn deterministic"
             (lambda ()
               (manual-seed 20260427)
               (let ((a (to-list (randn '(2 2)))))
@@ -59,12 +55,10 @@
                   (assert-approx-equal (list-ref a 1) (list-ref b 1) 1e-12)
                   (assert-approx-equal (list-ref a 2) (list-ref b 2) 1e-12)
                   (assert-approx-equal (list-ref a 3) (list-ref b 3) 1e-12)))))
-
-          (make-test "matrix-exp of zero matrix is identity"
+          (make-test
+            "matrix-exp of zero matrix is identity"
             (lambda ()
-              (let* ((z (reshape (from-list '(0.0 0.0
-                                              0.0 0.0))
-                                 '(2 2)))
+              (let* ((z (reshape (from-list '(0.0 0.0 0.0 0.0)) '(2 2)))
                      (e (matrix-exp z))
                      (flat (to-list e)))
                 (assert-equal '(2 2) (shape e))
@@ -72,73 +66,62 @@
                 (assert-approx-equal 0.0 (list-ref flat 1) 1e-10)
                 (assert-approx-equal 0.0 (list-ref flat 2) 1e-10)
                 (assert-approx-equal 1.0 (list-ref flat 3) 1e-10))))
-
-          (make-test "matrix-exp preserves shape"
+          (make-test
+            "matrix-exp preserves shape"
             (lambda ()
-              (let* ((m (reshape (from-list '(1.0 2.0 3.0
-                                              4.0 5.0 6.0
-                                              7.0 8.0 9.0))
-                                 '(3 3)))
+              (let* ((m (reshape (from-list '(1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0)) '(3 3)))
                      (e (matrix-exp m)))
                 (assert-equal '(3 3) (shape e)))))
-
-          (make-test "fact-table->tensor uses live rows and selected columns"
+          (make-test
+            "fact-table->tensor uses live rows and selected columns"
             (lambda ()
               (let ((ft (make-fact-table 'x 'y 'z)))
                 (fact-table-insert! ft 1 10 100)
                 (fact-table-insert! ft 2 20 200)
                 (fact-table-insert! ft 3 30 300)
                 (%fact-table-delete-row! ft 1)
-                (let* ((t (fact-table->tensor ft '(0 2)))
-                       (flat (to-list t)))
+                (let* ((t (fact-table->tensor ft '(0 2))) (flat (to-list t)))
                   (assert-equal '(2 2) (shape t))
                   (assert-approx-equal 1.0 (list-ref flat 0) 1e-10)
                   (assert-approx-equal 100.0 (list-ref flat 1) 1e-10)
                   (assert-approx-equal 3.0 (list-ref flat 2) 1e-10)
                   (assert-approx-equal 300.0 (list-ref flat 3) 1e-10)))))
-
-          (make-test "fact-table->tensor preserves requested column order"
+          (make-test
+            "fact-table->tensor preserves requested column order"
             (lambda ()
               (let ((ft (make-fact-table 'x 'y 'z)))
                 (fact-table-insert! ft 1 10 100)
                 (fact-table-insert! ft 2 20 200)
-                (let* ((t (fact-table->tensor ft '(2 0)))
-                       (flat (to-list t)))
+                (let* ((t (fact-table->tensor ft '(2 0))) (flat (to-list t)))
                   (assert-equal '(2 2) (shape t))
                   (assert-approx-equal 100.0 (list-ref flat 0) 1e-10)
                   (assert-approx-equal 1.0 (list-ref flat 1) 1e-10)
                   (assert-approx-equal 200.0 (list-ref flat 2) 1e-10)
                   (assert-approx-equal 2.0 (list-ref flat 3) 1e-10)))))
-
-          (make-test "fact-table->tensor rejects non-numeric cells"
+          (make-test
+            "fact-table->tensor rejects non-numeric cells"
             (lambda ()
               (let ((ft (make-fact-table 'x 'y)))
                 (fact-table-insert! ft 1 "bad")
                 (let ((p (catch 'runtime.error (fact-table->tensor ft '(0 1)))))
                   (assert-equal 'runtime-error (car p))))))
-
-          (make-test "column-l2-norm computes axis-wise norms"
+          (make-test
+            "column-l2-norm computes axis-wise norms"
             (lambda ()
-              (let* ((m (reshape (from-list '(3.0 4.0
-                                              5.0 12.0))
-                                 '(2 2)))
+              (let* ((m (reshape (from-list '(3.0 4.0 5.0 12.0)) '(2 2)))
                      (n (column-l2-norm m 1))
                      (vals (to-list n)))
                 (assert-equal '(2) (shape n))
                 (assert-approx-equal 5.0 (list-ref vals 0) 1e-10)
                 (assert-approx-equal 13.0 (list-ref vals 1) 1e-10))))
-
-          (make-test "torch:column-l2-norm aliases column-l2-norm"
+          (make-test
+            "torch:column-l2-norm aliases column-l2-norm"
             (lambda ()
-              (let* ((m (reshape (from-list '(3.0 4.0
-                                              5.0 12.0))
-                                 '(2 2)))
+              (let* ((m (reshape (from-list '(3.0 4.0 5.0 12.0)) '(2 2)))
                      (n (torch:column-l2-norm m 1))
                      (vals (to-list n)))
                 (assert-equal '(2) (shape n))
                 (assert-approx-equal 5.0 (list-ref vals 0) 1e-10)
-                (assert-approx-equal 13.0 (list-ref vals 1) 1e-10))))
-
-          )))
+                (assert-approx-equal 13.0 (list-ref vals 1) 1e-10)))))))
 
     (print-tap (run suite))))

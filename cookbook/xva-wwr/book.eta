@@ -15,8 +15,8 @@
     ;; (cp-name 1)
     (defun cp-name (i)
       (if (< i 10)
-          (string-append "CP-0" (number->string i))
-          (string-append "CP-" (number->string i))))
+        (string-append "CP-0" (number->string i))
+        (string-append "CP-" (number->string i))))
 
     ;;@doc (make-counterparties n)
     ;;@category Xva Wwr
@@ -24,8 +24,7 @@
     ;; Construct `make-counterparties`.
     ;;@example
     ;; (make-counterparties 1)
-    (defun make-counterparties (n)
-      (map* cp-name (iota n 1)))
+    (defun make-counterparties (n) (map* cp-name (iota n 1)))
 
     ;;@doc (counterparties)
     ;;@category Xva Wwr
@@ -61,12 +60,13 @@
     ;;@example
     ;; (insert-trade! 'x 'x)
     (defun insert-trade! (ft trade)
-      (fact-table-insert! ft
-                          (assoc-ref 'id trade)
-                          (assoc-ref 'cp trade)
-                          (assoc-ref 'notional trade)
-                          (assoc-ref 'maturity-years trade)
-                          (assoc-ref 'fixed-rate trade)))
+      (fact-table-insert!
+        ft
+        (assoc-ref 'id trade)
+        (assoc-ref 'cp trade)
+        (assoc-ref 'notional trade)
+        (assoc-ref 'maturity-years trade)
+        (assoc-ref 'fixed-rate trade)))
 
     ;;@doc (make-book)
     ;;@category Xva Wwr
@@ -76,14 +76,12 @@
     ;; (make-book)
     (defun make-book ()
       (let ((ft (make-fact-table 'id 'cp 'notional 'maturity-years 'fixed-rate)))
-        (let loop ((ids (iota 200 1)))
+        (let
+          loop
+          ((ids (iota 200 1)))
           (if (null? ids)
-              (begin
-                (fact-table-build-index! ft 1)
-                ft)
-              (begin
-                (insert-trade! ft (make-trade (car ids)))
-                (loop (cdr ids)))))))
+            (begin (fact-table-build-index! ft 1) ft)
+            (begin (insert-trade! ft (make-trade (car ids))) (loop (cdr ids)))))))
 
     ;;@doc (make-csa idx)
     ;;@category Xva Wwr
@@ -98,6 +96,4 @@
         (cons 'mta 50000)
         (cons 'mpor-days 10)))
 
-    (define csa-terms (map* make-csa (iota 30 1)))
-
-  ))
+    (define csa-terms (map* make-csa (iota 30 1)))))

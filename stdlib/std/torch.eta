@@ -14,29 +14,93 @@
 
 (module std.torch
   (export
-    ;; Re-export core torch builtins for single-import convenience
-    tensor ones zeros randn manual-seed arange linspace from-list
+  ;; Re-export core torch builtins for single-import convenience
+  tensor
+    ones
+    zeros
+    randn
+    manual-seed
+    arange
+    linspace
+    from-list
     tensor?
-    t+ t- t* t/ matmul dot
-    cholesky matrix-exp mvnormal
-    neg tabs texp tlog tsqrt relu sigmoid ttanh softmax
-    shape reshape transpose squeeze unsqueeze cat
-    fact-table->tensor column-l2-norm torch:column-l2-norm
-    tsum mean tmax tmin argmax argmin
-    item to-list numel
-    requires-grad! requires-grad? detach backward grad zero-grad!
+    t+
+    t-
+    t*
+    t/
+    matmul
+    dot
+    cholesky
+    matrix-exp
+    mvnormal
+    neg
+    tabs
+    texp
+    tlog
+    tsqrt
+    relu
+    sigmoid
+    ttanh
+    softmax
+    shape
+    reshape
+    transpose
+    squeeze
+    unsqueeze
+    cat
+    fact-table->tensor
+    column-l2-norm
+    torch:column-l2-norm
+    tsum
+    mean
+    tmax
+    tmin
+    argmax
+    argmin
+    item
+    to-list
+    numel
+    requires-grad!
+    requires-grad?
+    detach
+    backward
+    grad
+    zero-grad!
     ;; NN
-    linear sequential relu-layer sigmoid-layer dropout
-    forward parameters train! eval! module?
+    linear
+    sequential
+    relu-layer
+    sigmoid-layer
+    dropout
+    forward
+    parameters
+    train!
+    eval!
+    module?
     ;; Loss
-    mse-loss l1-loss cross-entropy-loss
+    mse-loss
+    l1-loss
+    cross-entropy-loss
     ;; Optimizers
-    sgd adam step! optim-zero-grad! optimizer?
+    sgd
+    adam
+    step!
+    optim-zero-grad!
+    optimizer?
     ;; Serialization
-    tensor-save tensor-load tensor-print
+    tensor-save
+    tensor-load
+    tensor-print
     ;; Device management
-    gpu-available? gpu-count device to-device to-gpu to-cpu
-    nn-to-device nn-to-gpu nn-to-cpu
+    gpu-available?
+    gpu-count
+    device
+    to-device
+    to-gpu
+    to-cpu
+    nn-to-device
+    nn-to-gpu
+    nn-to-cpu
     ;; High-level helpers
     train-step!)
   (begin
@@ -47,7 +111,7 @@
     ;; -- Tensor creation (thin aliases) -------------------------------------
     ;;@example
     ;; (tensor 1 '())
-    (defun tensor  (v . rest) (apply torch/tensor (cons v rest)))
+    (defun tensor (v . rest) (apply torch/tensor (cons v rest)))
     (define ones torch/ones)
     (define zeros torch/zeros)
     (define randn torch/randn)
@@ -196,10 +260,7 @@
     ;; Returns the scalar loss value (double).
     (defun train-step! (model optimizer loss-fn input target)
       (optim/zero-grad! optimizer)
-      (let* ((pred (nn/forward model input))
-             (loss (loss-fn pred target)))
+      (let* ((pred (nn/forward model input)) (loss (loss-fn pred target)))
         (torch/backward loss)
         (optim/step! optimizer)
-        (torch/item loss)))
-
-  ))
+        (torch/item loss)))))

@@ -15,8 +15,7 @@
     ;;@example
     ;; (run-path-shard shard-id)
     (defun run-path-shard (shard-id)
-      (simulate-paths baseline-curves '() factor-correlation
-                      250 12 0.25 (+ 20260427 shard-id)))
+      (simulate-paths baseline-curves '() factor-correlation 250 12 0.25 (+ 20260427 shard-id)))
 
     ;;@doc (curve-sum curve)
     ;;@category Xva Wwr
@@ -24,8 +23,7 @@
     ;; Compute `curve-sum`.
     ;;@example
     ;; (curve-sum 'x)
-    (defun curve-sum (curve)
-      (foldl (lambda (acc x) (+ acc x)) 0.0 curve))
+    (defun curve-sum (curve) (foldl (lambda (acc x) (+ acc x)) 0.0 curve))
 
     ;;@doc (shard-hash ee-curves)
     ;;@category Xva Wwr
@@ -34,11 +32,7 @@
     ;;@example
     ;; (shard-hash 'x)
     (defun shard-hash (ee-curves)
-      (foldl
-        (lambda (acc entry)
-          (+ acc (curve-sum (cdr entry))))
-        0.0
-        ee-curves))
+      (foldl (lambda (acc entry) (+ acc (curve-sum (cdr entry)))) 0.0 ee-curves))
 
     ;;@doc (rerun-shard-and-check shard-id)
     ;;@category Xva Wwr
@@ -47,12 +41,5 @@
     ;; (rerun-shard-and-check 'x)
     ;; Re-run the same shard seed and assert deterministic hash equality.
     (defun rerun-shard-and-check (shard-id)
-      (let ((h1 (shard-hash (run-path-shard shard-id)))
-            (h2 (shard-hash (run-path-shard shard-id))))
-        (list
-          (cons 'first h1)
-          (cons 'second h2)
-          (cons 'match (= h1 h2)))))
-
-  ))
-
+      (let ((h1 (shard-hash (run-path-shard shard-id))) (h2 (shard-hash (run-path-shard shard-id))))
+        (list (cons 'first h1) (cons 'second h2) (cons 'match (= h1 h2)))))))

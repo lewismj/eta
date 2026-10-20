@@ -32,8 +32,10 @@
     ;;@example
     ;; (sep)
     (defun sep ()
-      (display (if win "==================================================\n"
-                       "══════════════════════════════════════════════════\n")))
+      (display
+        (if win
+          "==================================================\n"
+          "══════════════════════════════════════════════════\n")))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §1  Tensor Creation & Basic Operations
@@ -47,31 +49,42 @@
     ;; Create tensors from shape
     (define a (ones '(3)))
     (define b (ones '(3)))
-    (display "  a = ones(3):       ") (tensor-print a)
-    (display "  b = ones(3):       ") (tensor-print b)
+    (display "  a = ones(3):       ")
+    (tensor-print a)
+    (display "  b = ones(3):       ")
+    (tensor-print b)
 
     ;; Arithmetic
-    (display "  a + b:             ") (tensor-print (t+ a b))
-    (display "  a * 3:             ") (tensor-print (t* a (from-list '(3.0 3.0 3.0))))
+    (display "  a + b:             ")
+    (tensor-print (t+ a b))
+    (display "  a * 3:             ")
+    (tensor-print (t* a (from-list '(3.0 3.0 3.0))))
 
     ;; From a list
     (define v (from-list '(1.0 2.0 3.0 4.0 5.0)))
-    (display "  from-list:         ") (tensor-print v)
-    (display "  sum:               ") (println (item (tsum v)))
-    (display "  mean:              ") (println (item (mean v)))
+    (display "  from-list:         ")
+    (tensor-print v)
+    (display "  sum:               ")
+    (println (item (tsum v)))
+    (display "  mean:              ")
+    (println (item (mean v)))
 
     ;; Matrix operations
     (define m1 (ones '(2 3)))
     (define m2 (ones '(3 4)))
     (define prod (matmul m1 m2))
     (display "\n  ones(2,3) @ ones(3,4):\n")
-    (display "    shape = ")  (println (shape prod))
-    (display "    sum   = ")  (println (item (tsum prod)))
+    (display "    shape = ")
+    (println (shape prod))
+    (display "    sum   = ")
+    (println (item (tsum prod)))
 
     ;; Unary ops
     (define x (from-list '(1.0 4.0 9.0)))
-    (display "\n  sqrt([1,4,9]):     ") (tensor-print (tsqrt x))
-    (display "  exp([0,0]):        ") (tensor-print (texp (zeros '(2))))
+    (display "\n  sqrt([1,4,9]):     ")
+    (tensor-print (tsqrt x))
+    (display "  exp([0,0]):        ")
+    (tensor-print (texp (zeros '(2))))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §2  Autograd — Automatic Differentiation
@@ -89,7 +102,8 @@
     (define y1 (t* x1 x1))
     (backward y1)
     (display "  y = x^2 at x=3\n")
-    (display "    dy/dx = ") (println (item (grad x1)))
+    (display "    dy/dx = ")
+    (println (item (grad x1)))
 
     ;; y = exp(x) at x = 0  →  dy/dx = exp(0) = 1
     (define x2 (from-list '(0.0)))
@@ -97,7 +111,8 @@
     (define y2 (texp x2))
     (backward y2)
     (display "\n  y = exp(x) at x=0\n")
-    (display "    dy/dx = ") (println (item (grad x2)))
+    (display "    dy/dx = ")
+    (println (item (grad x2)))
 
     ;; Multivariate: f(x,y) = x*y at (2,3)  →  df/dx=3, df/dy=2
     (define xa (from-list '(2.0)))
@@ -107,8 +122,10 @@
     (define fa (t* xa ya))
     (backward fa)
     (display "\n  f(x,y) = x*y at (2,3)\n")
-    (display "    df/dx = ") (println (item (grad xa)))
-    (display "    df/dy = ") (println (item (grad ya)))
+    (display "    df/dx = ")
+    (println (item (grad xa)))
+    (display "    df/dy = ")
+    (println (item (grad ya)))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §3  Neural Networks
@@ -123,21 +140,23 @@
     ;; Single linear layer: 4 inputs → 2 outputs
     (define layer (linear 4 2))
     (display "  Linear(4, 2)\n")
-    (display "    module?   = ") (println (module? layer))
-    (display "    #params   = ") (println (length (parameters layer)))
+    (display "    module?   = ")
+    (println (module? layer))
+    (display "    #params   = ")
+    (println (length (parameters layer)))
 
     ;; Forward pass with random input
     (define input1 (randn '(1 4)))
-    (define out1   (forward layer input1))
-    (display "    output shape = ") (println (shape out1))
+    (define out1 (forward layer input1))
+    (display "    output shape = ")
+    (println (shape out1))
 
     ;; Multi-layer network: 4 → 8 → ReLU → 2
-    (define net (sequential (linear 4 8)
-                            (relu-layer)
-                            (linear 8 2)))
+    (define net (sequential (linear 4 8) (relu-layer) (linear 8 2)))
     (display "\n  Sequential(Linear(4,8), ReLU, Linear(8,2))\n")
     (define out2 (forward net (randn '(1 4))))
-    (display "    output shape = ") (println (shape out2))
+    (display "    output shape = ")
+    (println (shape out2))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §4  Training Loop — Learning y = 2x + 1
@@ -157,21 +176,23 @@
 
     ;; Model: single linear layer  y ≈ w·x + b
     (define model (linear 1 1))
-    (define opt   (sgd model 0.01))
+    (define opt (sgd model 0.01))
 
     ;; Training loop
     (display "  epoch |   loss\n")
     (display "  ------+-----------\n")
-    (letrec ((loop (lambda (epoch)
-               (if (> epoch 200) 'done
+    (letrec ((loop
+               (lambda (epoch)
+                 (if (> epoch 200)
+                   'done
                    (let ((loss (train-step! model opt mse-loss train-x train-y)))
                      (if (= (modulo epoch 50) 0)
-                         (begin
-                           (display "  ")
-                           (display (if (< epoch 100) " " ""))
-                           (display epoch)
-                           (display "   |  ")
-                           (println loss)))
+                       (begin
+                         (display "  ")
+                         (display (if (< epoch 100) " " ""))
+                         (display epoch)
+                         (display "   |  ")
+                         (println loss)))
                      (loop (+ epoch 1)))))))
       (loop 1))
 
@@ -180,7 +201,8 @@
     (define test-x (from-list '(6.0 7.0 10.0)))
     (define test-x (reshape test-x '(3 1)))
     (define test-pred (forward model test-x))
-    (display "    predictions: ") (println (to-list (reshape test-pred '(3))))
+    (display "    predictions: ")
+    (println (to-list (reshape test-pred '(3))))
     (display "    expected:    (13.0 15.0 21.0)\n")
 
     ;; ════════════════════════════════════════════════════════════════
@@ -194,20 +216,22 @@
     (display "\n")
 
     (define model2 (linear 1 1))
-    (define opt2   (adam model2 0.1))
+    (define opt2 (adam model2 0.1))
 
     (display "  epoch |   loss (Adam, lr=0.1)\n")
     (display "  ------+-----------------------\n")
-    (letrec ((loop (lambda (epoch)
-               (if (> epoch 100) 'done
+    (letrec ((loop
+               (lambda (epoch)
+                 (if (> epoch 100)
+                   'done
                    (let ((loss (train-step! model2 opt2 mse-loss train-x train-y)))
                      (if (= (modulo epoch 25) 0)
-                         (begin
-                           (display "  ")
-                           (display (if (< epoch 100) " " ""))
-                           (display epoch)
-                           (display "   |  ")
-                           (println loss)))
+                       (begin
+                         (display "  ")
+                         (display (if (< epoch 100) " " ""))
+                         (display epoch)
+                         (display "   |  ")
+                         (println loss)))
                      (loop (+ epoch 1)))))))
       (loop 1))
 
@@ -221,14 +245,17 @@
     (sep)
     (display "\n")
 
-    (define pred   (from-list '(1.0 2.0 3.0)))
+    (define pred (from-list '(1.0 2.0 3.0)))
     (define target (from-list '(1.0 2.0 3.0)))
-    (display "  MSE  (pred == target): ") (println (item (mse-loss pred target)))
+    (display "  MSE  (pred == target): ")
+    (println (item (mse-loss pred target)))
 
-    (define pred2   (from-list '(1.0 2.0 3.0)))
+    (define pred2 (from-list '(1.0 2.0 3.0)))
     (define target2 (from-list '(2.0 2.0 2.0)))
-    (display "  MSE  (pred != target): ") (println (item (mse-loss pred2 target2)))
-    (display "  L1   (pred != target): ") (println (item (l1-loss pred2 target2)))
+    (display "  MSE  (pred != target): ")
+    (println (item (mse-loss pred2 target2)))
+    (display "  L1   (pred != target): ")
+    (println (item (l1-loss pred2 target2)))
 
     ;; ════════════════════════════════════════════════════════════════
     ;; §7  Device Information
@@ -240,12 +267,12 @@
     (sep)
     (display "\n")
 
-    (display "  CUDA available? ") (println (gpu-available?))
-    (display "  GPU count:      ") (println (gpu-count))
+    (display "  CUDA available? ")
+    (println (gpu-available?))
+    (display "  GPU count:      ")
+    (println (gpu-count))
     (define t (ones '(2 3)))
-    (display "  tensor device:  ") (println (device t))
+    (display "  tensor device:  ")
+    (println (device t))
 
-    (display "\n")
-
-  ))
-
+    (display "\n")))

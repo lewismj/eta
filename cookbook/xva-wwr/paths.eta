@@ -15,8 +15,7 @@
     ;;@example
     ;; (assoc-num 'x 'x 'x)
     (defun assoc-num (key alist fallback)
-      (let ((v (assoc-ref key alist)))
-        (if (number? v) v fallback)))
+      (let ((v (assoc-ref key alist))) (if (number? v) v fallback)))
 
     ;;@doc (normalize-bases curves)
     ;;@category Xva Wwr
@@ -25,9 +24,7 @@
     ;;@example
     ;; (normalize-bases 'x)
     (defun normalize-bases (curves)
-      (if (and (pair? curves) (pair? (car curves)))
-          curves
-          baseline-curves))
+      (if (and (pair? curves) (pair? (car curves))) curves baseline-curves))
 
     ;;@doc (draw-shocks n-steps seed)
     ;;@category Xva Wwr
@@ -35,9 +32,7 @@
     ;; Compute `draw-shocks`.
     ;;@example
     ;; (draw-shocks 'x 'x)
-    (defun draw-shocks (n-steps seed)
-      (manual-seed seed)
-      (to-list (randn (list n-steps))))
+    (defun draw-shocks (n-steps seed) (manual-seed seed) (to-list (randn (list n-steps))))
 
     ;;@doc (curve-from-shocks base shocks scale)
     ;;@category Xva Wwr
@@ -59,8 +54,7 @@
              (path-scale (+ 0.04 (/ n-paths 100000.0)))
              (shocks (draw-shocks n-steps seed)))
         (map*
-          (lambda (entry)
-            (cons (car entry) (curve-from-shocks (cdr entry) shocks path-scale)))
+          (lambda (entry) (cons (car entry) (curve-from-shocks (cdr entry) shocks path-scale)))
           bases)))
 
     ;;@doc (total-tilt tilt)
@@ -70,9 +64,10 @@
     ;;@example
     ;; (total-tilt 'x)
     (defun total-tilt (tilt)
-      (+ (* 0.80 (assoc-num 'oil tilt 0.0))
-         (* 0.60 (assoc-num 'usd-10y tilt 0.0))
-         (* 0.50 (assoc-num 'eur-usd tilt 0.0))))
+      (+
+        (* 0.80 (assoc-num 'oil tilt 0.0))
+        (* 0.60 (assoc-num 'usd-10y tilt 0.0))
+        (* 0.50 (assoc-num 'eur-usd tilt 0.0))))
 
     ;;@doc (apply-tilt curve k)
     ;;@category Xva Wwr
@@ -80,8 +75,7 @@
     ;; Compute `apply-tilt`.
     ;;@example
     ;; (apply-tilt 'x 1)
-    (defun apply-tilt (curve k)
-      (map* (lambda (ee) (max 0.0 (* ee (+ 1.0 k)))) curve))
+    (defun apply-tilt (curve k) (map* (lambda (ee) (max 0.0 (* ee (+ 1.0 k)))) curve))
 
     ;;@doc (simulate-paths-tilted curves g2pp-params fx-corr n-paths n-steps dt seed tilt)
     ;;@category Xva Wwr
@@ -92,10 +86,4 @@
     (defun simulate-paths-tilted (curves g2pp-params fx-corr n-paths n-steps dt seed tilt)
       (let* ((base (simulate-paths curves g2pp-params fx-corr n-paths n-steps dt (+ seed 17)))
              (k (total-tilt tilt)))
-        (map*
-          (lambda (entry)
-            (cons (car entry) (apply-tilt (cdr entry) k)))
-          base)))
-
-  ))
-
+        (map* (lambda (entry) (cons (car entry) (apply-tilt (cdr entry) k))) base)))))

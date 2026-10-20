@@ -28,15 +28,20 @@
     ;;@example
     ;; (chk 'x 'x 'x)
     (defun chk (label expected actual)
-      (display label) (display " => ") (display actual)
+      (display label)
+      (display " => ")
+      (display actual)
       (if (equal? actual expected)
-          (display "   [ok]")
-          (begin (display "   [FAIL expected ")
-                 (display expected) (display "]")
-                 (set! fail-count (+ fail-count 1))))
+        (display "   [ok]")
+        (begin
+          (display "   [FAIL expected ")
+          (display expected)
+          (display "]")
+          (set! fail-count (+ fail-count 1))))
       (newline))
 
-    (display "clp var-var merge smoke: start") (newline)
+    (display "clp var-var merge smoke: start")
+    (newline)
 
     ;; ── 1. Z ∩ Z: unify aliases → intersected interval lives on `b` ──
     (let ((x (logic-var)) (y (logic-var)))
@@ -94,24 +99,21 @@
       (chk "x's hi moves onto y" 4 (clp:domain-hi (%clp-get-domain y))))
 
     ;; ── 7. Backtracking restores original domains on both vars ──────
-    (let* ((x (logic-var)) (y (logic-var))
+    (let* ((x (logic-var))
+           (y (logic-var))
            (_ (clp:domain x 1 5))
            (_ (clp:domain y 3 7))
            (m (trail-mark)))
       (unify x y)
       (chk "post-unify y.lo = 3" 3 (clp:domain-lo (%clp-get-domain y)))
       (unwind-trail m)
-      (chk "after unwind, x.lo = 1 restored" 1
-           (clp:domain-lo (%clp-get-domain x)))
-      (chk "after unwind, y.hi = 7 restored" 7
-           (clp:domain-hi (%clp-get-domain y)))
+      (chk "after unwind, x.lo = 1 restored" 1 (clp:domain-lo (%clp-get-domain x)))
+      (chk "after unwind, y.hi = 7 restored" 7 (clp:domain-hi (%clp-get-domain y)))
       (chk "after unwind, x unbound" #t (logic-var? (deref-lvar x))))
 
     ;; ── Summary ─────────────────────────────────────────────────────
     (newline)
     (if (= fail-count 0)
-        (display "clp var-var merge smoke: ALL PASS")
-        (begin (display "clp var-var merge smoke: ")
-               (display fail-count) (display " FAILURE(S)")))
+      (display "clp var-var merge smoke: ALL PASS")
+      (begin (display "clp var-var merge smoke: ") (display fail-count) (display " FAILURE(S)")))
     (newline)))
-

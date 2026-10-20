@@ -11,23 +11,35 @@
 
 (module std.collections
   (export
-    ;; List higher-order
-    map* map2 zip-with map-indexed
-    filter foldl foldr reduce
-    any? every? count
+  ;; List higher-order
+  map*
+    map2
+    zip-with
+    map-indexed
+    filter
+    foldl
+    foldr
+    reduce
+    any?
+    every?
+    count
     sum-by
     join-with
     zip
     pairwise
-    take drop
+    take
+    drop
     flatten
     range
     ;; Sorting
     sort
     ;; Vector higher-order
-    vector-map vector-for-each
-    vector-foldl vector-foldr
-    vector->list list->vector)
+    vector-map
+    vector-for-each
+    vector-foldl
+    vector-foldr
+    vector->list
+    list->vector)
   (begin
 
     ;;  List higher-order 
@@ -39,10 +51,10 @@
     ;;@example
     ;; (map* (lambda (x) x) '())
     (defun map* (f xs)
-      (let loop ((rest xs) (acc '()))
-        (if (null? rest)
-            (reverse acc)
-            (loop (cdr rest) (cons (f (car rest)) acc)))))
+      (let
+        loop
+        ((rest xs) (acc '()))
+        (if (null? rest) (reverse acc) (loop (cdr rest) (cons (f (car rest)) acc)))))
 
     ;;@doc (map2 f xs ys)
     ;;@category Collections
@@ -52,12 +64,12 @@
     ;; Closure-compatible map across two lists.
     ;; Stops at the shorter input length.
     (defun map2 (f xs ys)
-      (let loop ((xs xs) (ys ys) (acc '()))
+      (let
+        loop
+        ((xs xs) (ys ys) (acc '()))
         (if (or (null? xs) (null? ys))
-            (reverse acc)
-            (loop (cdr xs)
-                  (cdr ys)
-                  (cons (f (car xs) (car ys)) acc)))))
+          (reverse acc)
+          (loop (cdr xs) (cdr ys) (cons (f (car xs) (car ys)) acc)))))
 
     ;;@doc (zip-with f xs ys)
     ;;@category Collections
@@ -65,8 +77,7 @@
     ;;@example
     ;; (zip-with (lambda (x) x) '() '())
     ;; Alias for map2; mirrors "zipWith"-style APIs.
-    (defun zip-with (f xs ys)
-      (map2 f xs ys))
+    (defun zip-with (f xs ys) (map2 f xs ys))
 
     ;;@doc (map-indexed f xs)
     ;;@category Collections
@@ -75,12 +86,10 @@
     ;; (map-indexed (lambda (x) x) '())
     ;; Map with zero-based index.
     (defun map-indexed (f xs)
-      (let loop ((i 0) (rest xs) (acc '()))
-        (if (null? rest)
-            (reverse acc)
-            (loop (+ i 1)
-                  (cdr rest)
-                  (cons (f i (car rest)) acc)))))
+      (let
+        loop
+        ((i 0) (rest xs) (acc '()))
+        (if (null? rest) (reverse acc) (loop (+ i 1) (cdr rest) (cons (f i (car rest)) acc)))))
 
     ;;@doc (filter pred xs)
     ;;@category Collections
@@ -89,13 +98,12 @@
     ;; (filter (lambda (x) x) '())
     ;; Keep elements where (pred x) is truthy.
     (defun filter (pred xs)
-      (let loop ((rest xs) (acc '()))
-        (cond
-          ((null? rest) (reverse acc))
-          ((pred (car rest))
-           (loop (cdr rest) (cons (car rest) acc)))
-          (else
-           (loop (cdr rest) acc)))))
+      (let
+        loop
+        ((rest xs) (acc '()))
+        (cond ((null? rest) (reverse acc))
+          ((pred (car rest)) (loop (cdr rest) (cons (car rest) acc)))
+          (else (loop (cdr rest) acc)))))
 
     ;;@doc (foldl f acc xs)
     ;;@category Collections
@@ -103,10 +111,7 @@
     ;;@example
     ;; (foldl (lambda (x) x) 'x '())
     ;; Left fold: (foldl f init '(a b c)) = (f (f (f init a) b) c)
-    (defun foldl (f acc xs)
-      (if (null? xs)
-          acc
-          (foldl f (f acc (car xs)) (cdr xs))))
+    (defun foldl (f acc xs) (if (null? xs) acc (foldl f (f acc (car xs)) (cdr xs))))
 
     ;;@doc (foldr f init xs)
     ;;@category Collections
@@ -114,10 +119,7 @@
     ;;@example
     ;; (foldr (lambda (x) x) 'x '())
     ;; Right fold: (foldr f init '(a b c)) = (f a (f b (f c init)))
-    (defun foldr (f init xs)
-      (if (null? xs)
-          init
-          (f (car xs) (foldr f init (cdr xs)))))
+    (defun foldr (f init xs) (if (null? xs) init (f (car xs) (foldr f init (cdr xs)))))
 
     ;;@doc (reduce f xs)
     ;;@category Collections
@@ -125,10 +127,7 @@
     ;;@example
     ;; (reduce (lambda (x) x) '())
     ;; Fold using the first element as the initial accumulator.
-    (defun reduce (f xs)
-      (if (null? xs)
-          (error "reduce: empty list")
-          (foldl f (car xs) (cdr xs))))
+    (defun reduce (f xs) (if (null? xs) (error "reduce: empty list") (foldl f (car xs) (cdr xs))))
 
     ;;@doc (any? pred xs)
     ;;@category Collections
@@ -136,11 +135,7 @@
     ;;@example
     ;; (any? (lambda (x) x) '())
     ;; True if (pred x) is truthy for at least one element.
-    (defun any? (pred xs)
-      (cond
-        ((null? xs) #f)
-        ((pred (car xs)) #t)
-        (else (any? pred (cdr xs)))))
+    (defun any? (pred xs) (cond ((null? xs) #f) ((pred (car xs)) #t) (else (any? pred (cdr xs)))))
 
     ;;@doc (every? pred xs)
     ;;@category Collections
@@ -149,10 +144,7 @@
     ;; (every? (lambda (x) x) '())
     ;; True if (pred x) is truthy for every element.
     (defun every? (pred xs)
-      (cond
-        ((null? xs) #t)
-        ((not (pred (car xs))) #f)
-        (else (every? pred (cdr xs)))))
+      (cond ((null? xs) #t) ((not (pred (car xs))) #f) (else (every? pred (cdr xs)))))
 
     ;;@doc (count pred xs)
     ;;@category Collections
@@ -160,8 +152,7 @@
     ;;@example
     ;; (count (lambda (x) x) '())
     ;; Count elements satisfying pred.
-    (defun count (pred xs)
-      (foldl (lambda (acc x) (if (pred x) (+ acc 1) acc)) 0 xs))
+    (defun count (pred xs) (foldl (lambda (acc x) (if (pred x) (+ acc 1) acc)) 0 xs))
 
     ;;@doc (sum-by f xs)
     ;;@category Collections
@@ -169,8 +160,7 @@
     ;;@example
     ;; (sum-by (lambda (x) x) '())
     ;; Sum transformed elements.
-    (defun sum-by (f xs)
-      (foldl (lambda (acc x) (+ acc (f x))) 0 xs))
+    (defun sum-by (f xs) (foldl (lambda (acc x) (+ acc (f x))) 0 xs))
 
     ;;@doc (join-with parts sep)
     ;;@category Collections
@@ -180,12 +170,11 @@
     ;; Join a list of strings with a separator.
     (defun join-with (parts sep)
       (if (null? parts)
-          ""
-          (let loop ((rest (cdr parts)) (acc (car parts)))
-            (if (null? rest)
-                acc
-                (loop (cdr rest)
-                      (string-append acc sep (car rest)))))))
+        ""
+        (let
+          loop
+          ((rest (cdr parts)) (acc (car parts)))
+          (if (null? rest) acc (loop (cdr rest) (string-append acc sep (car rest)))))))
 
     ;;@doc (zip xs ys)
     ;;@category Collections
@@ -194,12 +183,12 @@
     ;; (zip '() '())
     ;; Zip two lists into a list of pairs.
     (defun zip (xs ys)
-      (let loop ((xs xs) (ys ys) (acc '()))
+      (let
+        loop
+        ((xs xs) (ys ys) (acc '()))
         (if (or (null? xs) (null? ys))
-            (reverse acc)
-            (loop (cdr xs)
-                  (cdr ys)
-                  (cons (cons (car xs) (car ys)) acc)))))
+          (reverse acc)
+          (loop (cdr xs) (cdr ys) (cons (cons (car xs) (car ys)) acc)))))
 
     ;;@doc (pairwise xs)
     ;;@category Collections
@@ -208,11 +197,12 @@
     ;; (pairwise '())
     ;; Adjacent element pairs: '(a b c d) -> ((a . b) (b . c) (c . d))
     (defun pairwise (xs)
-      (let loop ((rest xs) (acc '()))
+      (let
+        loop
+        ((rest xs) (acc '()))
         (if (or (null? rest) (null? (cdr rest)))
-            (reverse acc)
-            (loop (cdr rest)
-                  (cons (cons (car rest) (car (cdr rest))) acc)))))
+          (reverse acc)
+          (loop (cdr rest) (cons (cons (car rest) (car (cdr rest))) acc)))))
 
     ;;@doc (take n xs)
     ;;@category Collections
@@ -221,10 +211,10 @@
     ;; (take 1 '())
     ;; First n elements.
     (defun take (n xs)
-      (let loop ((n n) (rest xs) (acc '()))
-        (if (or (= n 0) (null? rest))
-            (reverse acc)
-            (loop (- n 1) (cdr rest) (cons (car rest) acc)))))
+      (let
+        loop
+        ((n n) (rest xs) (acc '()))
+        (if (or (= n 0) (null? rest)) (reverse acc) (loop (- n 1) (cdr rest) (cons (car rest) acc)))))
 
     ;;@doc (drop n xs)
     ;;@category Collections
@@ -232,10 +222,7 @@
     ;;@example
     ;; (drop 1 '())
     ;; Drop first n elements.
-    (defun drop (n xs)
-      (if (or (= n 0) (null? xs))
-          xs
-          (drop (- n 1) (cdr xs))))
+    (defun drop (n xs) (if (or (= n 0) (null? xs)) xs (drop (- n 1) (cdr xs))))
 
     ;;@doc (flatten xss)
     ;;@category Collections
@@ -244,13 +231,15 @@
     ;; (flatten 'x)
     ;; Flatten one level of nesting.
     (defun flatten (xss)
-      (let outer ((rest xss) (acc '()))
+      (let
+        outer
+        ((rest xss) (acc '()))
         (if (null? rest)
-            (reverse acc)
-            (let inner ((ys (car rest)) (acc2 acc))
-              (if (null? ys)
-                  (outer (cdr rest) acc2)
-                  (inner (cdr ys) (cons (car ys) acc2)))))))
+          (reverse acc)
+          (let
+            inner
+            ((ys (car rest)) (acc2 acc))
+            (if (null? ys) (outer (cdr rest) acc2) (inner (cdr ys) (cons (car ys) acc2)))))))
 
     ;;@doc (range start end)
     ;;@category Collections
@@ -259,10 +248,7 @@
     ;; (range 'x 'x)
     ;; Generate '(start start+1 ... end-1).
     (defun range (start end)
-      (let loop ((i start) (acc '()))
-        (if (>= i end)
-            (reverse acc)
-            (loop (+ i 1) (cons i acc)))))
+      (let loop ((i start) (acc '())) (if (>= i end) (reverse acc) (loop (+ i 1) (cons i acc)))))
 
     ;;  Sorting 
 
@@ -273,31 +259,27 @@
     ;; (sort #t '())
     ;; Merge sort (stable, O(n log n)).
     (defun sort (less? xs)
-      (letrec
-        ((merge
-           (lambda (a b)
-             (cond
-               ((null? a) b)
-               ((null? b) a)
-               ((less? (car a) (car b))
-                (cons (car a) (merge (cdr a) b)))
-               (else
-                (cons (car b) (merge a (cdr b)))))))
-         (split
-           (lambda (ys)
-             (let loop ((rest ys) (left '()) (right '()) (toggle #t))
-               (if (null? rest)
-                   (cons left right)
-                   (if toggle
-                       (loop (cdr rest) (cons (car rest) left) right (not toggle))
-                       (loop (cdr rest) left (cons (car rest) right) (not toggle)))))))
-         (msort
-           (lambda (ys)
-             (if (or (null? ys) (null? (cdr ys)))
-                 ys
-                 (let ((halves (split ys)))
-                   (merge (msort (car halves))
-                          (msort (cdr halves))))))))
+      (letrec ((merge
+                 (lambda (a b)
+                   (cond ((null? a) b)
+                     ((null? b) a)
+                     ((less? (car a) (car b)) (cons (car a) (merge (cdr a) b)))
+                     (else (cons (car b) (merge a (cdr b)))))))
+               (split
+                 (lambda (ys)
+                   (let
+                     loop
+                     ((rest ys) (left '()) (right '()) (toggle #t))
+                     (if (null? rest)
+                       (cons left right)
+                       (if toggle
+                         (loop (cdr rest) (cons (car rest) left) right (not toggle))
+                         (loop (cdr rest) left (cons (car rest) right) (not toggle)))))))
+               (msort
+                 (lambda (ys)
+                   (if (or (null? ys) (null? (cdr ys)))
+                     ys
+                     (let ((halves (split ys))) (merge (msort (car halves)) (msort (cdr halves))))))))
         (msort xs)))
 
     ;;  Vector operations 
@@ -311,10 +293,7 @@
     (defun vector-map (f v)
       (let ((n (vector-length v)))
         (let ((out (make-vector n '())))
-          (let loop ((i 0))
-            (when (< i n)
-              (vector-set! out i (f (vector-ref v i)))
-              (loop (+ i 1))))
+          (let loop ((i 0)) (when (< i n) (vector-set! out i (f (vector-ref v i))) (loop (+ i 1))))
           out)))
 
     ;;@doc (vector-for-each f v)
@@ -325,10 +304,7 @@
     ;; Apply f to each element for side effects.
     (defun vector-for-each (f v)
       (let ((n (vector-length v)))
-        (let loop ((i 0))
-          (when (< i n)
-            (f (vector-ref v i))
-            (loop (+ i 1))))))
+        (let loop ((i 0)) (when (< i n) (f (vector-ref v i)) (loop (+ i 1))))))
 
     ;;@doc (vector-foldl f acc v)
     ;;@category Collections
@@ -338,10 +314,7 @@
     ;; Left fold over a vector.
     (defun vector-foldl (f acc v)
       (let ((n (vector-length v)))
-        (let loop ((i 0) (a acc))
-          (if (= i n)
-              a
-              (loop (+ i 1) (f a (vector-ref v i)))))))
+        (let loop ((i 0) (a acc)) (if (= i n) a (loop (+ i 1) (f a (vector-ref v i)))))))
 
     ;;@doc (vector-foldr f init v)
     ;;@category Collections
@@ -351,10 +324,7 @@
     ;; Right fold over a vector.
     (defun vector-foldr (f init v)
       (let ((n (vector-length v)))
-        (let loop ((i (- n 1)) (a init))
-          (if (< i 0)
-              a
-              (loop (- i 1) (f (vector-ref v i) a))))))
+        (let loop ((i (- n 1)) (a init)) (if (< i 0) a (loop (- i 1) (f (vector-ref v i) a))))))
 
     ;;@doc (vector->list v)
     ;;@category Collections
@@ -362,8 +332,7 @@
     ;;@example
     ;; (vector->list 1)
     ;; Convert a vector to a list.
-    (defun vector->list (v)
-      (vector-foldr cons '() v))
+    (defun vector->list (v) (vector-foldr cons '() v))
 
     ;;@doc (list->vector xs)
     ;;@category Collections
@@ -374,11 +343,8 @@
     (defun list->vector (xs)
       (let ((n (length xs)))
         (let ((v (make-vector n '())))
-          (let loop ((i 0) (rest xs))
-            (when (< i n)
-              (vector-set! v i (car rest))
-              (loop (+ i 1) (cdr rest))))
-          v)))
-
-  ))
-
+          (let
+            loop
+            ((i 0) (rest xs))
+            (when (< i n) (vector-set! v i (car rest)) (loop (+ i 1) (cdr rest))))
+          v)))))

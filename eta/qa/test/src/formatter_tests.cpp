@@ -76,8 +76,15 @@ BOOST_AUTO_TEST_CASE(golden_layouts) {
 }
 
 BOOST_AUTO_TEST_CASE(special_form_alias_layouts) {
-    BOOST_TEST(checked("(defun demo (x) (+ x 1))", {.width = 12}) == "(defun demo\n  (x)\n  (+ x 1))");
-    BOOST_TEST(checked("(letrec* ((x 1)) (+ x 1))", {.width = 12}) == "(letrec*\n  ((x 1))\n  (+ x 1))");
+    // Leading operands stay on the head line: name and formals for defun,
+    // bindings for let-family forms, the name for module. A sequence has none.
+    BOOST_TEST(checked("(defun demo (x) (+ x 1))", {.width = 16}) == "(defun demo (x)\n  (+ x 1))");
+    BOOST_TEST(checked("(defun demo () (+ x 1))", {.width = 16}) == "(defun demo ()\n  (+ x 1))");
+    BOOST_TEST(checked("(letrec* ((x 1)) (+ x 1))", {.width = 20}) == "(letrec* ((x 1))\n  (+ x 1))");
+    BOOST_TEST(checked("(module m (begin (a) (b)))", {.width = 16}) == "(module m\n  (begin\n    (a)\n    (b)))");
+    // A list headed by a list (bindings, clauses) aligns under its first element.
+    BOOST_TEST(checked("(let* ((alpha 1) (beta 2)) beta)", {.width = 20})
+               == "(let* ((alpha 1)\n       (beta 2))\n  beta)");
 }
 
 BOOST_AUTO_TEST_CASE(reader_comment_and_header_matrix) {

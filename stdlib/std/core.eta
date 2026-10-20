@@ -6,13 +6,24 @@
 
 (module std.core
   (export
-    ;; Predicates
-    non-pair? void
+  ;; Predicates
+  non-pair?
+    void
     ;; Combinators
-    identity compose flip constantly negate
+    identity
+    compose
+    flip
+    constantly
+    negate
     ;; List utilities not covered by builtins
-    cadr caddr caar cdar caddar
-    last list? iota
+    cadr
+    caddr
+    caar
+    cdar
+    caddar
+    last
+    list?
+    iota
     assoc-ref
     ;; Platform
     windows?)
@@ -54,8 +65,7 @@
     ;; (compose (lambda (x) x) 'x)
     ;; Function composition: (compose f g) returns a procedure that
     ;; applies g first, then f.
-    (defun compose (f g)
-      (lambda (x) (f (g x))))
+    (defun compose (f g) (lambda (x) (f (g x))))
 
     ;;@doc (flip f)
     ;;@category Core
@@ -63,8 +73,7 @@
     ;;@example
     ;; (flip (lambda (x) x))
     ;; Swap the order of a two-argument function's parameters.
-    (defun flip (f)
-      (lambda (a b) (f b a)))
+    (defun flip (f) (lambda (a b) (f b a)))
 
     ;;@doc (constantly v)
     ;;@category Core
@@ -72,8 +81,7 @@
     ;;@example
     ;; (constantly 1)
     ;; Returns a function that always yields the given value.
-    (defun constantly (v)
-      (lambda args v))
+    (defun constantly (v) (lambda args v))
 
     ;;@doc (negate pred)
     ;;@category Core
@@ -82,8 +90,7 @@
     ;; (negate (lambda (x) x))
     ;; Given a predicate, returns a new predicate that is its
     ;; logical negation.
-    (defun negate (pred)
-      (lambda (x) (not (pred x))))
+    (defun negate (pred) (lambda (x) (not (pred x))))
 
     ;;  Accessors 
 
@@ -93,7 +100,7 @@
     ;; Compute `cadr`.
     ;;@example
     ;; (cadr '())
-    (defun cadr (xs)  (car (cdr xs)))
+    (defun cadr (xs) (car (cdr xs)))
     ;;@doc (caddr xs)
     ;;@category Core
     ;;@module std.core
@@ -107,14 +114,14 @@
     ;; Compute `caar`.
     ;;@example
     ;; (caar '())
-    (defun caar (xs)  (car (car xs)))
+    (defun caar (xs) (car (car xs)))
     ;;@doc (cdar xs)
     ;;@category Core
     ;;@module std.core
     ;; Compute `cdar`.
     ;;@example
     ;; (cdar '())
-    (defun cdar (xs)  (cdr (car xs)))
+    (defun cdar (xs) (cdr (car xs)))
     ;;@doc (caddar xs)
     ;;@category Core
     ;;@module std.core
@@ -131,11 +138,7 @@
     ;;@example
     ;; (last '())
     ;; Last element of a non-empty proper list.
-    (defun last (xs)
-      (let loop ((rest xs))
-        (if (null? (cdr rest))
-            (car rest)
-            (loop (cdr rest)))))
+    (defun last (xs) (let loop ((rest xs)) (if (null? (cdr rest)) (car rest) (loop (cdr rest)))))
 
     ;;@doc (list? x)
     ;;@category Core
@@ -143,11 +146,7 @@
     ;;@example
     ;; (list? 1)
     ;; Proper-list predicate (handles dotted pairs correctly).
-    (defun list? (x)
-      (cond
-        ((null? x) #t)
-        ((pair? x) (list? (cdr x)))
-        (else #f)))
+    (defun list? (x) (cond ((null? x) #t) ((pair? x) (list? (cdr x))) (else #f)))
 
     ;;@doc (iota count . rest)
     ;;@category Core
@@ -157,11 +156,11 @@
     ;; Generate a list of integers [start .. start+count-1].
     (defun iota (count . rest)
       (let ((start (if (null? rest) 0 (car rest)))
-            (step  (if (or (null? rest) (null? (cdr rest))) 1 (car (cdr rest)))))
-        (let build ((i (- count 1)) (acc '()))
-          (if (< i 0)
-              acc
-              (build (- i 1) (cons (+ start (* i step)) acc))))))
+            (step (if (or (null? rest) (null? (cdr rest))) 1 (car (cdr rest)))))
+        (let
+          build
+          ((i (- count 1)) (acc '()))
+          (if (< i 0) acc (build (- i 1) (cons (+ start (* i step)) acc))))))
 
     ;;@doc (assoc-ref key alist)
     ;;@category Core
@@ -170,9 +169,7 @@
     ;; (assoc-ref 'x 'x)
     ;; Association list lookup: returns the value (cdr) of the first
     ;; pair whose car is equal? to key, or #f if not found.
-    (defun assoc-ref (key alist)
-      (let ((p (assoc key alist)))
-        (if (non-pair? p) #f (cdr p))))
+    (defun assoc-ref (key alist) (let ((p (assoc key alist))) (if (non-pair? p) #f (cdr p))))
 
     ;;  Platform 
 
@@ -183,7 +180,4 @@
     ;; (windows?)
     ;; True when running on Windows. (platform) is evaluated at VM
     ;; execution time, so this is safe for cross-platform bytecode.
-    (defun windows? () (eq? (platform) 'Win32))
-
-  ))
-
+    (defun windows? () (eq? (platform) 'Win32))))

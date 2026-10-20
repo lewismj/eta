@@ -51,30 +51,27 @@
 
     ;; ── Combining higher-order functions ────────────────────────────
     ;; "sum of squares of even numbers"
-    (define result
-      (foldl + 0
-        (map* square
-          (filter even? nums))))
+    (define result (foldl + 0 (map* square (filter even? nums))))
     (println result)
     ;; => 220  (4 + 16 + 36 + 64 + 100)
 
     ;; ── any? / every? — short-circuit predicates ────────────────────
-    (println (any? negative? '(1 -2 3)))   ; => #t
-    (println (every? positive? '(1 2 3)))  ; => #t
+    (println (any? negative? '(1 -2 3))) ; => #t
+    (println (every? positive? '(1 2 3))) ; => #t
 
     ;; ── count — how many satisfy the predicate? ─────────────────────
-    (println (count even? nums))           ; => 5
+    (println (count even? nums)) ; => 5
 
     ;; ── zip — pair up two lists ─────────────────────────────────────
     (println (zip '(a b c) '(1 2 3)))
     ;; => ((a . 1) (b . 2) (c . 3))
 
     ;; ── take / drop ─────────────────────────────────────────────────
-    (println (take 3 nums))    ; => (1 2 3)
-    (println (drop 7 nums))    ; => (8 9 10)
+    (println (take 3 nums)) ; => (1 2 3)
+    (println (drop 7 nums)) ; => (8 9 10)
 
     ;; ── range — generate a sequence ─────────────────────────────────
-    (println (range 1 6))      ; => (1 2 3 4 5)
+    (println (range 1 6)) ; => (1 2 3 4 5)
 
     ;; ── flatten — one level of nesting ──────────────────────────────
     (println (flatten '((1 2) (3 4) (5))))
@@ -85,7 +82,6 @@
     ;; => (1 2 3 4 5 6 7 8)
 
     (println (sort > '(5 3 8 1 4 2 7 6)))
-    ;; => (8 7 6 5 4 3 2 1)
+  ;; => (8 7 6 5 4 3 2 1)
 
   ))
-

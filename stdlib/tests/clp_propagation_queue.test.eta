@@ -40,15 +40,20 @@
     ;;@example
     ;; (chk 'x 'x 'x)
     (defun chk (label expected actual)
-      (display label) (display " => ") (display actual)
+      (display label)
+      (display " => ")
+      (display actual)
       (if (equal? actual expected)
-          (display "   [ok]")
-          (begin (display "   [FAIL expected ")
-                 (display expected) (display "]")
-                 (set! fail-count (+ fail-count 1))))
+        (display "   [ok]")
+        (begin
+          (display "   [FAIL expected ")
+          (display expected)
+          (display "]")
+          (set! fail-count (+ fail-count 1))))
       (newline))
 
-    (display "clp prop-queue smoke: start") (newline)
+    (display "clp prop-queue smoke: start")
+    (newline)
 
     ;; ── (1) Queue is empty at the user boundary ─────────────────────────
     (chk "queue size at start" 0 (%clp-prop-queue-size))
@@ -65,16 +70,18 @@
     ;;   y stays *unbound* (singletons are not auto-unified by bounds
     ;;   propagators) but its domain is narrowed.
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
-      (clp:domain x 1 3) (clp:domain y 1 3) (clp:domain z 4 6)
-      (chk "post clp:+"            #t (clp:+ x y z))
-      (chk "queue empty post-post" 0  (%clp-prop-queue-size))
-      (chk "bind x=1"              #t (unify x 1))
-      (chk "queue empty post-bind" 0  (%clp-prop-queue-size))
+      (clp:domain x 1 3)
+      (clp:domain y 1 3)
+      (clp:domain z 4 6)
+      (chk "post clp:+" #t (clp:+ x y z))
+      (chk "queue empty post-post" 0 (%clp-prop-queue-size))
+      (chk "bind x=1" #t (unify x 1))
+      (chk "queue empty post-bind" 0 (%clp-prop-queue-size))
       ;; y, z still unbound but domains narrowed via the queue drain.
-      (chk "y still unbound"       #t  (logic-var? (deref-lvar y)))
-      (chk "z still unbound"       #t  (logic-var? (deref-lvar z)))
-      (chk "y narrowed to {3}"     '(3) (clp:domain-values (%clp-get-domain y)))
-      (chk "z narrowed to {4}"     '(4) (clp:domain-values (%clp-get-domain z))))
+      (chk "y still unbound" #t (logic-var? (deref-lvar y)))
+      (chk "z still unbound" #t (logic-var? (deref-lvar z)))
+      (chk "y narrowed to {3}" '(3) (clp:domain-values (%clp-get-domain y)))
+      (chk "z narrowed to {4}" '(4) (clp:domain-values (%clp-get-domain z))))
 
     ;; ── (3) Idempotent FIFO under all-different broadcast ───────────────
     ;;
@@ -84,12 +91,14 @@
     ;;   invocation — observable end-state: 1 is removed from each
     ;;   sibling's FD domain exactly once, and the queue is empty.
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
-      (clp:in-fd x 1 2 3) (clp:in-fd y 1 2 3) (clp:in-fd z 1 2 3)
-      (chk "post all-diff"         #t (clp:all-different (list x y z)))
-      (chk "bind x=1"              #t (unify x 1))
-      (chk "y's domain is {2,3}"   '(2 3) (clp:domain-values (%clp-get-domain y)))
-      (chk "z's domain is {2,3}"   '(2 3) (clp:domain-values (%clp-get-domain z)))
-      (chk "queue empty post-pass" 0     (%clp-prop-queue-size)))
+      (clp:in-fd x 1 2 3)
+      (clp:in-fd y 1 2 3)
+      (clp:in-fd z 1 2 3)
+      (chk "post all-diff" #t (clp:all-different (list x y z)))
+      (chk "bind x=1" #t (unify x 1))
+      (chk "y's domain is {2,3}" '(2 3) (clp:domain-values (%clp-get-domain y)))
+      (chk "z's domain is {2,3}" '(2 3) (clp:domain-values (%clp-get-domain z)))
+      (chk "queue empty post-pass" 0 (%clp-prop-queue-size)))
 
     ;; ── (4) Var–var unify intersects FD domains ─────────────────────────
     ;;
@@ -97,11 +106,11 @@
     ;;   (y) receives the intersection {2,3}; (deref x) follows the
     ;;   binding to y so %clp-get-domain returns y's domain.
     (let ((x (logic-var)) (y (logic-var)))
-      (clp:in-fd x 1 2 3 4) (clp:in-fd y 2 3)
-      (chk "var-var unify"           #t (unify x y))
-      (chk "x deref domain narrowed" '(2 3)
-           (clp:domain-values (%clp-get-domain x)))
-      (chk "queue empty post-unify"  0 (%clp-prop-queue-size)))
+      (clp:in-fd x 1 2 3 4)
+      (clp:in-fd y 2 3)
+      (chk "var-var unify" #t (unify x y))
+      (chk "x deref domain narrowed" '(2 3) (clp:domain-values (%clp-get-domain x)))
+      (chk "queue empty post-unify" 0 (%clp-prop-queue-size)))
 
     ;; ── (5) Unified-trail Domain unwind ─────────────────────────────────
     ;;
@@ -114,26 +123,24 @@
     ;;       i.e. [2..10] — NOT [0..20], because the post-time narrowing
     ;;       happened BEFORE the trail-mark and is therefore preserved.
     (let ((x (logic-var)) (y (logic-var)) (z (logic-var)))
-      (clp:domain x 1 5) (clp:domain y 1 5) (clp:domain z 0 20)
-      (chk "post sum constraint"   #t (clp:+ x y z))
-      (chk "z narrowed at post"    (range 2 11)
-           (clp:domain-values (%clp-get-domain z)))
+      (clp:domain x 1 5)
+      (clp:domain y 1 5)
+      (clp:domain z 0 20)
+      (chk "post sum constraint" #t (clp:+ x y z))
+      (chk "z narrowed at post" (range 2 11) (clp:domain-values (%clp-get-domain z)))
       (let ((m (trail-mark)))
-        (chk "bind x=5"            #t (unify x 5))
-        (chk "z narrowed by drain" (range 6 11)
-             (clp:domain-values (%clp-get-domain z)))
+        (chk "bind x=5" #t (unify x 5))
+        (chk "z narrowed by drain" (range 6 11) (clp:domain-values (%clp-get-domain z)))
         (unwind-trail m))
-      (chk "x unbound after unwind"   #t (logic-var? (deref-lvar x)))
-      (chk "z restored to mark-time"  (range 2 11)
-           (clp:domain-values (%clp-get-domain z)))
-      (chk "queue empty after unwind" 0  (%clp-prop-queue-size)))
+      (chk "x unbound after unwind" #t (logic-var? (deref-lvar x)))
+      (chk "z restored to mark-time" (range 2 11) (clp:domain-values (%clp-get-domain z)))
+      (chk "queue empty after unwind" 0 (%clp-prop-queue-size)))
 
     (newline)
     (display "clp prop-queue smoke: ")
     (display (if (= fail-count 0) "ALL GREEN" "FAIL"))
     (display " (")
     (display fail-count)
-    (display " failures)") (newline)
-    (if (= fail-count 0) #t (error "clp_prop_queue_smoke failures"))
-  ))
-
+    (display " failures)")
+    (newline)
+    (if (= fail-count 0) #t (error "clp_prop_queue_smoke failures"))))

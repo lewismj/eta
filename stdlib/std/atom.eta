@@ -1,8 +1,7 @@
 ;;; std/atom.eta - Atomic mutable references with CAS semantics.
 
 (module std.atom
-  (export
-    atom:new
+  (export atom:new
     atom:atom?
     atom:deref
     atom:reset!
@@ -35,7 +34,4 @@
     (define deref atom:deref)
     (define reset! atom:reset!)
     (define swap! atom:swap!)
-    (define compare-and-set! atom:compare-and-set!)
-
-  ))
-
+    (define compare-and-set! atom:compare-and-set!)))

@@ -23,15 +23,14 @@
     ;; Each call is a complete independent round-trip.
     (define r1 (request-reply endpoint '(hello world)))
     (print "echo-client: got: ")
-    (println r1)    ; => (hello world)
+    (println r1) ; => (hello world)
 
     (define r2 (request-reply endpoint "ping"))
     (print "echo-client: got: ")
-    (println r2)    ; => "ping"
+    (println r2) ; => "ping"
 
     (define r3 (request-reply endpoint '(1 2 3 4 5)))
     (print "echo-client: got: ")
-    (println r3)    ; => (1 2 3 4 5)
+    (println r3) ; => (1 2 3 4 5)
 
     (println "echo-client: done.")))
-
