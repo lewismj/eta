@@ -595,6 +595,48 @@ BOOST_AUTO_TEST_CASE(registry_get_mut) {
     BOOST_CHECK_EQUAL(reg.get(idx)->name, "modified");
 }
 
+BOOST_AUTO_TEST_CASE(registry_index_of_finds_owned_functions_only) {
+    BytecodeFunctionRegistry reg;
+    BytecodeFunction a; a.name = "a";
+    BytecodeFunction b; b.name = "b";
+    const uint32_t ia = reg.add(std::move(a));
+    const uint32_t ib = reg.add(std::move(b));
+
+    BOOST_REQUIRE(reg.index_of(reg.get(ia)).has_value());
+    BOOST_CHECK_EQUAL(*reg.index_of(reg.get(ia)), ia);
+    BOOST_CHECK_EQUAL(*reg.index_of(reg.get(ib)), ib);
+
+    BytecodeFunction outsider;
+    BOOST_CHECK(!reg.index_of(&outsider).has_value());
+    BOOST_CHECK(!reg.index_of(nullptr).has_value());
+
+    /// Moving the registry keeps addresses and the index.
+    BytecodeFunctionRegistry moved(std::move(reg));
+    BOOST_CHECK_EQUAL(*moved.index_of(moved.get(ib)), ib);
+}
+
+BOOST_AUTO_TEST_CASE(registry_serialized_cache_survives_add_and_clears_on_get_mut) {
+    BytecodeFunctionRegistry reg;
+    BytecodeFunction f; f.name = "f";
+    const uint32_t idx = reg.add(std::move(f));
+
+    auto bytes = std::make_shared<const std::vector<std::uint8_t>>(
+        std::vector<std::uint8_t>{1, 2, 3});
+    reg.store_serialized("k", bytes);
+    BOOST_REQUIRE(reg.find_serialized("k"));
+    BOOST_CHECK(*reg.find_serialized("k") == *bytes);
+    BOOST_CHECK(!reg.find_serialized("other"));
+
+    /// Appending leaves existing functions unchanged, so the memo stays.
+    BytecodeFunction g; g.name = "g";
+    reg.add(std::move(g));
+    BOOST_CHECK(reg.find_serialized("k"));
+
+    /// get_mut may rewrite an existing function, so the memo is dropped.
+    (void)reg.get_mut(idx);
+    BOOST_CHECK(!reg.find_serialized("k"));
+}
+
 /**
  * Bytecode encoding helpers
  */

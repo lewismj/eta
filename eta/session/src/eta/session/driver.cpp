@@ -782,24 +782,15 @@ std::expected<runtime::types::Pid, runtime::error::RuntimeError> Driver::spawn_a
             "%actor-spawn: thunk must accept exactly 0 arguments"}});
     }
 
-    std::uint32_t entry_idx = UINT32_MAX;
-    {
-        const auto function_count = static_cast<std::uint32_t>(source_registry.size());
-        for (std::uint32_t i = 0; i < function_count; ++i) {
-            if (source_registry.get(i) == closure->func) {
-                entry_idx = i;
-                break;
-            }
-        }
-    }
-    if (entry_idx == UINT32_MAX) {
+    const auto entry_idx = source_registry.index_of(closure->func);
+    if (!entry_idx) {
         return std::unexpected(RuntimeError{VMError{
             RuntimeErrorCode::InternalError,
             "%actor-spawn: closure function is not present in the registry"}});
     }
 
     auto serialized = eta::nng::build_serialized_closure(
-        entry_idx,
+        *entry_idx,
         closure->upvals,
         source_vm.globals(),
         source_registry,

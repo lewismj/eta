@@ -7,6 +7,7 @@
 #include <mutex>
 #include <vector>
 #include <optional>
+#include <string>
 #include <string_view>
 #include "eta/semantics/core_ir.h"
 #include "eta/runtime/vm/bytecode.h"
@@ -28,11 +29,17 @@ public:
     BytecodeFunctionRegistry() = default;
 
     /// Move-only (`std::mutex` is not movable, so we transfer the data manually).
+    /// std::deque's move keeps element addresses, so index_by_ptr_ stays valid.
     BytecodeFunctionRegistry(BytecodeFunctionRegistry&& other) noexcept
-        : functions_(std::move(other.functions_)) {}
+        : functions_(std::move(other.functions_)),
+          index_by_ptr_(std::move(other.index_by_ptr_)) {}
 
     BytecodeFunctionRegistry& operator=(BytecodeFunctionRegistry&& other) noexcept {
-        if (this != &other) functions_ = std::move(other.functions_);
+        if (this != &other) {
+            functions_ = std::move(other.functions_);
+            index_by_ptr_ = std::move(other.index_by_ptr_);
+            serialized_cache_.clear();
+        }
         return *this;
     }
 
@@ -47,7 +54,18 @@ public:
         std::unique_lock lock(mutex_);
         uint32_t idx = static_cast<uint32_t>(functions_.size());
         functions_.push_back(std::move(func));
+        index_by_ptr_.emplace(&functions_.back(), idx);
         return idx;
+    }
+
+    /**
+     * Index of a function owned by this registry, in O(1).
+     * Thread-safe: uses exclusive lock.
+     */
+    std::optional<uint32_t> index_of(const runtime::vm::BytecodeFunction* func) const {
+        std::unique_lock lock(mutex_);
+        if (auto it = index_by_ptr_.find(func); it != index_by_ptr_.end()) return it->second;
+        return std::nullopt;
     }
 
     /**
@@ -67,6 +85,8 @@ public:
      */
     runtime::vm::BytecodeFunction* get_mut(uint32_t index) {
         std::unique_lock lock(mutex_);
+        /// The caller may rewrite the function, so drop anything derived from it.
+        serialized_cache_.clear();
         if (index < functions_.size()) {
             return &functions_[index];
         }
@@ -101,9 +121,33 @@ public:
         return functions_.size();
     }
 
+    /**
+     * Memo of serialized bytecode for a subset of this registry (used by actor
+     * spawn so repeated spawns of the same thunk skip re-serialization). The key
+     * is opaque to the registry; entries hold bytes only, never LispVals, so
+     * they need no GC rooting. Cleared by get_mut(), since existing functions
+     * may change; add() leaves it intact because existing entries are unchanged.
+     */
+    using SerializedBytes = std::shared_ptr<const std::vector<std::uint8_t>>;
+
+    SerializedBytes find_serialized(const std::string& key) const {
+        std::unique_lock lock(mutex_);
+        if (auto it = serialized_cache_.find(key); it != serialized_cache_.end()) return it->second;
+        return nullptr;
+    }
+
+    void store_serialized(std::string key, SerializedBytes bytes) const {
+        static constexpr std::size_t kMaxSerializedEntries = 256;
+        std::unique_lock lock(mutex_);
+        if (serialized_cache_.size() >= kMaxSerializedEntries) serialized_cache_.clear();
+        serialized_cache_.insert_or_assign(std::move(key), std::move(bytes));
+    }
+
 private:
     mutable std::mutex mutex_;
     std::deque<runtime::vm::BytecodeFunction> functions_;
+    std::unordered_map<const runtime::vm::BytecodeFunction*, uint32_t> index_by_ptr_;
+    mutable std::unordered_map<std::string, SerializedBytes> serialized_cache_;
 };
 
 class Emitter {

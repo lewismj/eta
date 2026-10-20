@@ -385,6 +385,37 @@ BOOST_AUTO_TEST_CASE(actor_spawn_send_and_receive_round_trip) {
     BOOST_TEST(result == eta::runtime::nanbox::True);
 }
 
+BOOST_AUTO_TEST_CASE(actor_repeated_spawn_reuses_bytecode_but_not_captures) {
+    /// Every spawn shares one thunk body (served from the registry's serialized
+    /// bytecode memo after the first) but captures a different `i`; the reply
+    /// sum proves each child saw its own capture. Also a spawn micro-benchmark.
+    ActorHarness harness;
+    const auto start = std::chrono::steady_clock::now();
+    auto result = harness.run_module(R"eta(
+(module actor.runtime.repeated_spawn
+  (import std.actor)
+  (define me (self))
+  (define (spawn-all i n)
+    (if (< i n)
+        (begin
+          (spawn (lambda () (send me (* i i))))
+          (spawn-all (+ i 1) n))
+        #t))
+  (define (collect k acc)
+    (if (= k 0)
+        acc
+        (let ((msg (receive-after 5000)))
+          (if msg (collect (- k 1) (+ acc msg)) -1))))
+  (spawn-all 0 200)
+  (define result (collect 200 0)))
+)eta");
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    BOOST_TEST_MESSAGE("200 spawns + replies: " << elapsed << " ms");
+    /// sum of i^2 for i in [0, 200)
+    BOOST_TEST(harness.as_int(result) == 2646700);
+}
+
 BOOST_AUTO_TEST_CASE(actor_receive_timeout_returns_false) {
     ActorHarness harness;
     auto result = harness.run_module(R"eta(

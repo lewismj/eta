@@ -44,6 +44,8 @@
 #include <eta/runtime/types/tape.h>
 #include <eta/runtime/types/tape_ref.h>
 #include <eta/runtime/builtin_env.h>
+#include <eta/runtime/port.h>
+#include <eta/runtime/vm/bytecode.h>
 
 using namespace eta::nng;
 using namespace eta::nng::factory;
@@ -2049,6 +2051,59 @@ BOOST_AUTO_TEST_CASE(send_default_binary_recv_autodetects) {
     auto* cons = e.heap.try_get_as<ObjectKind::Cons, Cons>(ops::payload(recv_res));
     BOOST_REQUIRE(cons != nullptr);
     BOOST_TEST(*ops::decode<int64_t>(cons->car) == 10);
+
+    e.call("nng-close", {server});
+    e.call("nng-close", {client});
+}
+
+BOOST_AUTO_TEST_CASE(strict_binary_rejects_closure_and_port) {
+    Heap heap(1 << 20);
+    InternTable intern;
+    static const eta::runtime::vm::BytecodeFunction fn{};
+    auto closure = require_ok(make_closure(heap, &fn, {}));
+    auto port = require_ok(make_port(
+        heap, std::make_shared<StringPort>(StringPort::Mode::Output)));
+    auto nested = require_ok(make_cons(heap, port, nanbox::Nil));
+    nested = require_ok(make_cons(heap, require_ok(make_fixnum(heap, 1)), nested));
+
+    for (LispVal v : {closure, port, nested}) {
+        auto res = serialize_binary_strict(v, heap, intern);
+        BOOST_REQUIRE(!res.has_value());
+        BOOST_TEST(res.error().find("unsupported heap object kind") != std::string::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(send_rejects_non_serializable_payload) {
+    /// A closure or port must be an error, not a silent nil on the receiver.
+    NngEnv e;
+    std::string addr = inproc_addr();
+
+    auto server = e.call("nng-socket", {e.sym("pair")});
+    auto client = e.call("nng-socket", {e.sym("pair")});
+    e.call("nng-listen", {server, e.str(addr)});
+    e.call("nng-dial",   {client, e.str(addr)});
+
+    static const eta::runtime::vm::BytecodeFunction fn{};
+    auto closure = require_ok(make_closure(e.heap, &fn, {}));
+    auto port = require_ok(make_port(
+        e.heap, std::make_shared<StringPort>(StringPort::Mode::Output)));
+    auto nested = require_ok(make_cons(e.heap, port, nanbox::Nil));
+    nested = require_ok(make_cons(e.heap, e.fixnum(1), nested));
+
+    for (LispVal v : {closure, port, nested}) {
+        auto bin = e.try_call("send!", {client, v});
+        BOOST_REQUIRE(!bin.has_value());
+        BOOST_TEST(runtime_error_msg(bin.error()).find("not serializable") != std::string::npos);
+
+        auto text = e.try_call("send!", {client, v, e.sym("text")});
+        BOOST_REQUIRE(!text.has_value());
+        BOOST_TEST(runtime_error_msg(text.error()).find("not serializable") != std::string::npos);
+    }
+
+    /// Nothing reached the peer; a valid send afterwards still works.
+    BOOST_TEST(e.call("send!", {client, e.fixnum(7)}) == nanbox::True);
+    auto recv_res = e.call("recv!", {server});
+    BOOST_TEST(*ops::decode<int64_t>(recv_res) == 7);
 
     e.call("nng-close", {server});
     e.call("nng-close", {client});

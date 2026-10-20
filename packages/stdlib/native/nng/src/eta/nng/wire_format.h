@@ -546,7 +546,9 @@ inline bool is_binary_format(std::span<const uint8_t> data) {
  * symbol, cons/list, vector, bytevector (recursive).
  *
  * Non-serializable values (closures, continuations, ports, tensors) are
- * silently encoded as nil.
+ * silently encoded as nil. Use this only for runtime-built messages whose
+ * contents are known to be transferable (e.g. monitor DOWN lists); user
+ * payloads must go through serialize_binary_strict().
  *
  * @param v      The value to serialize.
  * @param heap   The heap (needed to dereference heap objects).
