@@ -3,7 +3,7 @@ name: ci
 # Build and test gate. Runs on push to main and on PRs, and is called by
 # release.yml so a release bundle is only built from a tree that passes.
 #
-#   linux-release    Release, GCC
+#   linux-release    Release, GCC; also eta_fmt --check and eta_lint on stdlib + cookbook
 #   linux-gc-torture Release, GCC; gc_rooting_tests + cookbook, ETA_GC_TORTURE=20
 #   windows-release  Release, MSVC
 
@@ -79,10 +79,20 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
-        run: cmake --build build --target $CI_TARGETS
+        run: cmake --build build --target $CI_TARGETS eta_formatter eta_linter
 
       - name: Test
         run: ctest --test-dir build --output-on-failure -R "$CI_TESTS"
+
+      # Formatter/linter gates for the Eta corpora (formerly lint.yml). They run
+      # even when tests fail so all problems surface in one CI pass.
+      - name: Check formatting
+        if: success() || failure()
+        run: ./build/eta/tools/formatter/eta_fmt --check stdlib cookbook
+
+      - name: Run linter
+        if: success() || failure()
+        run: ./build/eta/tools/linter/eta_lint --max-warnings 0 --format github stdlib cookbook
 
   # GC rooting gate: collect every 20th allocation (ETA_GC_TORTURE, see
   # heap.h) while running the rooting regressions and the whole cookbook.
