@@ -378,6 +378,18 @@ add_custom_target(eta_rebuild_and_test
     USES_TERMINAL
 )
 
+if(TARGET eta_test)
+    add_test(
+        NAME eta_stdlib_tests
+        COMMAND $<TARGET_FILE:eta_test>
+            --path "${ETA_STDLIB_SOURCE_DIR}"
+            "${ETA_STDLIB_SOURCE_DIR}/tests"
+    )
+    set_tests_properties(eta_stdlib_tests PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        ENVIRONMENT "ETA_MODULE_PATH=")
+endif()
+
 add_test(
     NAME stdlib_doc_extractor_tests
     COMMAND ${Python3_EXECUTABLE}

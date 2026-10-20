@@ -20,10 +20,15 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Build + test gate (ci.yml). The bundle jobs below only run if it passes.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   # ════════════════════════════════════════════════════════════════════
   # Linux x86_64
   # ════════════════════════════════════════════════════════════════════
   build-linux:
+    needs: ci
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ github.ref_name || inputs.tag_name || 'dev' }}
@@ -143,6 +148,7 @@ jobs:
   # Windows x64
   # ════════════════════════════════════════════════════════════════════
   build-windows:
+    needs: ci
     runs-on: windows-latest
     env:
       VERSION: ${{ github.ref_name || inputs.tag_name || 'dev' }}

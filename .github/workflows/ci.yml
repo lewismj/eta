@@ -1,0 +1,198 @@
+name: ci
+
+# Build and test gate. Runs on push to main and on PRs, and is called by
+# release.yml so a release bundle is only built from a tree that passes.
+#
+#   linux-release    Release, GCC
+#   linux-gc-torture Release, GCC; gc_rooting_tests + cookbook, ETA_GC_TORTURE=20
+#   windows-release  Release, MSVC
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ETA_LIBTORCH_VER: 2.11.0
+  CI_TARGETS: eta_core_test eta_pkg_test eta_cli_test eta_test
+  CI_TESTS: ^(eta_core_test|eta_pkg_test|eta_cli_test|eta_stdlib_tests)$
+
+jobs:
+  linux:
+    name: linux-release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build uuid-dev libssl-dev ccache
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-linux-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: vcpkg-linux-
+
+      - name: Install Boost via vcpkg
+        env:
+          X_VCPKG_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git /tmp/vcpkg
+          /tmp/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          /tmp/vcpkg/vcpkg install boost-test:x64-linux boost-unordered:x64-linux
+
+      - name: Cache libtorch download
+        uses: actions/cache@v4
+        with:
+          path: build/_libtorch_dl
+          key: libtorch-linux-cpu-${{ env.ETA_LIBTORCH_VER }}
+
+      - name: Cache compiler output
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-release
+          max-size: 2G
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build build --target $CI_TARGETS
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -R "$CI_TESTS"
+
+  # GC rooting gate: collect every 20th allocation (ETA_GC_TORTURE, see
+  # heap.h) while running the rooting regressions and the whole cookbook.
+  # An unrooted temporary shows up as a crash, wrong output or a hang.
+  gc-torture:
+    name: linux-gc-torture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build uuid-dev libssl-dev ccache
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-linux-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: vcpkg-linux-
+
+      - name: Install Boost via vcpkg
+        env:
+          X_VCPKG_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git /tmp/vcpkg
+          /tmp/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          /tmp/vcpkg/vcpkg install boost-test:x64-linux boost-unordered:x64-linux
+
+      - name: Cache libtorch download
+        uses: actions/cache@v4
+        with:
+          path: build/_libtorch_dl
+          key: libtorch-linux-cpu-${{ env.ETA_LIBTORCH_VER }}
+
+      - name: Cache compiler output
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-gc-torture
+          max-size: 2G
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build build --target eta_core_test
+
+      - name: GC torture (interval 20)
+        working-directory: build
+        env:
+          ETA_GC_TORTURE: 20
+          ETA_MODULE_PATH: ""
+        run: |
+          exe="$(find "$GITHUB_WORKSPACE/build" -type f -name eta_core_test -perm -u+x | head -n1)"
+          test -n "$exe" || { echo "eta_core_test not found"; exit 1; }
+          "$exe" --log_level=test_suite \
+            --run_test=gc_rooting_tests:example_runner_tests:compiled_example_tests
+
+  windows:
+    name: windows-release
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-windows-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: vcpkg-windows-
+
+      - name: Install Boost via vcpkg
+        shell: pwsh
+        env:
+          X_VCPKG_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+          $vcpkg = "${{ runner.temp }}\vcpkg"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git $vcpkg
+          & "$vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          & "$vcpkg\vcpkg" install boost-test:x64-windows boost-unordered:x64-windows openssl:x64-windows
+          echo "VCPKG_DIR=$vcpkg" >> $env:GITHUB_ENV
+
+      - name: Cache libtorch download
+        uses: actions/cache@v4
+        with:
+          path: build/_libtorch_dl
+          key: libtorch-windows-cpu-${{ env.ETA_LIBTORCH_VER }}
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_DIR }}\scripts\buildsystems\vcpkg.cmake
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --target $env:CI_TARGETS.Split(' ')
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure -R '${{ env.CI_TESTS }}'

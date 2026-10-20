@@ -1332,8 +1332,14 @@ CliResult<fs::path> ensure_git_cache(const eta::package::ManifestDependency& dep
     const fs::path tmp_dir = cache_root / ("tmp-git-" + stamp);
     if (auto rm = remove_path_if_exists(tmp_dir); !rm) return std::unexpected(rm.error());
 
+    // Lockfile and `eta add` sources reach here without passing through the
+    // manifest parser, so re-check, and use `--` so the URL is never an option.
+    if (!eta::package::is_safe_git_url(dependency.git)) {
+        return std::unexpected("refusing unsafe git url for dependency '" + dependency.name
+                               + "': " + dependency.git);
+    }
     auto clone_result = run_external(
-        "git", {"clone", "--quiet", "--no-checkout", dependency.git, tmp_dir.string()});
+        "git", {"clone", "--quiet", "--no-checkout", "--", dependency.git, tmp_dir.string()});
     if (!clone_result) return std::unexpected(clone_result.error());
     if (*clone_result != 0) {
         (void)remove_path_if_exists(tmp_dir);
@@ -3051,6 +3057,9 @@ CliResult<AddOptions> parse_add_options(const std::vector<std::string>& args) {
     if (options.git.has_value()) {
         if (!options.rev.has_value()) {
             return std::unexpected("eta add: git dependencies require --rev <40-hex>");
+        }
+        if (!eta::package::is_safe_git_url(*options.git)) {
+            return std::unexpected("eta add: --git must be https://, ssh:// or git@host:path");
         }
         if (!looks_like_hex(*options.rev, 40u)) {
             return std::unexpected("eta add: --rev must be a full 40-hex commit id");

@@ -141,6 +141,16 @@ ManifestResult parse_manifest(std::string_view text,
                               const fs::path& source_path = {});
 
 /**
+ * @brief True when `url` is safe to hand to `git clone` as a remote.
+ *
+ * Accepts only `https://host/...`, `ssh://host/...` and scp-style
+ * `git@host:path`. Rejects a leading `-` (option injection), a host starting
+ * with `-` (ssh option injection), whitespace and control characters, and
+ * every other transport (`ext::`, `file://`, local paths, ...).
+ */
+[[nodiscard]] bool is_safe_git_url(std::string_view url);
+
+/**
  * @brief Read and parse `eta.toml` from disk.
  */
 ManifestResult read_manifest(const fs::path& manifest_path);

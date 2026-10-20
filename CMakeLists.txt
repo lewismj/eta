@@ -25,6 +25,27 @@ endif()
 
 enable_testing()
 
+# AddressSanitizer for local builds (not run in CI). Set before any target or
+# FetchContent dependency is declared so the whole build is instrumented.
+#   cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DETA_ENABLE_ASAN=ON
+option(ETA_ENABLE_ASAN "Build with AddressSanitizer" OFF)
+if(ETA_ENABLE_ASAN)
+    if(MSVC)
+        # MSVC ASan is incompatible with /RTC* and incremental linking. Prebuilt
+        # libtorch is release-runtime only, so prefer a Release/RelWithDebInfo
+        # config here; torch_tests are already skipped in MSVC Debug.
+        foreach(_flags CMAKE_C_FLAGS_DEBUG CMAKE_CXX_FLAGS_DEBUG)
+            string(REGEX REPLACE "/RTC[1csu]*" "" ${_flags} "${${_flags}}")
+        endforeach()
+        add_compile_options(/fsanitize=address /Zi)
+        add_link_options(/INCREMENTAL:NO)
+    else()
+        add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+        add_link_options(-fsanitize=address)
+    endif()
+    message(STATUS "AddressSanitizer enabled")
+endif()
+
 include(cmake/FetchXeus.cmake)
 
 add_subdirectory(eta)

@@ -307,6 +307,13 @@ parse_dependency_inline_table(std::string_view dep_name,
                 line_no,
             });
         }
+        if (!is_safe_git_url(dep.git)) {
+            return std::unexpected(ManifestError{
+                ManifestError::Code::InvalidValue,
+                "git dependency url must be https://, ssh:// or git@host:path",
+                line_no,
+            });
+        }
         dep.kind = ManifestDependencyKind::Git;
         return dep;
     }
@@ -1114,6 +1121,36 @@ ManifestResult read_manifest(const fs::path& manifest_path) {
         });
     }
     return std::move(*document->package);
+}
+
+bool is_safe_git_url(std::string_view url) {
+    if (url.empty() || url.front() == '-') return false;
+    for (const char c : url) {
+        const auto uc = static_cast<unsigned char>(c);
+        if (uc <= 0x20u || uc == 0x7fu) return false;
+    }
+
+    std::string_view rest;
+    if (url.starts_with("https://")) {
+        rest = url.substr(8u);
+    } else if (url.starts_with("ssh://")) {
+        rest = url.substr(6u);
+    } else if (url.starts_with("git@")) {
+        rest = url.substr(4u);
+        const auto colon = rest.find(':');
+        if (colon == std::string_view::npos || colon == 0u || colon + 1u >= rest.size()) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    // ssh://user@host: the host follows any userinfo.
+    if (const auto at = rest.find('@'); at != std::string_view::npos
+        && at < rest.find_first_of("/:")) {
+        rest = rest.substr(at + 1u);
+    }
+    return !rest.empty() && rest.front() != '-' && rest.front() != '/' && rest.front() != ':';
 }
 
 std::string write_manifest(const Manifest& manifest) {

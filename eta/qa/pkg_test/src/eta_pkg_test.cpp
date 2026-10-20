@@ -196,6 +196,51 @@ test_helpers = { path = "../test_helpers" }
                == static_cast<int>(eta::package::ManifestDependencyKind::Path));
 }
 
+BOOST_AUTO_TEST_CASE(git_url_validation_accepts_supported_transports) {
+    using eta::package::is_safe_git_url;
+    BOOST_TEST(is_safe_git_url("https://github.com/org/repo.git"));
+    BOOST_TEST(is_safe_git_url("ssh://git@github.com/org/repo.git"));
+    BOOST_TEST(is_safe_git_url("ssh://host:2222/org/repo.git"));
+    BOOST_TEST(is_safe_git_url("git@github.com:org/repo.git"));
+}
+
+BOOST_AUTO_TEST_CASE(git_url_validation_rejects_injection_and_other_transports) {
+    using eta::package::is_safe_git_url;
+    BOOST_TEST(!is_safe_git_url(""));
+    BOOST_TEST(!is_safe_git_url("--upload-pack=touch /tmp/pwned"));
+    BOOST_TEST(!is_safe_git_url("-cprotocol.ext.allow=always"));
+    BOOST_TEST(!is_safe_git_url("ext::sh -c touch% /tmp/pwned"));
+    BOOST_TEST(!is_safe_git_url("ssh://-oProxyCommand=touch /tmp/pwned/x"));
+    BOOST_TEST(!is_safe_git_url("ssh://user@-oProxyCommand=x/repo"));
+    BOOST_TEST(!is_safe_git_url("git@-oProxyCommand=x:repo"));
+    BOOST_TEST(!is_safe_git_url("git@host"));
+    BOOST_TEST(!is_safe_git_url("https://host/repo\nx"));
+    BOOST_TEST(!is_safe_git_url("https://"));
+    BOOST_TEST(!is_safe_git_url("http://example.com/repo.git"));
+    BOOST_TEST(!is_safe_git_url("file:///tmp/repo"));
+    BOOST_TEST(!is_safe_git_url("../local/repo"));
+}
+
+BOOST_AUTO_TEST_CASE(manifest_rejects_unsafe_git_dependency_url) {
+    const auto parsed = eta::package::parse_manifest(R"toml(
+[package]
+name = "app"
+version = "0.1.0"
+license = "MIT"
+
+[compatibility]
+eta = ">=0.6, <0.8"
+
+[dependencies]
+evil = { git = "--upload-pack=touch /tmp/pwned", rev = "0123456789abcdef0123456789abcdef01234567" }
+)toml");
+
+    BOOST_REQUIRE(!parsed);
+    BOOST_TEST(static_cast<int>(parsed.error().code)
+               == static_cast<int>(eta::package::ManifestError::Code::InvalidValue));
+    BOOST_TEST(parsed.error().message.find("git dependency url") != std::string::npos);
+}
+
 BOOST_AUTO_TEST_CASE(manifest_parses_and_sorts_path_dependencies) {
     const auto parsed = eta::package::parse_manifest(R"toml(
 [package]
