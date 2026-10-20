@@ -144,10 +144,18 @@ BOOST_AUTO_TEST_CASE(repository_roundtrip_and_generated_idempotence) {
         if (!fs::exists(root / name)) continue;
         for (const auto &entry : fs::recursive_directory_iterator(root / name)) {
             if (!entry.is_regular_file() || entry.path().extension() != ".eta") continue;
-            // Reviewed encoding refusal: present in the frozen Phase-0 manifest.
-            // Its lossless CST is tested there; the formatter must not normalize it.
-            if (entry.path() == root / "stdlib/std/test.eta") {
-                const auto refused = format::format_source(read(entry.path()));
+            // A working copy with mixed LF/CRLF (e.g. stdlib/std/test.eta under
+            // Windows autocrlf; git stores it LF-only) must be refused, not
+            // normalized. Decide from the bytes on disk, not the path, so a
+            // clean Linux checkout takes the ordinary round-trip below.
+            const auto text = read(entry.path());
+            const bool has_crlf = text.find("\r\n") != std::string::npos;
+            bool has_bare_lf = false;
+            for (std::size_t i = 0; i < text.size(); ++i) {
+                if (text[i] == '\n' && (i == 0 || text[i - 1] != '\r')) { has_bare_lf = true; break; }
+            }
+            if (has_crlf && has_bare_lf) {
+                const auto refused = format::format_source(text);
                 BOOST_TEST(!refused.output.has_value());
                 BOOST_TEST(refused.exit_class == 2);
                 BOOST_REQUIRE(!refused.diagnostics.empty());
@@ -156,12 +164,20 @@ BOOST_AUTO_TEST_CASE(repository_roundtrip_and_generated_idempotence) {
                 continue;
             }
             for (auto width : {100u, 40u}) {
-                BOOST_TEST_CONTEXT(entry.path().string() << " width=" << width) { checked(read(entry.path()), {.width = width}); }
+                BOOST_TEST_CONTEXT(entry.path().string() << " width=" << width) { checked(text, {.width = width}); }
             }
             ++count;
         }
     }
     BOOST_TEST(count > 100u);
+    {
+        /// Same refusal, independent of how this checkout stores line endings.
+        const auto refused = format::format_source("(a)\r\n(b)\n");
+        BOOST_TEST(!refused.output.has_value());
+        BOOST_TEST(refused.exit_class == 2);
+        BOOST_REQUIRE(!refused.diagnostics.empty());
+        BOOST_TEST(refused.diagnostics.back().code == "format.LineEndings");
+    }
     std::mt19937 random(0xE7A1);
     for (int i = 0; i < 200; ++i) {
         std::string source = "(unknown ";
