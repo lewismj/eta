@@ -261,8 +261,11 @@ void run_remote_monitor_exit_case(
     auto monitor_ref = client.monitor(*client_pid, *worker);
     BOOST_REQUIRE(monitor_ref.has_value());
 
+    /// Trigger over the same link, so it is ordered after the monitor request.
+    /// A local server.send could wake the worker before the request arrives,
+    /// and a monitor on an already-dead pid is answered with an Error DOWN.
     eta::runtime::actor::ActorSystem::BinaryMessage trigger{0x01u};
-    BOOST_TEST(server.send(*worker, std::move(trigger)));
+    BOOST_TEST(client.send(*worker, std::move(trigger)));
 
     auto down = client.receive(*client_pid, std::chrono::milliseconds(5000));
     BOOST_REQUIRE(down.has_value());
