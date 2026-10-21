@@ -3750,6 +3750,53 @@ BOOST_FIXTURE_TEST_CASE(apply_zero_argc_returns_error, BoundsCheckFixture) {
     BOOST_CHECK(!result.has_value());
 }
 
+/**
+ * StoreLocal into the slot that held the popped value: once popped, that slot
+ * is one past the end, so the store must fail rather than write out of bounds.
+ */
+BOOST_FIXTURE_TEST_CASE(storelocal_into_popped_slot_returns_error, BoundsCheckFixture) {
+    BytecodeFunction func;
+    func.name       = "storelocal_top";
+    func.stack_size = 0;
+    func.constants.push_back(nanbox::True);
+    func.code.push_back({OpCode::LoadConst,  0u});  ///< stack: [True], slot 0 is the top
+    func.code.push_back({OpCode::StoreLocal, 0u});
+    func.code.push_back({OpCode::LoadConst,  0u});
+    func.code.push_back({OpCode::Return,     0u});
+
+    auto result = execute_func(func);
+    BOOST_CHECK(!result.has_value());
+}
+
+/// A callee cannot pop operands that belong to its caller's frame.
+BOOST_FIXTURE_TEST_CASE(pop_below_frame_pointer_returns_error, BoundsCheckFixture) {
+    BytecodeFunction callee;
+    callee.name       = "pops_caller";
+    callee.stack_size = 0;
+    callee.constants.push_back(nanbox::True);
+    callee.code.push_back({OpCode::Pop,       0u});  ///< nothing of its own to pop
+    callee.code.push_back({OpCode::LoadConst, 0u});
+    callee.code.push_back({OpCode::Return,    0u});
+
+    BytecodeFunction caller;
+    caller.name       = "caller";
+    caller.stack_size = 0;
+    caller.constants.push_back(nanbox::True);
+    caller.constants.push_back(encode_func_index(0));
+    caller.code.push_back({OpCode::LoadConst,   0u});        ///< caller-owned operand
+    caller.code.push_back({OpCode::MakeClosure, 1u << 16});  ///< closure over callee, no upvals
+    caller.code.push_back({OpCode::Call,        0u});
+    caller.code.push_back({OpCode::Return,      0u});
+
+    VM vm(heap, intern_table);
+    vm.set_function_resolver([&](uint32_t idx) -> const BytecodeFunction* {
+        return idx == 0 ? &callee : nullptr;
+    });
+    vm.globals().resize(16, nanbox::Nil);
+    auto result = vm.execute(caller);
+    BOOST_CHECK(!result.has_value());
+}
+
 BOOST_AUTO_TEST_SUITE_END() ///< vm_bounds_check_tests
 
 /// SandboxScope enables sandbox mode and restores the previous setting, even on exceptions.

@@ -550,6 +550,102 @@ BOOST_AUTO_TEST_CASE(roundtrip_heap_cons_constant) {
 }
 
 /**
+ * Constant nesting.  A list's cdr spine is iterative in both directions, so
+ * only car/vector nesting counts towards MAX_CONST_DEPTH.
+ */
+
+namespace {
+
+/// One function whose only constant is @p c.
+semantics::BytecodeFunctionRegistry single_constant_registry(LispVal c) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name = "nested";
+    func.constants.push_back(c);
+    func.code.push_back({OpCode::LoadConst, 0});
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+    return reg;
+}
+
+/// (((... (k) ...))) with @p levels conses nested in the car.
+LispVal nest_in_car(memory::heap::Heap& heap, memory::heap::Heap::ExternalRootFrame& roots,
+                    uint32_t levels, int64_t k) {
+    LispVal v = ops::encode(k).value();
+    for (uint32_t i = 0; i < levels; ++i) {
+        v = memory::factory::make_cons(heap, v, Nil).value();
+        roots.push(v);
+    }
+    return v;
+}
+
+} ///< namespace
+
+/// A list far longer than any safe recursion depth round-trips intact.
+BOOST_AUTO_TEST_CASE(roundtrip_long_list_constant) {
+    constexpr int64_t kLen = 100'000;
+    /// The fixture's 1 MiB heap has no GC hook, so it can't hold the list and its copy.
+    memory::heap::Heap big_heap{64 * 1024 * 1024};
+    BytecodeSerializer big_serializer{big_heap, intern_table};
+    auto roots = big_heap.make_external_root_frame();
+    LispVal list = Nil;
+    for (int64_t i = kLen; i > 0; --i) {
+        list = memory::factory::make_cons(big_heap, ops::encode(i).value(), list).value();
+        roots.push(list);
+    }
+
+    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+    BOOST_REQUIRE(big_serializer.serialize({}, single_constant_registry(list), 42, true, ss));
+    ss.seekg(0);
+    auto result = big_serializer.deserialize(ss);
+    BOOST_REQUIRE(result.has_value());
+    LispVal cur = result->registry.get(0)->constants[0];
+    roots.push(cur);
+    for (int64_t i = 1; i <= kLen; ++i) {
+        auto* c = big_heap.try_get_as<memory::heap::ObjectKind::Cons, types::Cons>(ops::payload(cur));
+        BOOST_REQUIRE(c);
+        BOOST_REQUIRE_EQUAL(ops::decode<int64_t>(c->car).value_or(-1), i);
+        cur = c->cdr;
+    }
+    BOOST_CHECK(cur == Nil);
+}
+
+/// Car nesting at MAX_CONST_DEPTH round-trips; one level more is refused by the writer.
+BOOST_AUTO_TEST_CASE(constant_car_nesting_limit) {
+    auto roots = heap.make_external_root_frame();
+    const auto at_limit = nest_in_car(heap, roots, BytecodeSerializer::MAX_CONST_DEPTH, 7);
+    BOOST_CHECK(roundtrip({}, single_constant_registry(at_limit)).has_value());
+
+    const auto over = nest_in_car(heap, roots, BytecodeSerializer::MAX_CONST_DEPTH + 1, 7);
+    auto result = roundtrip({}, single_constant_registry(over));
+    BOOST_REQUIRE(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::IOError);
+}
+
+/// The reader enforces the limit itself, for files the writer would never produce.
+BOOST_AUTO_TEST_CASE(deserialize_rejects_constant_nested_too_deep) {
+    constexpr int64_t kMarker = 0x1234'5678'9ABC; ///< fits a fixnum; unlikely elsewhere in the file
+    auto roots = heap.make_external_root_frame();
+    const auto at_limit = nest_in_car(heap, roots, BytecodeSerializer::MAX_CONST_DEPTH, kMarker);
+
+    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+    BOOST_REQUIRE(serializer.serialize({}, single_constant_registry(at_limit), 42, true, ss));
+    std::string bytes = ss.str();
+
+    /// Wrap the innermost fixnum in one more cons: CT_Fixnum k  ->  CT_HeapCons CT_Fixnum k CT_Nil.
+    std::string fixnum(1, '\x02');
+    for (int i = 0; i < 8; ++i) fixnum.push_back(static_cast<char>((kMarker >> (8 * i)) & 0xFF));
+    const auto pos = bytes.find(fixnum);
+    BOOST_REQUIRE(pos != std::string::npos);
+    bytes.replace(pos, fixnum.size(), std::string(1, '\x08') + fixnum + std::string(1, '\x00'));
+
+    std::stringstream crafted(bytes, std::ios::in | std::ios::binary);
+    BOOST_CHECK(!serializer.deserialize(crafted).has_value());
+}
+
+/**
  * Error cases
  */
 

@@ -916,7 +916,8 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
         }
         const auto& instr = current_func_->code[pc_++];
         const OpCode dispatched_op = instr.opcode;
-        if (stack_.size() < stack_operands(instr)) [[unlikely]]
+        /// Operands must come from this frame: never pop below fp_ into the caller's.
+        if (stack_.size() < static_cast<std::size_t>(fp_) + stack_operands(instr)) [[unlikely]]
             return std::unexpected(make_stack_underflow_error(dispatched_op));
         charge_reductions();
         const auto instr_span = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)
@@ -924,11 +925,18 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
         switch (instr.opcode) {
             case OpCode::Nop:
                 break;
-            case OpCode::StoreLocal:
-                if (fp_ + instr.arg >= stack_.size()) [[unlikely]]
+            case OpCode::StoreLocal: {
+                /**
+                 * Pop before the bounds check: if the slot is the old top of
+                 * stack it no longer exists once the value has been popped.
+                 */
+                const LispVal v = pop();
+                const std::size_t slot = static_cast<std::size_t>(fp_) + instr.arg;
+                if (slot >= stack_.size()) [[unlikely]]
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "StoreLocal: slot out of range"}});
-                stack_[fp_ + instr.arg] = pop();
+                stack_[slot] = v;
                 break;
+            }
             case OpCode::Values: {
                 /// [n] -> pack top n values into a MultipleValues object
                 uint32_t n = instr.arg;
@@ -1035,11 +1043,13 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
                 }
                 break;
             }
-            case OpCode::LoadLocal:
-                if (fp_ + instr.arg >= stack_.size()) [[unlikely]]
+            case OpCode::LoadLocal: {
+                const std::size_t slot = static_cast<std::size_t>(fp_) + instr.arg;
+                if (slot >= stack_.size()) [[unlikely]]
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction, "LoadLocal: slot out of range"}});
-                push(stack_[fp_ + instr.arg]);
+                push(stack_[slot]);
                 break;
+            }
             case OpCode::LoadUpval: {
                 auto closure = get_as_or_error<ObjectKind::Closure, Closure>(current_closure_, "LoadUpval outside of a closure");
                 if (!closure) return std::unexpected(closure.error());

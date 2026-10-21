@@ -241,6 +241,11 @@ public:
     static constexpr uint32_t MAX_DEP_HASH_ENTRIES = 65535u; ///< max dep-hash table entries
     static constexpr uint32_t MAX_FRAME_SLOTS = 1u << 20;    ///< max BytecodeFunction::stack_size
     static constexpr uint32_t MAX_GLOBALS     = 1u << 24;    ///< max ModuleEntry::total_globals
+    /**
+     * Max car/vector nesting of a constant.  A list's cdr spine is read and
+     * written iteratively, so list length does not count towards it.
+     */
+    static constexpr uint32_t MAX_CONST_DEPTH = 1024u;
 
 private:
     memory::heap::Heap& heap_;
@@ -283,10 +288,10 @@ private:
         CT_False     = 12,
     };
 
-    void write_constant(std::ostream& os, nanbox::LispVal v) const;
-    std::expected<nanbox::LispVal, SerializerError> read_constant(std::istream& is) const;
+    void write_constant(std::ostream& os, nanbox::LispVal v, std::uint32_t depth = 0) const;
+    std::expected<nanbox::LispVal, SerializerError> read_constant(std::istream& is, std::uint32_t depth = 0) const;
 
-    void write_heap_value(std::ostream& os, nanbox::LispVal v) const;
+    void write_heap_value(std::ostream& os, nanbox::LispVal v, std::uint32_t depth) const;
 
     /**
      * Lightweight structural verifier: checks that opcode bytes, index args,

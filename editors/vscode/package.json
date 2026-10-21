@@ -43,6 +43,12 @@
         "onCommand:eta.lintWorkspace"
     ],
     "main": "./out/extension.js",
+    "capabilities": {
+        "untrustedWorkspaces": {
+            "supported": false,
+            "description": "Eta starts eta_lsp, eta_dap and eta_test, and may pick them up from the workspace's build output. It is disabled until the workspace is trusted."
+        }
+    },
     "contributes": {
         "languages": [
             {
@@ -129,6 +135,7 @@
                 },
                 "eta.lsp.serverPath": {
                     "type": "string",
+                    "scope": "machine",
                     "default": "",
                     "description": "Path to the eta_lsp executable. If empty, searches PATH."
                 },
@@ -156,6 +163,7 @@
                 },
                 "eta.dap.executablePath": {
                     "type": "string",
+                    "scope": "machine",
                     "default": "",
                     "description": "Full path to the eta_dap executable OR the directory containing it (e.g. C:\\Eta\\bin or C:\\Eta\\bin\\eta_dap.exe). If empty, searches next to eta_lsp, then workspace build output, then PATH."
                 },
@@ -164,6 +172,7 @@
                     "items": {
                         "type": "string"
                     },
+                    "scope": "machine",
                     "default": [],
                     "description": "Additional directories or executable paths searched for Eta binaries. Supports ${workspaceFolder} token."
                 },
@@ -244,6 +253,7 @@
                 },
                 "eta.test.runnerPath": {
                     "type": "string",
+                    "scope": "machine",
                     "default": "",
                     "description": "Path to the eta_test executable OR the directory containing it (e.g. C:\\Eta\\bin or C:\\Eta\\bin\\eta_test.exe). If empty, searches next to resolved eta_lsp/eta_dap, then workspace build output, then PATH."
                 }

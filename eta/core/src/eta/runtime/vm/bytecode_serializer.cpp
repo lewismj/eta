@@ -315,7 +315,7 @@ BytecodeSerializer::check_freshness(const EtacFile& file, const FreshnessContext
  * Constant serialization
  */
 
-void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
+void BytecodeSerializer::write_constant(std::ostream& os, LispVal v, uint32_t depth) const {
     /// Check special sentinels first
     if (v == Nil) { write_u8(os, CT_Nil); return; }
     if (v == True) { write_u8(os, CT_True); return; }
@@ -371,7 +371,7 @@ void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
             return;
         }
         case Tag::HeapObject: {
-            write_heap_value(os, v);
+            write_heap_value(os, v, depth);
             return;
         }
         case Tag::Nan: {
@@ -397,22 +397,38 @@ void BytecodeSerializer::write_constant(std::ostream& os, LispVal v) const {
     }
 }
 
-void BytecodeSerializer::write_heap_value(std::ostream& os, LispVal v) const {
+void BytecodeSerializer::write_heap_value(std::ostream& os, LispVal v, uint32_t depth) const {
     using namespace memory::heap;
     auto id = ops::payload(v);
 
-    if (auto* cons = heap_.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
-        write_u8(os, CT_HeapCons);
-        write_constant(os, cons->car);
-        write_constant(os, cons->cdr);
+    if (heap_.try_get_as<ObjectKind::Cons, types::Cons>(id)) {
+        /**
+         * Refuse nesting read_constant would reject, so a compiled artifact
+         * always loads (same contract as write_str's MAX_STRING_LEN).
+         */
+        if (depth >= MAX_CONST_DEPTH) { os.setstate(std::ios::failbit); return; }
+        /**
+         * The encoding nests each cdr inside its cons, but walk the spine
+         * iteratively so a long quoted list doesn't recurse once per element.
+         */
+        LispVal cur = v;
+        while (ops::is_boxed(cur) && ops::tag(cur) == Tag::HeapObject) {
+            auto* cons = heap_.try_get_as<ObjectKind::Cons, types::Cons>(ops::payload(cur));
+            if (!cons) break;
+            write_u8(os, CT_HeapCons);
+            write_constant(os, cons->car, depth + 1);
+            cur = cons->cdr;
+        }
+        write_constant(os, cur, depth + 1);
         return;
     }
 
     if (auto* vec = heap_.try_get_as<ObjectKind::Vector, types::Vector>(id)) {
+        if (depth >= MAX_CONST_DEPTH) { os.setstate(std::ios::failbit); return; }
         write_u8(os, CT_HeapVec);
         write_u32(os, static_cast<uint32_t>(vec->elements.size()));
         for (auto elem : vec->elements) {
-            write_constant(os, elem);
+            write_constant(os, elem, depth + 1);
         }
         return;
     }
@@ -423,7 +439,7 @@ void BytecodeSerializer::write_heap_value(std::ostream& os, LispVal v) const {
 }
 
 std::expected<LispVal, SerializerError>
-BytecodeSerializer::read_constant(std::istream& is) const {
+BytecodeSerializer::read_constant(std::istream& is, uint32_t depth) const {
     uint8_t tag;
     if (!read_u8(is, tag)) return std::unexpected(SerializerError::Truncated);
 
@@ -473,18 +489,32 @@ BytecodeSerializer::read_constant(std::istream& is) const {
             return encode_func_index(idx);
         }
         case CT_HeapCons: {
+            /// Mirrors write_heap_value: cars nest, the cdr spine is a loop.
+            if (depth >= MAX_CONST_DEPTH) return std::unexpected(SerializerError::CorruptConstant);
             auto roots = heap_.make_external_root_frame();
-            auto car = read_constant(is);
-            if (!car) return car;
-            roots.push(*car);
-            auto cdr = read_constant(is);
-            if (!cdr) return cdr;
-            roots.push(*cdr);
-            auto res = memory::factory::make_cons(heap_, *car, *cdr);
-            if (!res) return std::unexpected(SerializerError::CorruptConstant);
-            return *res;
+            std::vector<LispVal> cars;
+            for (;;) {
+                auto car = read_constant(is, depth + 1);
+                if (!car) return car;
+                cars.push_back(*car);
+                roots.push(*car);
+                if (is.peek() != CT_HeapCons) break;
+                is.get(); ///< consume the next spine cell's tag
+            }
+            auto tail = read_constant(is, depth + 1);
+            if (!tail) return tail;
+            LispVal list = *tail;
+            roots.push(list);
+            for (auto it = cars.rbegin(); it != cars.rend(); ++it) {
+                auto res = memory::factory::make_cons(heap_, *it, list);
+                if (!res) return std::unexpected(SerializerError::CorruptConstant);
+                list = *res;
+                roots.push(list);
+            }
+            return list;
         }
         case CT_HeapVec: {
+            if (depth >= MAX_CONST_DEPTH) return std::unexpected(SerializerError::CorruptConstant);
             uint32_t len;
             if (!read_u32(is, len)) return std::unexpected(SerializerError::Truncated);
             /// Guard against unbounded vector allocation from crafted files.
@@ -494,7 +524,7 @@ BytecodeSerializer::read_constant(std::istream& is) const {
             elems.reserve(len);
             auto roots = heap_.make_external_root_frame();
             for (uint32_t i = 0; i < len; ++i) {
-                auto elem = read_constant(is);
+                auto elem = read_constant(is, depth + 1);
                 if (!elem) return elem;
                 elems.push_back(*elem);
                 roots.push(*elem);

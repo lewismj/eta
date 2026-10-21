@@ -123,6 +123,11 @@ Install Eta from a [release bundle](https://github.com/eta-lang/eta/releases) â€
 | `eta.binaries.searchPaths` | `string[]` | `[]` | Additional directories or explicit executable paths searched for Eta binaries. Supports `${workspaceFolder}`. |
 | `eta.debug.autoShowHeap` | `boolean` | `true` | Automatically open the Heap Inspector when a debug session starts. |
 
+`eta.lsp.serverPath`, `eta.dap.executablePath`, `eta.test.runnerPath` and `eta.binaries.searchPaths`
+are machine-scoped: they are read from user settings only, and values in a workspace's
+`.vscode/settings.json` are ignored. The extension does not run in Restricted Mode, because it starts
+these binaries and may find them in the workspace's build output; trust the workspace to enable it.
+
 LSP module-symbol indexing uses the same directory exclusions as workspace linting:
 hidden directories and build/dependency output directories are not recursively indexed.
 This does not change module import lookup.
