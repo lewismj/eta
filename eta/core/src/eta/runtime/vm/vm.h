@@ -807,6 +807,7 @@ private:
 
     bool values_eqv(LispVal a, LispVal b) const;
     std::expected<void, RuntimeError> do_binary_arithmetic(OpCode op);
+    std::expected<void, RuntimeError> do_numeric_compare(uint32_t arg); ///< NumCmp; arg = numeric_ops::CmpOp
     std::expected<void, RuntimeError> pack_rest_args(uint32_t argc, uint32_t required);
 
     /**

@@ -11,6 +11,7 @@
 
 #include "eta/runtime/types/types.h"
 #include "eta/runtime/factory.h"
+#include "eta/runtime/numeric_ops.h"
 
 namespace eta::runtime::vm {
 
@@ -213,6 +214,7 @@ BytecodeSerializer::check_freshness(const EtacFile& file, const FreshnessContext
     if (file.format_version != FORMAT_VERSION_V3
         && file.format_version != FORMAT_VERSION_V4
         && file.format_version != FORMAT_VERSION_V5
+        && file.format_version != FORMAT_VERSION_V6
         && file.format_version != FORMAT_VERSION) {
         return FreshnessResult{
             .status = FreshnessStatus::UnsupportedFormat,
@@ -704,6 +706,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     if (version != FORMAT_VERSION_V3
         && version != FORMAT_VERSION_V4
         && version != FORMAT_VERSION_V5
+        && version != FORMAT_VERSION_V6
         && version != FORMAT_VERSION) {
         return std::unexpected(SerializerError::VersionMismatch);
     }
@@ -722,7 +725,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     if (expected_builtins != 0 && file_builtins != expected_builtins)
         return std::unexpected(SerializerError::BuiltinCountMismatch);
 
-    if (version >= FORMAT_VERSION) {
+    if (version >= FORMAT_VERSION_V6) {
         if (!read_u64(is, result.extension_env_hash)) {
             return std::unexpected(SerializerError::Truncated);
         }
@@ -1055,6 +1058,10 @@ BytecodeSerializer::verify_function(const BytecodeFunction& func,
         else if (instr.opcode == OpCode::Apply ||
                  instr.opcode == OpCode::TailApply) {
             if (instr.arg == 0 || instr.arg > MAX_FRAME_SLOTS)
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        else if (instr.opcode == OpCode::NumCmp) {
+            if (instr.arg > numeric_ops::kMaxCmpOp)
                 return std::unexpected(SerializerError::InvalidBytecode);
         }
         /// All other opcodes: no index-based args requiring static validation.

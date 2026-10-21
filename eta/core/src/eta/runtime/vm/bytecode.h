@@ -105,6 +105,9 @@ enum class OpCode : std::uint8_t {
     _Reserved1,     ///< was DualVal  (removed)
     _Reserved2,     ///< was DualBp   (removed)
 
+    /// Numeric comparison: [a b ->] pop b, pop a; push (a <op> b). arg = numeric_ops::CmpOp
+    NumCmp,
+
     /**
      * WAM-style logic opcodes in the shared VM opcode table.
      *
@@ -184,6 +187,7 @@ constexpr const char* to_string(OpCode op) noexcept {
         case CopyTerm:          return "CopyTerm";
         case _Reserved1:        return "_Reserved1";
         case _Reserved2:        return "_Reserved2";
+        case NumCmp:            return "NumCmp";
         case WamGetVar:         return "WamGetVar";
         case WamGetVal:         return "WamGetVal";
         case WamGetConst:       return "WamGetConst";

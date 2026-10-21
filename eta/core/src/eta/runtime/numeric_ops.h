@@ -30,6 +30,31 @@ namespace eta::runtime::numeric_ops {
 enum class ArithOp : std::uint8_t { Add, Sub, Mul, Div };
 enum class CmpOp : std::uint8_t { NumEq, Lt, Gt, Le, Ge };
 
+/// Largest valid CmpOp encoding (NumCmp instruction arg is validated against this).
+inline constexpr std::uint32_t kMaxCmpOp = static_cast<std::uint32_t>(CmpOp::Ge);
+
+/// Scheme name of a comparison, used for error messages and disassembly.
+[[nodiscard]] constexpr const char* to_string(const CmpOp op) noexcept {
+    switch (op) {
+        case CmpOp::NumEq: return "=";
+        case CmpOp::Lt:    return "<";
+        case CmpOp::Gt:    return ">";
+        case CmpOp::Le:    return "<=";
+        case CmpOp::Ge:    return ">=";
+    }
+    return "?";
+}
+
+[[nodiscard]] constexpr const char* to_string(const ArithOp op) noexcept {
+    switch (op) {
+        case ArithOp::Add: return "+";
+        case ArithOp::Sub: return "-";
+        case ArithOp::Mul: return "*";
+        case ArithOp::Div: return "/";
+    }
+    return "?";
+}
+
 enum class NumError : std::uint8_t { NotANumber, DivisionByZero };
 
 using memory::factory::make_fixnum;

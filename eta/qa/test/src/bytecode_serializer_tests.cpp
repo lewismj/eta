@@ -222,6 +222,7 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     func.code.push_back({OpCode::CopyTerm, 0});
     func.code.push_back({OpCode::_Reserved1, 0});
     func.code.push_back({OpCode::_Reserved2, 0});
+    func.code.push_back({OpCode::NumCmp, 1});
     func.code.push_back({OpCode::WamGetVar, 1});
     func.code.push_back({OpCode::WamGetVal, 2});
     func.code.push_back({OpCode::WamGetConst, 3});
@@ -272,14 +273,16 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     BOOST_REQUIRE(result.has_value());
     auto* f = result->registry.get(0);
     BOOST_REQUIRE(f);
-    BOOST_CHECK_EQUAL(f->code.size(), 67u);
+    BOOST_CHECK_EQUAL(f->code.size(), 68u);
     /// Spot-check some opcodes
     BOOST_CHECK(f->code[0].opcode == OpCode::Nop);
     BOOST_CHECK(f->code[12].opcode == OpCode::Call);
     BOOST_CHECK_EQUAL(f->code[12].arg, 2u);
     BOOST_CHECK(f->code[14].opcode == OpCode::Return);
     BOOST_CHECK(f->code[41].opcode == OpCode::_Reserved2);
-    BOOST_CHECK(f->code[66].opcode == OpCode::WamSwitchOnStruct);
+    BOOST_CHECK(f->code[42].opcode == OpCode::NumCmp);
+    BOOST_CHECK_EQUAL(f->code[42].arg, 1u);
+    BOOST_CHECK(f->code[67].opcode == OpCode::WamSwitchOnStruct);
 }
 
 BOOST_AUTO_TEST_CASE(roundtrip_source_map) {
@@ -1312,6 +1315,38 @@ BOOST_AUTO_TEST_CASE(verifier_makeclosure_const_oob) {
     auto result = roundtrip({}, reg);
     BOOST_CHECK(!result.has_value());
     BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+}
+
+/// NumCmp with an arg beyond the last comparison operator must be rejected.
+BOOST_AUTO_TEST_CASE(verifier_numcmp_bad_operator) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name       = "bad_cmp";
+    func.stack_size = 2;
+    func.constants.push_back(Nil);
+    func.code.push_back({OpCode::NumCmp, 5u}); ///< valid range is 0..4
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_CHECK(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+}
+
+/// NumCmp with every valid operator must pass the verifier.
+BOOST_AUTO_TEST_CASE(verifier_numcmp_valid_operators) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name       = "ok_cmp";
+    func.stack_size = 2;
+    func.constants.push_back(Nil);
+    for (uint32_t op = 0; op <= 4; ++op) func.code.push_back({OpCode::NumCmp, op});
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.resize(func.code.size());
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_CHECK(result.has_value());
 }
 
 /**

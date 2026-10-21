@@ -93,7 +93,12 @@ enum class PrimitiveKind : std::uint8_t {
     Sub,
     Mul,
     Div,
-    Eq,
+    Eq,      ///< eqv? semantics (OpCode::Eq); not numeric =
+    NumEq,   ///< numeric =  (OpCode::NumCmp)
+    Lt,
+    Gt,
+    Le,
+    Ge,
 };
 
 /**

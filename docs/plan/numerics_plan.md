@@ -94,6 +94,17 @@ primitives can't drift apart.
   - `"="` now lowers to `NumEq`, not `Eq`.
   - Add `"<"`, `">"`, `"<="` and `">="`.
   - The `Eq` opcode stays, used only for `eqv?` semantics.
+- **Added during implementation:**
+  - **Catchable opcode errors:** errors from `Add`/`Sub`/`Mul`/`Div`/`NumCmp` now go through
+    `do_runtime_error`, so `catch` handlers see them, just as they see errors from the
+    equivalent primitive calls. Before, a type error in a specialised opcode aborted
+    execution. The messages now match the primitives' (`+: argument is not a number`,
+    `/: division by zero`). This was needed before Phase 4 turns specialisation on everywhere.
+  - **`ConstantFolding`:** it used its own unchecked arithmetic (signed-overflow UB, no
+    promotion to double). It now folds through `numeric_ops::arith`, so folded and
+    runtime results agree.
+  - **Format versions:** `FORMAT_VERSION_V6` was added for the extension-environment
+    header field, so v6 files still load after `FORMAT_VERSION` moved to 7.
 
 ## Phase 4: Use the existing opcodes by default
 

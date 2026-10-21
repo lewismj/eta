@@ -84,6 +84,7 @@ BOOST_AUTO_TEST_CASE(disasm_all_opcodes_have_names) {
     check(OpCode::CopyTerm);
     check(OpCode::_Reserved1);
     check(OpCode::_Reserved2);
+    check(OpCode::NumCmp);
     check(OpCode::WamGetVar);
     check(OpCode::WamGetVal);
     check(OpCode::WamGetConst);
@@ -109,6 +110,22 @@ BOOST_AUTO_TEST_CASE(disasm_all_opcodes_have_names) {
     check(OpCode::WamSwitchOnTerm);
     check(OpCode::WamSwitchOnConst);
     check(OpCode::WamSwitchOnStruct);
+}
+
+BOOST_AUTO_TEST_CASE(disasm_numcmp_shows_operator) {
+    BytecodeFunction func;
+    func.name = "cmp_test";
+    func.arity = 0;
+    func.stack_size = 2;
+    func.code.push_back({OpCode::NumCmp, 3}); ///< CmpOp::Le
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.resize(func.code.size());
+
+    std::ostringstream out;
+    disasm.disassemble(func, out);
+    std::string text = out.str();
+    BOOST_CHECK(text.find("NumCmp") != std::string::npos);
+    BOOST_CHECK(text.find("<=") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(disasm_constant_annotation) {

@@ -17,6 +17,7 @@
 #include "eta/runtime/string_view.h"
 #include "eta/runtime/numeric_ops.h"
 #include "eta/runtime/numeric_value.h"
+#include "eta/runtime/primitives/core_primitives_arithmetic_helpers.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/prof/profiler.h"
@@ -79,6 +80,7 @@ constexpr std::string_view kNonLocalTransferSentinel = "__eta.non_local_transfer
         case OpCode::Mul:
         case OpCode::Div:
         case OpCode::Eq:
+        case OpCode::NumCmp:
         case OpCode::CallWithValues:
         case OpCode::PatchClosureUpval:
         case OpCode::Throw:
@@ -1233,7 +1235,19 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
             case OpCode::Mul:
             case OpCode::Div: {
                 auto res = do_binary_arithmetic(instr.opcode);
-                if (!res) return std::unexpected(res.error());
+                if (!res) {
+                    /// Catchable, exactly like the equivalent primitive call
+                    auto handled = do_runtime_error(res.error(), instr_span);
+                    if (!handled) return std::unexpected(handled.error());
+                }
+                break;
+            }
+            case OpCode::NumCmp: {
+                auto res = do_numeric_compare(instr.arg);
+                if (!res) {
+                    auto handled = do_runtime_error(res.error(), instr_span);
+                    if (!handled) return std::unexpected(handled.error());
+                }
                 break;
             }
             case OpCode::Eq: {
@@ -1882,18 +1896,55 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
     const auto num_a = numeric_ops::classify(a, heap_);
     const auto num_b = numeric_ops::classify(b, heap_);
 
+    /// Messages match the builtin primitives so specialised and unspecialised code report identically
     if (!num_a.is_valid() || !num_b.is_valid()) {
-        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Expected a number"}});
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+            std::string(numeric_ops::to_string(arith_op)) + ": argument is not a number"}});
     }
 
     const auto result = numeric_ops::arith(arith_op, num_a, num_b);
     if (!result) {
-        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "/: division by zero"}});
     }
 
     auto res = numeric_ops::box(heap_, *result);
     if (!res) return std::unexpected(res.error());
     push(*res);
+    return {};
+}
+
+std::expected<void, RuntimeError> VM::do_numeric_compare(uint32_t arg) {
+    LispVal b = pop();
+    LispVal a = pop();
+
+    if (arg > numeric_ops::kMaxCmpOp) [[unlikely]] {
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction,
+            "NumCmp: invalid comparison operator"}});
+    }
+    const auto op = static_cast<numeric_ops::CmpOp>(arg);
+    const char* name = numeric_ops::to_string(op);
+
+    /// Fast path: immediate fixnums and flonums
+    NumericValue na{};
+    NumericValue nb{};
+    if (numeric_ops::classify_immediate(a, na) && numeric_ops::classify_immediate(b, nb)) {
+        push(numeric_ops::compare(op, na, nb) ? True : False);
+        return {};
+    }
+
+    if (types::tape_ref::is_tape_ref(a) || types::tape_ref::is_tape_ref(b)) {
+        auto r = runtime::detail::core_primitives_arithmetic::compare_tape_operands(heap_, this, name, op, a, b);
+        if (!r) return std::unexpected(r.error());
+        push(*r ? True : False);
+        return {};
+    }
+
+    auto r = numeric_ops::compare(heap_, op, a, b);
+    if (!r) {
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError,
+            std::string(name) + ": argument is not a number"}});
+    }
+    push(*r ? True : False);
     return {};
 }
 

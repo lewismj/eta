@@ -230,7 +230,8 @@ public:
     static constexpr uint16_t FORMAT_VERSION_V3 = 3;
     static constexpr uint16_t FORMAT_VERSION_V4 = 4;
     static constexpr uint16_t FORMAT_VERSION_V5 = 5;
-    static constexpr uint16_t FORMAT_VERSION = 6;   ///< v6 extension-environment metadata
+    static constexpr uint16_t FORMAT_VERSION_V6 = 6; ///< v6 extension-environment metadata
+    static constexpr uint16_t FORMAT_VERSION = 7;   ///< v7 NumCmp opcode (layout unchanged from v6)
     static constexpr uint16_t FLAG_HAS_DEBUG = 0x0001;
     static constexpr uint16_t FLAG_HAS_PACKAGE_META = 0x0002;
     static constexpr uint16_t FLAG_HAS_DEPHASH = 0x0004;

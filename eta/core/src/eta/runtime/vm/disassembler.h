@@ -7,6 +7,7 @@
 
 #include "eta/runtime/vm/bytecode.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/runtime/numeric_ops.h"
 #include "eta/runtime/memory/heap.h"
 #include "eta/runtime/memory/intern_table.h"
 #include "eta/semantics/emitter.h"
@@ -82,6 +83,12 @@ public:
                     os << "const=" << cidx << " upvals=" << nup;
                     break;
                 }
+                case OpCode::NumCmp:
+                    if (instr.arg <= numeric_ops::kMaxCmpOp)
+                        os << numeric_ops::to_string(static_cast<numeric_ops::CmpOp>(instr.arg));
+                    else
+                        os << "?" << instr.arg;
+                    break;
                 case OpCode::SetupCatch: {
                     uint32_t tidx = instr.arg >> 16;
                     uint32_t off  = instr.arg & 0xFFFF;

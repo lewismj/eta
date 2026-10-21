@@ -16,7 +16,7 @@ namespace eta::semantics::passes {
  *
  * The pass recognizes calls to immutable builtin globals and replaces them
  * with `core::PrimitiveCall`, which the emitter lowers directly to existing
- * VM opcodes (`Add`, `Sub`, `Mul`, `Div`, `Eq`, `Cons`, `Car`, `Cdr`).
+ * VM opcodes (`Add`, `Sub`, `Mul`, `Div`, `NumCmp`, `Cons`, `Car`, `Cdr`).
  */
 class PrimitiveSpecialisation : public OptimizationPass {
 public:
@@ -100,7 +100,12 @@ private:
             if (name == "-") return core::PrimitiveKind::Sub;
             if (name == "*") return core::PrimitiveKind::Mul;
             if (name == "/") return core::PrimitiveKind::Div;
-            if (name == "=") return core::PrimitiveKind::Eq;
+            /// Numeric = must not lower to Eq (eqv?): (= 1 1.0) and (= 0.0 -0.0) are #t
+            if (name == "=") return core::PrimitiveKind::NumEq;
+            if (name == "<") return core::PrimitiveKind::Lt;
+            if (name == ">") return core::PrimitiveKind::Gt;
+            if (name == "<=") return core::PrimitiveKind::Le;
+            if (name == ">=") return core::PrimitiveKind::Ge;
             if (name == "cons") return core::PrimitiveKind::Cons;
             return std::nullopt;
         }

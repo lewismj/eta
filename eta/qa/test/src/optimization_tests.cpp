@@ -436,7 +436,9 @@ BOOST_FIXTURE_TEST_CASE(primitive_specialisation_list_and_eq_opcodes, OptFixture
     BOOST_CHECK_GE(count_opcode_all(OpCode::Cons), 1);
     BOOST_CHECK_GE(count_opcode_all(OpCode::Car), 1);
     BOOST_CHECK_GE(count_opcode_all(OpCode::Cdr), 1);
-    BOOST_CHECK_GE(count_opcode_all(OpCode::Eq), 1);
+    /// Numeric = lowers to NumCmp, not Eq (eqv?)
+    BOOST_CHECK_GE(count_opcode_all(OpCode::NumCmp), 1);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Eq), 0);
     BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Call), 0);
 }
 
@@ -520,6 +522,133 @@ BOOST_FIXTURE_TEST_CASE(pipeline_specialises_non_constant_arithmetic, OptFixture
 
     BOOST_CHECK_EQUAL(count_opcode(func, OpCode::Call), 0);
     BOOST_CHECK_GE(count_opcode(func, OpCode::Add), 1);
+}
+
+/**
+ * Numeric comparison: NumCmp opcode must agree with the = < > <= >= primitives
+ */
+
+namespace {
+
+/// Same program run with and without specialisation must give the same answer.
+constexpr std::string_view kNumericEqProgram =
+    "(module m "
+    "  (define i 1) (define f 1.0) (define z 0.0) (define nz -0.0) (define nan +nan.0) "
+    "  (define result (if (= i f) "
+    "                   (if (= z nz) "
+    "                     (if (= nan nan) 0 "
+    "                       (if (= i 2) 0 1)) 0) 0)))";
+
+constexpr std::string_view kComparisonProgram =
+    "(module m "
+    "  (define a 1) (define b 2.5) (define c 2) (define nan +nan.0) "
+    "  (define result (if (< a b) "
+    "                   (if (> b c) "
+    "                     (if (<= c c) "
+    "                       (if (>= c a) "
+    "                         (if (< a nan) 0 "
+    "                           (if (> a nan) 0 1)) 0) 0) 0) 0)))";
+
+} // namespace
+
+BOOST_FIXTURE_TEST_CASE(numcmp_numeric_eq_semantics, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    /// (= 1 1.0) #t, (= 0.0 -0.0) #t, (= nan nan) #f, (= 1 2) #f
+    auto result = run_with_passes(kNumericEqProgram, std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_GE(count_opcode_all(OpCode::NumCmp), 4);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Eq), 0);
+}
+
+BOOST_FIXTURE_TEST_CASE(numcmp_numeric_eq_matches_primitive, OptFixture) {
+    auto result = run_with_passes(kNumericEqProgram, {});
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::NumCmp), 0);
+}
+
+BOOST_FIXTURE_TEST_CASE(numcmp_ordering_semantics, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    auto result = run_with_passes(kComparisonProgram, std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_GE(count_opcode_all(OpCode::NumCmp), 6);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Call), 0);
+}
+
+BOOST_FIXTURE_TEST_CASE(numcmp_ordering_matches_primitive, OptFixture) {
+    auto result = run_with_passes(kComparisonProgram, {});
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(numcmp_variadic_comparison_stays_call, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    auto result = run_with_passes(
+        "(module m (define a 1) (define result (if (< a 2 3) 1 0)))",
+        std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::NumCmp), 0);
+    BOOST_CHECK_GE(count_opcode_all(OpCode::Call), 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(numcmp_type_error_is_catchable, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    auto result = run_with_passes(
+        "(module m "
+        "  (define a 1) "
+        "  (define p (catch 'runtime.type-error (< a 'x))) "
+        "  (define result (if (pair? p) (if (eq? (car p) 'runtime-error) 1 0) 0)))",
+        std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_GE(count_opcode_all(OpCode::NumCmp), 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(arith_opcode_type_error_is_catchable, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    auto result = run_with_passes(
+        "(module m "
+        "  (define a 1) "
+        "  (define p (catch 'runtime.type-error (+ a 'x))) "
+        "  (define q (catch 'runtime.type-error (/ a 0))) "
+        "  (define result (if (pair? p) (if (pair? q) 1 0) 0)))",
+        std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_GE(count_opcode_all(OpCode::Add), 1);
+    BOOST_CHECK_GE(count_opcode_all(OpCode::Div), 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(constant_fold_overflow_promotes_like_runtime, OptFixture) {
+    /// 2^62 * 4 overflows int64: folding must promote to flonum, as the runtime does
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::ConstantFolding>());
+
+    auto result = run_with_passes(
+        "(module m (define result (* 4611686018427387904 4)))", std::move(passes));
+
+    BOOST_REQUIRE(!ops::is_boxed(result));
+    BOOST_CHECK_EQUAL(std::bit_cast<double>(result), 18446744073709551616.0);
 }
 
 /**

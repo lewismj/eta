@@ -3,6 +3,7 @@
 #include "eta/semantics/optimization_pass.h"
 #include "eta/semantics/ir_visitor.h"
 #include "eta/semantics/core_ir.h"
+#include "eta/runtime/numeric_ops.h"
 
 namespace eta::semantics::passes {
 
@@ -74,60 +75,34 @@ private:
             }
             if (op_name.empty()) return node;
 
-            /// Fold the operation
-            std::optional<core::Literal> result;
-            if (op_name == "+")      result = fold_add(*lhs_num, *rhs_num);
-            else if (op_name == "-") result = fold_sub(*lhs_num, *rhs_num);
-            else if (op_name == "*") result = fold_mul(*lhs_num, *rhs_num);
-            else if (op_name == "/") result = fold_div(*lhs_num, *rhs_num);
+            /// Fold the operation with the runtime's own semantics (overflow promotion, exact division)
+            using runtime::numeric_ops::ArithOp;
+            ArithOp op;
+            if (op_name == "+")      op = ArithOp::Add;
+            else if (op_name == "-") op = ArithOp::Sub;
+            else if (op_name == "*") op = ArithOp::Mul;
+            else if (op_name == "/") op = ArithOp::Div;
+            else return node;
 
+            /// Division by zero is left for the runtime to report
+            const auto result = runtime::numeric_ops::arith(op, *lhs_num, *rhs_num);
             if (!result) return node;
 
-            return mod.emplace<core::Const>(node->span, *result);
+            const core::Literal folded = result->is_fixnum() ? core::Literal{result->int_val}
+                                                             : core::Literal{result->float_val};
+            return mod.emplace<core::Const>(node->span, folded);
         }
 
     private:
-        struct NumVal {
-            bool is_int;
-            int64_t i;
-            double d;
-        };
-
-        static std::optional<NumVal> to_numeric(const core::Literal& lit) {
+        static std::optional<runtime::NumericValue> to_numeric(const core::Literal& lit) {
+            using runtime::NumType;
             if (auto* iv = std::get_if<int64_t>(&lit.payload)) {
-                return NumVal{true, *iv, static_cast<double>(*iv)};
+                return runtime::NumericValue{NumType::Fixnum, *iv, 0.0};
             }
             if (auto* dv = std::get_if<double>(&lit.payload)) {
-                return NumVal{false, 0, *dv};
+                return runtime::NumericValue{NumType::Flonum, 0, *dv};
             }
             return std::nullopt;
-        }
-
-        static core::Literal make_result(const NumVal& a, const NumVal& b, int64_t i_result, double d_result) {
-            if (a.is_int && b.is_int) {
-                return core::Literal{i_result};
-            }
-            return core::Literal{d_result};
-        }
-
-        static std::optional<core::Literal> fold_add(const NumVal& a, const NumVal& b) {
-            return make_result(a, b, a.i + b.i, a.d + b.d);
-        }
-
-        static std::optional<core::Literal> fold_sub(const NumVal& a, const NumVal& b) {
-            return make_result(a, b, a.i - b.i, a.d - b.d);
-        }
-
-        static std::optional<core::Literal> fold_mul(const NumVal& a, const NumVal& b) {
-            return make_result(a, b, a.i * b.i, a.d * b.d);
-        }
-
-        static std::optional<core::Literal> fold_div(const NumVal& a, const NumVal& b) {
-            if (b.d == 0.0) return std::nullopt; ///< avoid division by zero
-            if (a.is_int && b.is_int && b.i != 0 && a.i % b.i == 0) {
-                return core::Literal{a.i / b.i};
-            }
-            return core::Literal{a.d / b.d};
         }
     };
 };

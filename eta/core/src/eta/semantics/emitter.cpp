@@ -1,6 +1,7 @@
 #include "emitter.h"
 #include "eta/runtime/factory.h"
 #include "eta/runtime/nanbox.h"
+#include "eta/runtime/numeric_ops.h"
 #include "eta/runtime/types/types.h"
 
 #include <algorithm>
@@ -26,8 +27,35 @@ runtime::vm::OpCode opcode_for_primitive(core::PrimitiveKind kind) {
         case core::PrimitiveKind::Mul:  return runtime::vm::OpCode::Mul;
         case core::PrimitiveKind::Div:  return runtime::vm::OpCode::Div;
         case core::PrimitiveKind::Eq:   return runtime::vm::OpCode::Eq;
+        case core::PrimitiveKind::NumEq:
+        case core::PrimitiveKind::Lt:
+        case core::PrimitiveKind::Gt:
+        case core::PrimitiveKind::Le:
+        case core::PrimitiveKind::Ge:   return runtime::vm::OpCode::NumCmp;
     }
     return OpCode::Nop;
+}
+
+/// NumCmp instruction arg for a comparison PrimitiveKind (0 for non-comparisons).
+uint32_t cmp_arg_for_primitive(core::PrimitiveKind kind) {
+    using runtime::numeric_ops::CmpOp;
+    switch (kind) {
+        case core::PrimitiveKind::NumEq: return static_cast<uint32_t>(CmpOp::NumEq);
+        case core::PrimitiveKind::Lt:    return static_cast<uint32_t>(CmpOp::Lt);
+        case core::PrimitiveKind::Gt:    return static_cast<uint32_t>(CmpOp::Gt);
+        case core::PrimitiveKind::Le:    return static_cast<uint32_t>(CmpOp::Le);
+        case core::PrimitiveKind::Ge:    return static_cast<uint32_t>(CmpOp::Ge);
+        case core::PrimitiveKind::Cons:
+        case core::PrimitiveKind::Car:
+        case core::PrimitiveKind::Cdr:
+        case core::PrimitiveKind::Add:
+        case core::PrimitiveKind::Sub:
+        case core::PrimitiveKind::Mul:
+        case core::PrimitiveKind::Div:
+        case core::PrimitiveKind::Eq:
+            break;
+    }
+    return 0;
 }
 
 } ///< namespace
@@ -296,10 +324,15 @@ void Emitter::emit_primitive_call(const core::PrimitiveCall& n, Context& ctx, co
         case core::PrimitiveKind::Mul:
         case core::PrimitiveKind::Div:
         case core::PrimitiveKind::Eq:
+        case core::PrimitiveKind::NumEq:
+        case core::PrimitiveKind::Lt:
+        case core::PrimitiveKind::Gt:
+        case core::PrimitiveKind::Le:
+        case core::PrimitiveKind::Ge:
             assert(n.args.size() == 2);
             break;
     }
-    ctx.emit_instr(op, 0, span);
+    ctx.emit_instr(op, cmp_arg_for_primitive(n.kind), span);
 }
 
 void Emitter::emit_if(const core::If& n, Context& ctx, const Span& span) {
