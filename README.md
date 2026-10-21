@@ -40,7 +40,7 @@ The easiest way to experience Eta is through the pre-built release bundles, whic
 
 Grab the latest bundle for your platform from the [Releases](https://github.com/lewismj/eta/releases) page:
 
-- **Windows x64:** `eta-v0.1.4-win-x64.zip`
+- **Windows x64:** `eta-v0.1.5-win-x64.zip`
 - **Linux x86_64:** `eta-v0.1.5-linux-x86_64.tar.gz`
 
 ### 2. Install
@@ -49,13 +49,13 @@ Unpack the archive and run the platform-specific installer. This configures your
 
 **Windows (PowerShell)**
 ```powershell
-cd eta-v0.1.4-win-x64
+cd eta-v0.1.5-win-x64
 .\install.cmd
 ```
 
 **Linux / macOS**
 ```bash
-cd eta-v0.1.4-linux-x86_64
+cd eta-v0.1.5-linux-x86_64
 chmod +x install.sh && ./install.sh
 ```
 
