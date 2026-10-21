@@ -62,6 +62,8 @@ struct TempDir {
             std::chrono::steady_clock::now().time_since_epoch().count());
         path = fs::temp_directory_path() / ("eta_cli_test_" + suffix);
         fs::create_directories(path);
+        /// TEMP may be an 8.3 short path on Windows; use the long form throughout.
+        path = fs::canonical(path);
     }
 
     ~TempDir() {
@@ -661,7 +663,9 @@ void configure_fixture_native_sidecar_dependency(
 void strip_native_section(const fs::path& package_root) {
     const auto manifest_path = package_root / "eta.toml";
     const std::string manifest_text = read_text_file(manifest_path);
-    const auto native_section = manifest_text.find("\n[native]\n");
+    /// Line-ending agnostic: a Windows checkout with core.autocrlf has CRLF fixtures.
+    auto native_section = manifest_text.find("\n[native]\n");
+    if (native_section == std::string::npos) native_section = manifest_text.find("\n[native]\r\n");
     BOOST_REQUIRE_MESSAGE(
         native_section != std::string::npos,
         "manifest is missing [native] section: " + manifest_path.string());

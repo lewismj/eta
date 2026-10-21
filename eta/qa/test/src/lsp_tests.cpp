@@ -40,6 +40,8 @@ struct TempDir {
             std::chrono::steady_clock::now().time_since_epoch().count();
         path = fs::temp_directory_path() / ("eta_lsp_s7_" + std::to_string(stamp));
         fs::create_directories(path);
+        /// The server canonicalizes paths; TEMP may be an 8.3 short path on Windows.
+        path = fs::canonical(path);
     }
 
     ~TempDir() {

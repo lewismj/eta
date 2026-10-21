@@ -34,7 +34,8 @@ struct TempDir {
                   / ("eta_mpr_test_" + std::to_string(
                          std::chrono::steady_clock::now().time_since_epoch().count()));
         fs::create_directories(base);
-        path = base;
+        /// The resolver canonicalizes; TEMP may be an 8.3 short path on Windows.
+        path = fs::canonical(base);
     }
 
     ~TempDir() {
