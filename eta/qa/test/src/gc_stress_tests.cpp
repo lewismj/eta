@@ -7,7 +7,7 @@
  * are reclaimed.  The four test groups correspond to the scenarios documented in
  *
  * Test matrix:
- *       constants survive repeated GC cycles forced by primitive re-installation.
+ *       constants survive repeated GC cycles forced by per-run cons garbage.
  *       "payload" survives many GC cycles that reclaim ephemeral cons cells
  *       (simulates a mailbox send/receive round-trip).
  *       one element at a time under allocation pressure; each step verifies the
@@ -99,15 +99,16 @@ BOOST_AUTO_TEST_SUITE(gc_stress_tests)
  *
  * Verifies that the Driver's GC does not sweep bytecode-registry constants
  * (the Cons chains created by quoted literals such as '(10 20 30 40 50)) even
- * after many GC cycles have been forced by repeated primitive re-installation.
+ * after many GC cycles have been forced by allocation pressure.
  *
- * Uses a 64 KiB heap soft-limit so that allocating ~13 KiB of Primitive
- * objects on every run_source() call causes the collector to fire roughly
+ * The heap soft-limit must hold the runtime's live baseline: one Primitive
+ * per builtin, installed once (~480 x ~136 bytes with MSVC's std::function,
+ * ~65 KiB). 128 KiB leaves room for that, while each pressure run allocates
+ * enough discarded cons cells to force several collections.
  */
 BOOST_AUTO_TEST_CASE(quoted_constant_survives) {
     eta::interpreter::ModulePathResolver resolver{};
-    /// 64 KiB heap forces several GC collections during the pressure loop.
-    eta::session::Driver driver(std::move(resolver), 64 * 1024);
+    eta::session::Driver driver(std::move(resolver), 128 * 1024);
 
     /**
      * --- Step 1: define a function whose body references a quoted constant ---
@@ -124,17 +125,19 @@ BOOST_AUTO_TEST_CASE(quoted_constant_survives) {
 
     /**
      * --- Step 2: pressure loop ---
-     * Each iteration compiles and executes a fresh module that calls (get-list).
-     * run_source() re-installs all builtins (~13 KiB of Primitive objects) on
-     * every execution, making old Primitive objects unreachable.  This causes
-     * the GC callback to fire several times.  The quoted Cons cells in the
-     * registry MUST survive every collection.
+     * Each iteration compiles and executes a fresh module that calls (get-list)
+     * and then allocates 5000 cons cells that are garbage immediately (the live
+     * set stays tiny), so several collections fire on every iteration.  The
+     * quoted Cons cells in the registry MUST survive every collection.
      */
     for (int i = 0; i < 40; ++i) {
         const std::string src =
             "(module gc_sq_pressure_" + std::to_string(i) +
             "  (import gc_sq_mod)"
-            "  (begin (get-list)))";
+            "  (begin"
+            "    (get-list)"
+            "    (letrec ((churn (lambda (n) (if (= n 0) 0 (begin (cons n n) (churn (- n 1)))))))"
+            "      (churn 5000))))";
         bool pressure_ok = driver.run_source(src);
         BOOST_REQUIRE_MESSAGE(pressure_ok,
             "gc_sq_pressure_" << i << ": failed  -  heap may be exhausted");

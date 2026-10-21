@@ -280,12 +280,13 @@ BOOST_AUTO_TEST_CASE(core_registration_matches_metadata_prefix_exactly) {
 }
 
 BOOST_AUTO_TEST_CASE(core_arithmetic_and_predicate_window_matches_seeded_slots) {
-    constexpr std::array<std::string_view, 33> expected_window = {{
+    constexpr std::array<std::string_view, 37> expected_window = {{
         "+", "-", "*", "/", "=", "<", ">", "<=", ">=", "eq?", "eqv?", "not",
         "cons", "car", "cdr", "pair?", "null?", "list",
         "number?", "boolean?", "string?", "char?", "symbol?", "procedure?",
         "integer?", "zero?", "positive?", "negative?",
-        "abs", "min", "max", "modulo", "remainder"
+        "abs", "min", "max", "modulo", "remainder",
+        "floor", "ceiling", "truncate", "round"
     }};
 
     BuiltinEnvironment seeded_env;
@@ -315,7 +316,7 @@ BOOST_AUTO_TEST_CASE(core_arithmetic_and_predicate_window_matches_seeded_slots) 
 }
 
 BOOST_AUTO_TEST_CASE(core_math_and_aad_policy_window_matches_seeded_slots) {
-    constexpr std::size_t kMathWindowStart = 33u;
+    constexpr std::size_t kMathWindowStart = 37u;
     constexpr std::array<std::string_view, 12> expected_window = {{
         "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log", "sqrt",
         "pow", "set-aad-nondiff-policy!", "aad-nondiff-policy"

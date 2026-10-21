@@ -1,6 +1,7 @@
 ;;; std/math.eta  Mathematical constants and helpers.
 ;;;
 ;;; Builtins already available: + - * / abs min max modulo remainder
+;;;                             floor ceiling truncate round
 ;;;                             zero? positive? negative?
 ;;; This module adds constants and common helpers not provided as builtins.
 
@@ -16,10 +17,6 @@
     quotient
     gcd
     lcm
-    floor
-    ceiling
-    truncate
-    round
     expt
     sum
     product)
@@ -94,12 +91,7 @@
       (let ((r (/ a b)))
         ;; If both are integers and divide evenly, / returns fixnum.
         ;; Otherwise, truncate the float toward zero.
-        (if (integer? r)
-          r
-          ;; manual truncate toward zero
-          (if (negative? r)
-            (- 0 (let ((pos (- 0 r))) (- pos (modulo (let ((m (* pos 1.0))) m) 1.0))))
-            (- r (modulo (* r 1.0) 1.0))))))
+        (if (integer? r) r (truncate r))))
 
     ;;@doc (gcd a b)
     ;;@category Math
@@ -116,43 +108,6 @@
     ;; (lcm 1 1)
     ;; Least common multiple.
     (defun lcm (a b) (if (or (= a 0) (= b 0)) 0 (abs (/ (* a b) (gcd a b)))))
-
-    ;;  Rounding (integer-producing) 
-    ;; These operate on the float representation; for fixnums they are
-    ;; identity.
-
-    ;;@doc (floor x)
-    ;;@category Math
-    ;;@module std.math
-    ;; Compute `floor`.
-    ;;@example
-    ;; (floor 1)
-    (defun floor (x)
-      (if (integer? x) x (let ((t (- x (modulo (* x 1.0) 1.0)))) (if (negative? x) (- t 1) t))))
-
-    ;;@doc (ceiling x)
-    ;;@category Math
-    ;;@module std.math
-    ;; Compute `ceiling`.
-    ;;@example
-    ;; (ceiling 1)
-    (defun ceiling (x) (if (integer? x) x (let ((f (floor x))) (+ f 1))))
-
-    ;;@doc (truncate x)
-    ;;@category Math
-    ;;@module std.math
-    ;; Compute `truncate`.
-    ;;@example
-    ;; (truncate 1)
-    (defun truncate (x) (if (integer? x) x (if (negative? x) (ceiling x) (floor x))))
-
-    ;;@doc (round x)
-    ;;@category Math
-    ;;@module std.math
-    ;; Compute `round`.
-    ;;@example
-    ;; (round 1)
-    (defun round (x) (if (integer? x) x (floor (+ x 0.5))))
 
     ;;  Exponentiation 
 

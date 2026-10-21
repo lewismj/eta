@@ -143,6 +143,18 @@ primitives can't drift apart.
 - `modulo` on flonums: use `fmod`, then fix the sign to match the divisor.
 - Unary `-` and `abs` on `INT64_MIN`: promote to a double instead of hitting
   undefined behaviour.
+- **Added during implementation:**
+  - **Integer `modulo`/`remainder` by `-1`:** these return 0 directly. `INT64_MIN % -1` is
+    undefined behaviour and traps on x86.
+  - **Zero result of flonum `modulo`:** it takes the divisor's sign, so `(modulo -6.0 3.0)` is
+    `0.0`, not `-0.0`.
+  - **Unary `/`:** now goes through `numeric_ops::arith`, so `(/ 1)` is exact `1`, like `(/ 1 1)`.
+    It used to always return a flonum.
+  - **`std.math` `floor`:** it relied on `modulo` truncating, and corrected negative inputs by
+    subtracting 1. With floored `modulo`, `x - (modulo x 1.0)` is already the floor, and that
+    correction would have made `(floor -2.5)` return `-4.0`. `ceiling`, `truncate` and `round`
+    are built on `floor`; `quotient` only passes positive values to `modulo`. No other stdlib,
+    package or cookbook code passes flonums to `modulo`.
 
 ## Phase 6: Tests
 
@@ -161,6 +173,73 @@ primitives can't drift apart.
   `arg`, and disassembler output.
 - **Existing tests to update:** `optimization_tests.cpp`, for any that expect `=` → `Eq`
   or that expect no specialisation without `-O`.
+- **As implemented:** `qa/test/src/numeric_tests.cpp` is a conformance suite. Each
+  expression runs three ways: through the primitive (no passes), through the opcodes
+  (specialisation), and through `etac -O` (specialisation + folding + DCE). Results must match
+  exactly: fixnum vs flonum, the sign of zero, NaN, and the error message text. It covers:
+  - exact, inexact and mixed arithmetic, plus the variadic and unary forms
+  - signed zero, NaN and infinities
+  - the 47-bit immediate boundary, heap fixnums and int64 overflow (including `INT64_MIN`)
+  - every arithmetic and comparison error message
+  - `=` semantics and ordering, including NaN
+  - `modulo` and `remainder` for every sign combination, on fixnums and flonums
+  - `abs` and negation
+  - folded literals against runtime results
+  - TapeRef gradients through `Add`/`Mul` chains, TapeRef comparisons, and the strict-policy error
+
+  `stdlib/tests/math.test.eta` adds rounding on negative inputs and the `modulo`/`remainder` sign rules.
+
+## Phase 7: IEEE 754 conformance
+
+- **Division by inexact zero:** `x / 0.0` is IEEE (`+inf.0`, `-inf.0`, or NaN for `0.0 / 0.0`).
+  Only an exact `0` divisor is an error, as R7RS specifies (`(/ 1.0 0)` still raises). The same
+  rule applies to `modulo` and `remainder`, and is implemented in `numeric_ops::arith`, so the
+  opcodes, primitives, ConstantFolding and the sandbox all agree.
+- **Exact mixed comparison:** fixnum against flonum compares the exact values
+  (`numeric_ops::compare_int_double`) instead of rounding the fixnum to a double first.
+  So `(= 9007199254740993 9007199254740992.0)` is `#f` and `(< max64 9223372036854775808.0)` is
+  `#t`, and comparison is transitive. TapeRef comparisons use the same path.
+- **Rounding builtins:** `floor`, `ceiling`, `truncate` and `round` are now core builtins, placed
+  after `remainder` in the seed (so `.etac` files with the old builtin count are rejected as
+  stale). They implement IEEE roundToIntegral: NaN and ±inf pass through, the sign of zero is
+  kept, `round` breaks ties to even regardless of the current rounding mode, and exact integers
+  are returned unchanged. This replaces the `std.math` versions, which were built on `modulo`:
+  - `round` was `floor(x + 0.5)`, so it rounded ties up and was wrong for `0.49999999999999994`
+  - `floor` returned NaN for `±inf.0`
+  - `ceiling` and `truncate` lost the sign of zero
+- **`min`/`max`:** these follow IEEE 754-2019 minimum/maximum. Any NaN gives NaN (it used to
+  depend on argument order), and `-0.0` orders below `+0.0`. Candidates are compared exactly; the
+  result is inexact if any argument is.
+- **DAP sandbox:** its `+ - * /` and comparisons use `numeric_ops`. This fixes:
+  - unchecked int64 overflow in `*`
+  - `(/ 7 2 2)` dropping the arguments after the first inexact step
+  - NaN being rejected as a non-number
+- **Unchanged by design:**
+  - Mixed exact/inexact arithmetic converts the fixnum, then applies the IEEE operation (two
+    correctly rounded steps, as in Scheme's inexact contagion).
+  - Tape (AD) operations still raise domain errors (`log` ≤ 0, `sqrt` < 0, division by zero),
+    because the derivative is undefined there.
+
+## Found during Phase 7: builtin installation
+
+- **Builtins reinstalled on every run:** the source execution path (`compilation_session.cpp`,
+  used by `run_source`, `eval_string`, the REPL and etai) called `install_into` on every
+  execution. Each call allocated a fresh Primitive per builtin (~65 KiB with MSVC) and made the
+  previous set garbage. `RuntimePrimitiveInstaller` already had an `installed_` flag and
+  `invalidate()`, and the `.etac` loader honoured them, but this path ignored them. It now
+  installs once and reinstalls only after an extension or sidecar invalidates the installer;
+  `overwrite_builtin_primitive` now invalidates too.
+- **`is_blocking` regression from Phase 1:** `install_into` is the Driver's install path, and it
+  never set `Primitive::is_blocking`. As a result, blocking builtins (`thread-join`, `recv!`,
+  `spawn-wait`, `%process-wait`, ...) were not routed to the dirty-task pool in actor Pool mode.
+  Fixed.
+- **`gc_stress_tests/quoted_constant_survives`:** its 64 KiB heap is below the runtime's live
+  baseline with MSVC (one Primitive per builtin), and its GC pressure came entirely from the
+  reinstallation garbage. It now uses 128 KiB and creates its own pressure with discarded cons
+  cells.
+- **Relation to `CallBuiltin`:** `CallBuiltin` would remove the per-call heap lookup and the
+  `std::function` dispatch. It is a dispatch optimisation, not a fix for the reinstallation, and
+  it is not needed for this.
 
 ## Deferred (not in this plan)
 

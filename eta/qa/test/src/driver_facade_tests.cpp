@@ -19,6 +19,9 @@
 
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/builtin_catalog.h"
+#include "eta/runtime/memory/heap.h"
+#include "eta/runtime/nanbox.h"
+#include "eta/runtime/types/primitive.h"
 #include "eta/runtime/vm/bytecode.h"
 #include "eta/session/driver.h"
 #include "eta/session/runtime_config.h"
@@ -196,6 +199,43 @@ BOOST_AUTO_TEST_CASE(driver_specialised_errors_are_catchable) {
         "    (if (pair? (catch 'runtime.type-error (< x 'a))) 1 0) 0) 0)",
         out));
     BOOST_TEST(out == "1");
+}
+
+BOOST_AUTO_TEST_CASE(driver_installs_builtin_primitives_once) {
+    eta::session::Driver driver;
+    const auto catalog = eta::runtime::builtin_catalog();
+    auto slot_of = [&](std::string_view name) {
+        for (std::size_t i = 0; i < catalog.size(); ++i) {
+            if (catalog[i].name == name) return i;
+        }
+        BOOST_FAIL("builtin not in catalog: " << name);
+        return std::size_t{0};
+    };
+    const auto car_slot = slot_of("car");
+    const auto join_slot = slot_of("thread-join");
+
+    std::string out;
+    BOOST_REQUIRE(driver.eval_string("(+ 1 2)", out));
+    const auto car_first = driver.vm().globals()[car_slot];
+
+    /// Later submissions reuse the installed Primitive objects
+    for (int i = 0; i < 5; ++i) {
+        BOOST_REQUIRE(driver.eval_string("(car (list 1 2))", out));
+        BOOST_TEST(out == "1");
+    }
+    BOOST_TEST(driver.vm().globals()[car_slot] == car_first);
+
+    /// Installed through the Driver, blocking builtins keep their flag for dirty dispatch
+    using eta::runtime::memory::heap::ObjectKind;
+    namespace ops = eta::runtime::nanbox::ops;
+    const auto* car_prim = driver.heap().try_get_as<ObjectKind::Primitive, eta::runtime::types::Primitive>(
+        ops::payload(driver.vm().globals()[car_slot]));
+    const auto* join_prim = driver.heap().try_get_as<ObjectKind::Primitive, eta::runtime::types::Primitive>(
+        ops::payload(driver.vm().globals()[join_slot]));
+    BOOST_REQUIRE(car_prim != nullptr);
+    BOOST_REQUIRE(join_prim != nullptr);
+    BOOST_TEST(!car_prim->is_blocking);
+    BOOST_TEST(join_prim->is_blocking);
 }
 
 BOOST_AUTO_TEST_CASE(driver_bootstrap_builtin_slots_match_catalog_order) {

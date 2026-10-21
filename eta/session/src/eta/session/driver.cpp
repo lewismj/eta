@@ -586,6 +586,8 @@ bool Driver::has_builtin_primitive(std::string_view name) const {
 void Driver::overwrite_builtin_primitive(std::string_view name,
                                          runtime::types::PrimitiveFunc func) {
     builtins_.overwrite_func(name, std::move(func));
+    /// Installed Primitive objects hold the old func
+    primitive_installer_.invalidate();
 }
 
 void Driver::invalidate_primitive_installer() {

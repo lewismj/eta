@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <expected>
 #include <limits>
@@ -22,9 +23,13 @@ namespace eta::runtime::numeric_ops {
  * Semantics:
  *   - fixnum op fixnum stays fixnum; on int64 overflow the result is promoted to flonum
  *   - fixnum / fixnum is exact when it divides evenly, otherwise flonum
- *   - any flonum operand makes the result flonum
- *   - division by exact or inexact zero is an error
- *   - comparisons follow IEEE 754 when either side is a flonum (NaN compares false, 0.0 == -0.0)
+ *   - any flonum operand makes the result flonum: the fixnum is converted (convertFromInt),
+ *     then the IEEE 754 operation is applied
+ *   - division by exact zero is an error; division by inexact zero is IEEE 754
+ *     (x / 0.0 is +-inf, 0.0 / 0.0 is NaN), as R7RS permits
+ *   - comparisons are exact, as IEEE 754 requires: NaN is unordered (every comparison
+ *     is false), 0.0 == -0.0, and a fixnum is compared with a flonum without first
+ *     rounding the fixnum to a double, so (= 9007199254740993 9007199254740992.0) is #f
  */
 
 enum class ArithOp : std::uint8_t { Add, Sub, Mul, Div };
@@ -112,9 +117,11 @@ template <typename T>
 [[nodiscard]] inline std::expected<NumericValue, NumError>
 arith(const ArithOp op, const NumericValue& a, const NumericValue& b) noexcept {
     if (a.is_flonum() || b.is_flonum()) {
-        const double y = b.as_double();
-        if (op == ArithOp::Div && y == 0.0) return std::unexpected(NumError::DivisionByZero);
-        return NumericValue{NumType::Flonum, 0, apply_double(op, a.as_double(), y)};
+        /// Only an exact zero divisor is an error; x / 0.0 is IEEE (+-inf or NaN)
+        if (op == ArithOp::Div && b.is_fixnum() && b.int_val == 0) {
+            return std::unexpected(NumError::DivisionByZero);
+        }
+        return NumericValue{NumType::Flonum, 0, apply_double(op, a.as_double(), b.as_double())};
     }
 
     const int64_t x = a.int_val;
@@ -146,10 +153,36 @@ arith(const ArithOp op, const NumericValue& a, const NumericValue& b) noexcept {
     return NumericValue{NumType::Fixnum, r, 0.0};
 }
 
+/**
+ * Exact three-way comparison of an int64 with a non-NaN double: -1, 0 or 1.
+ * Converting the int64 to double first would round it (above 2^53), making
+ * comparisons inexact and non-transitive.
+ */
+[[nodiscard]] inline int compare_int_double(const int64_t i, const double d) noexcept {
+    constexpr double kTwo63 = 9223372036854775808.0;
+    if (d >= kTwo63) return -1;   ///< includes +inf
+    if (d < -kTwo63) return 1;    ///< includes -inf
+    /// -2^63 <= trunc(d) < 2^63, so it converts to int64 exactly
+    const double t = std::trunc(d);
+    const auto ti = static_cast<int64_t>(t);
+    if (i != ti) return i < ti ? -1 : 1;
+    const double frac = d - t;    ///< exact
+    if (frac > 0.0) return -1;
+    if (frac < 0.0) return 1;
+    return 0;
+}
+
 /// Comparison on already-classified (valid) operands.
 [[nodiscard]] inline bool compare(const CmpOp op, const NumericValue& a, const NumericValue& b) noexcept {
-    if (a.is_flonum() || b.is_flonum()) return apply_compare(op, a.as_double(), b.as_double());
-    return apply_compare(op, a.int_val, b.int_val);
+    if (a.is_flonum() && b.is_flonum()) return apply_compare(op, a.float_val, b.float_val);
+    if (a.is_fixnum() && b.is_fixnum()) return apply_compare(op, a.int_val, b.int_val);
+
+    /// Mixed exact/inexact: compare the exact values. NaN is unordered.
+    const double d = a.is_flonum() ? a.float_val : b.float_val;
+    if (std::isnan(d)) return false;
+    const int order = a.is_fixnum() ? compare_int_double(a.int_val, d)
+                                    : -compare_int_double(b.int_val, d);
+    return apply_compare(op, order, 0);
 }
 
 /// Classify and compare two values; NotANumber if either is not a number.
@@ -180,9 +213,8 @@ compare(Heap& heap, const CmpOp op, const LispVal a, const LispVal b) {
     if (!classify_immediate(a, na) || !classify_immediate(b, nb)) return false;
 
     if (na.is_flonum() || nb.is_flonum()) {
-        const double y = nb.as_double();
-        if (op == ArithOp::Div && y == 0.0) return false;
-        out = *ops::encode(apply_double(op, na.as_double(), y));
+        if (op == ArithOp::Div && nb.is_fixnum() && nb.int_val == 0) return false;
+        out = *ops::encode(apply_double(op, na.as_double(), nb.as_double()));
         return true;
     }
 

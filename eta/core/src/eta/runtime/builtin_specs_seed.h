@@ -75,6 +75,12 @@ inline void register_builtin_specs_seed(BuiltinEnvironment& env) {
     r("modulo",    2, false);
     r("remainder", 2, false);
 
+    /// Rounding (IEEE 754 roundToIntegral)
+    r("floor",    1, false);
+    r("ceiling",  1, false);
+    r("truncate", 1, false);
+    r("round",    1, false);
+
     /// Transcendentals
     r("sin",  1, false);
     r("cos",  1, false);

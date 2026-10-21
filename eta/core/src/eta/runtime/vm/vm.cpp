@@ -1882,7 +1882,8 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
             case OpCode::Sub: result = pa - pb; break;
             case OpCode::Mul: result = pa * pb; break;
             case OpCode::Div:
-                if (pb == 0.0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
+                /// Unlike plain flonums (IEEE +-inf), a taped quotient by zero has no derivative
+                if (pb == 0.0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "/: division by zero"}});
                 result = pa / pb;
                 break;
             default: result = 0.0; break;

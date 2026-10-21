@@ -2,6 +2,8 @@
 #include <cmath>
 #include <cstdint>
 #include <expected>
+#include <limits>
+#include <span>
 #include <string>
 
 #include "eta/runtime/core_primitives_internal.h"
@@ -15,6 +17,58 @@
 #include "eta/runtime/vm/vm.h"
 
 namespace eta::runtime {
+
+namespace {
+
+/**
+ * min / max on plain numbers, as IEEE 754-2019 minimum / maximum:
+ * any NaN gives NaN, and -0.0 orders below +0.0.  Candidates are compared
+ * exactly; the result is inexact if any argument is.
+ */
+std::expected<LispVal, RuntimeError> numeric_extremum(Heap& heap, std::span<const LispVal> args,
+                                                      const char* name, numeric_ops::CmpOp better) {
+    using numeric_ops::CmpOp;
+    bool any_flonum = false;
+    bool any_nan = false;
+    bool have_best = false;
+    NumericValue best{};
+    for (const LispVal arg : args) {
+        const auto n = numeric_ops::classify(arg, heap);
+        if (!n.is_valid()) {
+            return std::unexpected(RuntimeError{VMError{
+                RuntimeErrorCode::TypeError, std::string(name) + ": argument is not a number"}});
+        }
+        any_flonum = any_flonum || n.is_flonum();
+        if (n.is_flonum() && std::isnan(n.float_val)) {
+            any_nan = true;
+            continue;
+        }
+        if (!have_best) {
+            best = n;
+            have_best = true;
+            continue;
+        }
+        bool replace = numeric_ops::compare(better, n, best);
+        if (!replace && n.as_double() == 0.0 && best.as_double() == 0.0) {
+            const bool n_neg = std::signbit(n.as_double());
+            const bool best_neg = std::signbit(best.as_double());
+            replace = better == CmpOp::Lt ? (n_neg && !best_neg) : (!n_neg && best_neg);
+        }
+        if (replace) best = n;
+    }
+    if (any_nan) return make_flonum(std::numeric_limits<double>::quiet_NaN());
+    if (any_flonum) return make_flonum(best.as_double());
+    return make_fixnum(heap, best.int_val);
+}
+
+/// IEEE 754 roundToIntegralTiesToEven, independent of the current rounding mode.
+double round_ties_to_even(const double x) {
+    const double r = std::round(x); ///< ties away from zero
+    if (std::fabs(x - std::trunc(x)) != 0.5) return r;
+    return 2.0 * std::round(x / 2.0); ///< a tie: take the even neighbour
+}
+
+} // namespace
 
 void PrimReg::register_arithmetic() {
     using Args = PrimReg::Args;
@@ -82,6 +136,8 @@ void PrimReg::register_arithmetic() {
 
         if (args.size() == 1) {
             if (first.is_flonum()) return make_flonum(-first.float_val);
+            /// -INT64_MIN overflows: promote, as binary arithmetic does
+            if (first.int_val == INT64_MIN) return make_flonum(-static_cast<double>(first.int_val));
             return make_fixnum(heap, -first.int_val);
         }
 
@@ -146,16 +202,18 @@ void PrimReg::register_arithmetic() {
                 RuntimeErrorCode::TypeError, "/: argument is not a number"}});
         }
 
+        NumericValue acc = first;
         if (args.size() == 1) {
-            double d = first.as_double();
-            if (d == 0.0) {
+            /// (/ x) is (/ 1 x): exact when the reciprocal is, so (/ 1) is 1 like (/ 1 1)
+            acc = NumericValue{NumType::Fixnum, 1, 0.0};
+            auto q = numeric_ops::arith(numeric_ops::ArithOp::Div, acc, first);
+            if (!q) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError, "/: division by zero"}});
             }
-            return make_flonum(1.0 / d);
+            return numeric_ops::box(heap, *q);
         }
 
-        NumericValue acc = first;
         for (size_t i = 1; i < args.size(); ++i) {
             auto n = numeric_ops::classify(args[i], heap);
             if (!n.is_valid()) {
@@ -364,6 +422,8 @@ void PrimReg::register_arithmetic() {
                     RuntimeErrorCode::TypeError, "abs: argument is not a number"}});
             }
             if (n.is_flonum()) return make_flonum(std::abs(n.float_val));
+            /// |INT64_MIN| overflows: promote, as binary arithmetic does
+            if (n.int_val == INT64_MIN) return make_flonum(-static_cast<double>(n.int_val));
             return make_fixnum(heap, n.int_val < 0 ? -n.int_val : n.int_val);
         });
 
@@ -397,28 +457,7 @@ void PrimReg::register_arithmetic() {
                 }
                 return make_tape_ref_result(*tape, *best_idx, "min");
             }
-
-            auto best = classify_numeric(args[0], heap);
-            if (!best.is_valid()) {
-                return std::unexpected(RuntimeError{VMError{
-                    RuntimeErrorCode::TypeError, "min: argument is not a number"}});
-            }
-            bool use_float = best.is_flonum();
-            for (size_t i = 1; i < args.size(); ++i) {
-                auto n = classify_numeric(args[i], heap);
-                if (!n.is_valid()) {
-                    return std::unexpected(RuntimeError{VMError{
-                        RuntimeErrorCode::TypeError, "min: argument is not a number"}});
-                }
-                if (n.is_flonum() || use_float) {
-                    use_float = true;
-                    if (n.as_double() < best.as_double()) best = n;
-                } else if (n.int_val < best.int_val) {
-                    best = n;
-                }
-            }
-            if (use_float) return make_flonum(best.as_double());
-            return make_fixnum(heap, best.int_val);
+            return numeric_extremum(heap, args, "min", numeric_ops::CmpOp::Lt);
         });
 
     env.register_builtin(
@@ -451,28 +490,7 @@ void PrimReg::register_arithmetic() {
                 }
                 return make_tape_ref_result(*tape, *best_idx, "max");
             }
-
-            auto best = classify_numeric(args[0], heap);
-            if (!best.is_valid()) {
-                return std::unexpected(RuntimeError{VMError{
-                    RuntimeErrorCode::TypeError, "max: argument is not a number"}});
-            }
-            bool use_float = best.is_flonum();
-            for (size_t i = 1; i < args.size(); ++i) {
-                auto n = classify_numeric(args[i], heap);
-                if (!n.is_valid()) {
-                    return std::unexpected(RuntimeError{VMError{
-                        RuntimeErrorCode::TypeError, "max: argument is not a number"}});
-                }
-                if (n.is_flonum() || use_float) {
-                    use_float = true;
-                    if (n.as_double() > best.as_double()) best = n;
-                } else if (n.int_val > best.int_val) {
-                    best = n;
-                }
-            }
-            if (use_float) return make_flonum(best.as_double());
-            return make_fixnum(heap, best.int_val);
+            return numeric_extremum(heap, args, "max", numeric_ops::CmpOp::Gt);
         });
 
     env.register_builtin("modulo", 2, false, [&heap](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -483,13 +501,21 @@ void PrimReg::register_arithmetic() {
                 RuntimeErrorCode::TypeError,
                 "modulo: arguments must be numbers"}});
         }
-        if (a.is_flonum() || b.is_flonum()) {
-            return make_flonum(std::fmod(a.as_double(), b.as_double()));
-        }
-        if (b.int_val == 0) {
+        /// An exact zero divisor is an error, as for /; an inexact one gives NaN (IEEE)
+        if (b.is_fixnum() && b.int_val == 0) {
             return std::unexpected(RuntimeError{VMError{
                 RuntimeErrorCode::TypeError, "modulo: division by zero"}});
         }
+        if (a.is_flonum() || b.is_flonum()) {
+            /// Floored: the result takes the sign of the divisor, as for fixnums
+            const double divisor = b.as_double();
+            double r = std::fmod(a.as_double(), divisor);
+            if (r != 0.0 && ((r < 0.0) != (divisor < 0.0))) r += divisor;
+            if (r == 0.0) r = std::copysign(0.0, divisor);
+            return make_flonum(r);
+        }
+        /// INT64_MIN % -1 overflows (and traps on x86)
+        if (b.int_val == -1) return make_fixnum(heap, int64_t(0));
         int64_t r = a.int_val % b.int_val;
         if (r != 0 && ((r < 0) != (b.int_val < 0))) r += b.int_val;
         return make_fixnum(heap, r);
@@ -503,15 +529,42 @@ void PrimReg::register_arithmetic() {
                 RuntimeErrorCode::TypeError,
                 "remainder: arguments must be numbers"}});
         }
-        if (a.is_flonum() || b.is_flonum()) {
-            return make_flonum(std::remainder(a.as_double(), b.as_double()));
-        }
-        if (b.int_val == 0) {
+        /// An exact zero divisor is an error, as for /; an inexact one gives NaN (IEEE)
+        if (b.is_fixnum() && b.int_val == 0) {
             return std::unexpected(RuntimeError{VMError{
                 RuntimeErrorCode::TypeError, "remainder: division by zero"}});
         }
+        if (a.is_flonum() || b.is_flonum()) {
+            /// Truncated (sign of the dividend); std::remainder rounds to nearest instead
+            return make_flonum(std::fmod(a.as_double(), b.as_double()));
+        }
+        /// INT64_MIN % -1 overflows (and traps on x86)
+        if (b.int_val == -1) return make_fixnum(heap, int64_t(0));
         return make_fixnum(heap, a.int_val % b.int_val);
     });
+
+    /**
+     * Rounding: floor ceiling truncate round
+     *
+     * Exact integers are returned unchanged. Flonums follow IEEE 754
+     * roundToIntegral: NaN and infinities pass through, the sign of zero is
+     * kept ((ceiling -0.5) is -0.0), and round breaks ties to even.
+     */
+    auto register_rounding = [&env, &heap](const char* name, double (*round_fn)(double)) {
+        env.register_builtin(name, 1, false, [&heap, name, round_fn](Args args) -> std::expected<LispVal, RuntimeError> {
+            const auto n = numeric_ops::classify(args[0], heap);
+            if (!n.is_valid()) {
+                return std::unexpected(RuntimeError{VMError{
+                    RuntimeErrorCode::TypeError, std::string(name) + ": argument is not a number"}});
+            }
+            if (n.is_fixnum()) return args[0];
+            return make_flonum(round_fn(n.float_val));
+        });
+    };
+    register_rounding("floor",    [](double x) { return std::floor(x); });
+    register_rounding("ceiling",  [](double x) { return std::ceil(x); });
+    register_rounding("truncate", [](double x) { return std::trunc(x); });
+    register_rounding("round",    round_ties_to_even);
 }
 
 } // namespace eta::runtime

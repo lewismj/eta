@@ -1,6 +1,8 @@
 #include <boost/test/unit_test.hpp>
 #include <iostream>
 #include <algorithm>
+#include <bit>
+#include <cmath>
 #include <chrono>
 #include <expected>
 #include <functional>
@@ -1545,11 +1547,20 @@ BOOST_AUTO_TEST_CASE(test_error_div_by_zero_integers) {
     BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
 }
 
-BOOST_AUTO_TEST_CASE(test_error_div_by_zero_floats) {
-    auto err = run_expect_error("(module m (define result (/ 10.0 0.0)))");
+BOOST_AUTO_TEST_CASE(test_error_div_by_exact_zero_float_dividend) {
+    /// Only an exact zero divisor is an error
+    auto err = run_expect_error("(module m (define result (/ 10.0 0)))");
     auto* vm_err = std::get_if<VMError>(&err);
     BOOST_REQUIRE(vm_err);
     BOOST_CHECK(vm_err->code == RuntimeErrorCode::TypeError);
+}
+
+BOOST_AUTO_TEST_CASE(test_div_by_inexact_zero_is_ieee) {
+    /// x / 0.0 follows IEEE 754: +inf, not an error
+    LispVal res = run("(module m (define result (/ 10.0 0.0)))");
+    BOOST_REQUIRE(!nanbox::ops::is_boxed(res));
+    BOOST_CHECK(std::isinf(std::bit_cast<double>(res)));
+    BOOST_CHECK(std::bit_cast<double>(res) > 0.0);
 }
 
 BOOST_AUTO_TEST_CASE(test_error_call_non_procedure) {

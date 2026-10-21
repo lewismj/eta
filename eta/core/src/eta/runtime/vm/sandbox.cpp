@@ -11,6 +11,7 @@
 
 #include "eta/reader/lexer.h"
 #include "eta/reader/parser.h"
+#include "eta/runtime/numeric_ops.h"
 #include "eta/runtime/types/cons.h"
 #include "eta/runtime/types/hash_map.h"
 #include "eta/runtime/types/hash_set.h"
@@ -311,16 +312,17 @@ private:
         }
         if (op == "=" || op == "<" || op == ">" || op == "<=" || op == ">=") {
             if (args.size() != 2) return err(op + " expects 2 arguments");
-            double a, b;
-            if (!as_real(args[0], a) || !as_real(args[1], b))
+            NumericValue a{};
+            NumericValue b{};
+            if (!numeric_ops::classify_immediate(args[0], a) || !numeric_ops::classify_immediate(args[1], b))
                 return err(op + ": numeric arguments required");
-            bool r = false;
-            if (op == "=")  r = (a == b);
-            else if (op == "<")  r = (a <  b);
-            else if (op == ">")  r = (a >  b);
-            else if (op == "<=") r = (a <= b);
-            else if (op == ">=") r = (a >= b);
-            return r ? True : False;
+            using numeric_ops::CmpOp;
+            const CmpOp cmp = op == "="  ? CmpOp::NumEq
+                            : op == "<"  ? CmpOp::Lt
+                            : op == ">"  ? CmpOp::Gt
+                            : op == "<=" ? CmpOp::Le
+                                         : CmpOp::Ge;
+            return numeric_ops::compare(cmp, a, b) ? True : False;
         }
 
         /// List access (read-only - no allocation)
@@ -374,17 +376,6 @@ private:
         if (!ops::is_boxed(v) || ops::tag(v) != Tag::Fixnum) return false;
         out = ops::sign_extend_fixnum(ops::payload(v));
         return true;
-    }
-    bool as_real(LispVal v, double& out) const noexcept {
-        if (!ops::is_boxed(v)) {
-            out = std::bit_cast<double>(v);
-            return true;
-        }
-        if (ops::tag(v) == Tag::Fixnum) {
-            out = static_cast<double>(ops::sign_extend_fixnum(ops::payload(v)));
-            return true;
-        }
-        return false;
     }
 
     bool is_cons(LispVal v) const noexcept {
@@ -456,80 +447,53 @@ private:
         const std::string& op,
         const std::vector<LispVal>& args)
     {
-        /// Detect any double; promote accordingly
-        bool any_real = false;
-        for (auto v : args) {
-            if (!ops::is_boxed(v)) { any_real = true; continue; }
-            if (ops::tag(v) == Tag::Fixnum) continue;
-            return err(op + ": numeric arguments required");
+        /// Same semantics as the runtime (numeric_ops), restricted to immediates so nothing allocates
+        using numeric_ops::ArithOp;
+        const ArithOp aop = op == "+" ? ArithOp::Add
+                          : op == "-" ? ArithOp::Sub
+                          : op == "*" ? ArithOp::Mul
+                                      : ArithOp::Div;
+
+        std::vector<NumericValue> nums(args.size());
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            if (!numeric_ops::classify_immediate(args[i], nums[i])) {
+                return err(op + ": numeric arguments required");
+            }
         }
-        if (any_real) {
-            double acc;
-            if (args.empty()) {
-                if (op == "+") acc = 0.0;
-                else if (op == "*") acc = 1.0;
-                else return err(op + " requires at least 1 argument");
-            } else {
-                if (!as_real(args[0], acc)) return err(op + ": numeric arguments required");
-                if (args.size() == 1) {
-                    if (op == "-") acc = -acc;
-                    else if (op == "/") {
-                        if (acc == 0.0) return err(op + ": division by zero");
-                        acc = 1.0 / acc;
-                    }
-                }
+
+        const NumericValue zero{NumType::Fixnum, 0, 0.0};
+        const NumericValue one{NumType::Fixnum, 1, 0.0};
+        const NumericValue minus_one{NumType::Fixnum, -1, 0.0};
+
+        NumericValue acc{};
+        if (nums.empty()) {
+            if (aop == ArithOp::Add) acc = zero;
+            else if (aop == ArithOp::Mul) acc = one;
+            else return err(op + " requires at least 1 argument");
+        } else if (nums.size() == 1) {
+            /// (- x) is -1 * x so that (- 0.0) is -0.0; (/ x) is (/ 1 x)
+            acc = nums[0];
+            if (aop == ArithOp::Sub || aop == ArithOp::Div) {
+                auto r = aop == ArithOp::Sub ? numeric_ops::arith(ArithOp::Mul, minus_one, acc)
+                                             : numeric_ops::arith(ArithOp::Div, one, acc);
+                if (!r) return err(op + ": division by zero");
+                acc = *r;
             }
-            for (std::size_t i = 1; i < args.size(); ++i) {
-                double rhs;
-                if (!as_real(args[i], rhs)) return err(op + ": numeric arguments required");
-                if      (op == "+") acc += rhs;
-                else if (op == "-") acc -= rhs;
-                else if (op == "*") acc *= rhs;
-                else if (op == "/") {
-                    if (rhs == 0.0) return err(op + ": division by zero");
-                    acc /= rhs;
-                }
+        } else {
+            acc = nums[0];
+            for (std::size_t i = 1; i < nums.size(); ++i) {
+                auto r = numeric_ops::arith(aop, acc, nums[i]);
+                if (!r) return err(op + ": division by zero");
+                acc = *r;
             }
-            auto enc = ops::encode<double>(acc);
+        }
+
+        if (acc.is_flonum()) {
+            auto enc = ops::encode<double>(acc.float_val);
             if (!enc) return err(op + ": invalid floating-point result");
             return *enc;
         }
-
-        int64_t acc;
-        if (args.empty()) {
-            if (op == "+") acc = 0;
-            else if (op == "*") acc = 1;
-            else return err(op + " requires at least 1 argument");
-        } else {
-            if (!as_int(args[0], acc)) return err(op + ": integer arguments required");
-            if (args.size() == 1) {
-                if (op == "-") acc = -acc;
-                else if (op == "/") {
-                    if (acc == 0) return err(op + ": division by zero");
-                    /// integer reciprocal is fractional; promote to double
-                    auto enc = ops::encode<double>(1.0 / static_cast<double>(acc));
-                    if (!enc) return err(op + ": invalid floating-point result");
-                    return *enc;
-                }
-            }
-        }
-        for (std::size_t i = 1; i < args.size(); ++i) {
-            int64_t rhs;
-            if (!as_int(args[i], rhs)) return err(op + ": integer arguments required");
-            if      (op == "+") acc += rhs;
-            else if (op == "-") acc -= rhs;
-            else if (op == "*") acc *= rhs;
-            else if (op == "/") {
-                if (rhs == 0) return err(op + ": division by zero");
-                if ((acc % rhs) != 0) {
-                    auto enc = ops::encode<double>(static_cast<double>(acc) / static_cast<double>(rhs));
-                    if (!enc) return err(op + ": invalid floating-point result");
-                    return *enc;
-                }
-                acc /= rhs;
-            }
-        }
-        auto enc = ops::encode<int64_t>(acc);
+        auto enc = ops::encode<int64_t>(acc.int_val);
         if (!enc) return err(op + ": result out of fixnum range");
         return *enc;
     }

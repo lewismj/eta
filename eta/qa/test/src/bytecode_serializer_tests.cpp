@@ -602,12 +602,16 @@ BOOST_AUTO_TEST_CASE(roundtrip_long_list_constant) {
     BOOST_REQUIRE(result.has_value());
     LispVal cur = result->registry.get(0)->constants[0];
     roots.push(cur);
+    /// One assertion for the whole walk: a per-element BOOST_REQUIRE logs 200k lines at --log_level=all
+    int64_t matched = 0;
     for (int64_t i = 1; i <= kLen; ++i) {
+        if (!ops::is_boxed(cur) || ops::tag(cur) != Tag::HeapObject) break;
         auto* c = big_heap.try_get_as<memory::heap::ObjectKind::Cons, types::Cons>(ops::payload(cur));
-        BOOST_REQUIRE(c);
-        BOOST_REQUIRE_EQUAL(ops::decode<int64_t>(c->car).value_or(-1), i);
+        if (!c || ops::decode<int64_t>(c->car).value_or(-1) != i) break;
+        ++matched;
         cur = c->cdr;
     }
+    BOOST_REQUIRE_EQUAL(matched, kLen);
     BOOST_CHECK(cur == Nil);
 }
 

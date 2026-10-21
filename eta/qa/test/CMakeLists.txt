@@ -45,6 +45,7 @@ set(SOURCES
         src/bytecode_serializer_tests.cpp
         src/disassembler_tests.cpp
         src/optimization_tests.cpp
+        src/numeric_tests.cpp
         src/cons_pool_tests.cpp
         src/stats_tests.cpp
         src/time_primitives_tests.cpp

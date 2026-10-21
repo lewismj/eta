@@ -5,6 +5,7 @@
 
 #include "eta/session/runtime_primitives.h"
 
+#include "eta/runtime/builtin_catalog.h"
 #include "eta/runtime/factory.h"
 #include "eta/runtime/types/primitive.h"
 
@@ -33,7 +34,11 @@ std::expected<void, runtime::error::RuntimeError> RuntimePrimitiveInstaller::ins
         auto* prim_obj = heap_.try_get_as<
             runtime::memory::heap::ObjectKind::Primitive,
             runtime::types::Primitive>(runtime::nanbox::ops::payload(*prim));
-        if (prim_obj) prim_obj->debug_name = spec.name;
+        if (prim_obj) {
+            prim_obj->debug_name = spec.name;
+            /// VM::dispatch_callee reads this to route blocking builtins to the dirty-task pool
+            prim_obj->is_blocking = runtime::builtin_is_blocking(spec.name);
+        }
         globals[i] = *prim;
     }
 

@@ -551,7 +551,13 @@ bool CompilationSession::run_source_impl(Host& host,
         globals.resize(needed, runtime::nanbox::Nil);
     }
 
-    if (execute) {
+    /**
+     * Builtin slots are immutable globals, so their Primitive objects only need
+     * installing once (as the .etac loader does). Reinstalling on every
+     * execution allocated ~480 fresh Primitives per run_source/eval_string.
+     * The installer is invalidated when an extension or sidecar changes a builtin.
+     */
+    if (execute && !host.primitive_installer().installed()) {
         auto install_res = host.primitive_installer().install_into(globals, needed);
         if (!install_res) {
             rollback_accumulated_forms();

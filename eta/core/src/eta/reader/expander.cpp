@@ -53,6 +53,7 @@ namespace eta::reader::expander {
 
             /// Numeric and comparison
             "zero?","positive?","negative?","abs","min","max","modulo","remainder",
+            "floor","ceiling","truncate","round",
             "sin","cos","tan","asin","acos","atan","exp","log","sqrt","pow",
             "+","-","*","/","=","<",">","<=",">=",
             "set-aad-nondiff-policy!","aad-nondiff-policy",

@@ -31,8 +31,9 @@ inline std::expected<bool, RuntimeError> compare_tape_operands(
     auto tape = PrimReg::get_active_tape_for_op(heap, vm, name);
     if (!tape) return std::unexpected(tape.error());
 
+    /// A TapeRef stands for its (flonum) primal; anything else must be a plain number
     auto extract = [&](LispVal value, const char* role)
-        -> std::expected<double, RuntimeError> {
+        -> std::expected<NumericValue, RuntimeError> {
         if (!types::tape_ref::is_tape_ref(value)) {
             auto numeric = numeric_ops::classify(value, heap);
             if (!numeric.is_valid()) {
@@ -40,19 +41,19 @@ inline std::expected<bool, RuntimeError> compare_tape_operands(
                     RuntimeErrorCode::TypeError,
                     std::string(name) + ": argument is not a number"}});
             }
-            return numeric.as_double();
+            return numeric;
         }
 
         auto index = PrimReg::validate_ref_for_tape(*tape, value, name, role);
         if (!index) return std::unexpected(index.error());
-        return (*tape)->entries[*index].primal;
+        return NumericValue{NumType::Flonum, 0, (*tape)->entries[*index].primal};
     };
 
     auto lhs = extract(a, "lhs");
     if (!lhs) return std::unexpected(lhs.error());
     auto rhs = extract(b, "rhs");
     if (!rhs) return std::unexpected(rhs.error());
-    return numeric_ops::apply_compare(op, *lhs, *rhs);
+    return numeric_ops::compare(op, *lhs, *rhs);
 }
 
 /**
