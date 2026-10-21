@@ -6,6 +6,10 @@ add_executable(eta_dap
     src/eta/dap/dap_io.cpp
     src/eta/dap/dap_trace.cpp
     src/eta/dap/dap_server.cpp
+    src/eta/dap/dap_server_breakpoints.cpp
+    src/eta/dap/dap_server_variables.cpp
+    src/eta/dap/dap_server_evaluate.cpp
+    src/eta/dap/dap_server_inspect.cpp
 )
 
 target_include_directories(eta_dap

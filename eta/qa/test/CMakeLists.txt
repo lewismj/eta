@@ -154,6 +154,10 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 target_sources(${PROJECT_NAME} PRIVATE
     ${ETA_DAP_SRC_DIR}/eta/dap/dap_io.cpp
     ${ETA_DAP_SRC_DIR}/eta/dap/dap_server.cpp
+    ${ETA_DAP_SRC_DIR}/eta/dap/dap_server_breakpoints.cpp
+    ${ETA_DAP_SRC_DIR}/eta/dap/dap_server_variables.cpp
+    ${ETA_DAP_SRC_DIR}/eta/dap/dap_server_evaluate.cpp
+    ${ETA_DAP_SRC_DIR}/eta/dap/dap_server_inspect.cpp
     ${ETA_LSP_SRC_DIR}/eta/lsp/lsp_server.cpp
     ${ETA_JUPYTER_SRC_DIR}/eta/jupyter/kernel_config.cpp
     ${ETA_JUPYTER_SRC_DIR}/eta/jupyter/magics.cpp
