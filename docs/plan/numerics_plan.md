@@ -1,4 +1,4 @@
-# Numerics Performance Plan
+# Numerics Performance Plan (Implemented)
 
 ## Goal
 
