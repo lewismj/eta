@@ -18,6 +18,16 @@ endif()
 
 add_executable(eta
     src/eta/cli/main_eta.cpp
+    src/eta/cli/cli_cmd_deps.cpp
+    src/eta/cli/cli_cmd_project.cpp
+    src/eta/cli/cli_cmd_run.cpp
+    src/eta/cli/cli_module_paths.cpp
+    src/eta/cli/cli_packages.cpp
+    src/eta/cli/cli_process.cpp
+    src/eta/cli/cli_scaffold.cpp
+    src/eta/cli/cli_usage.cpp
+    src/eta/cli/cli_util.cpp
+    src/eta/cli/cli_workspace.cpp
 )
 
 set_target_properties(eta PROPERTIES CXX_SCAN_FOR_MODULES OFF)

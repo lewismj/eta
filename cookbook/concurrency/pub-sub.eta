@@ -27,6 +27,7 @@
                   (match-list 'subscribe 2)
                   (lambda (msg)
                     (let ((pid (car (cdr msg))) (topic (car (cdr (cdr msg)))))
+                      (send pid (list 'subscribed topic))
                       (loop (%add-subscription subs topic pid)))))
                 (match-case
                   (match-list 'publish 2)
@@ -41,6 +42,9 @@
       (spawn
         (lambda ()
           (send broker (list 'subscribe (self) topic))
+          ;; Wait for the broker's ack so the parent never publishes before we are subscribed.
+          (receive-match (match-list 'subscribed 1) 5000)
+          (send parent (list 'ready name))
           (let
             loop
             ()
@@ -59,13 +63,18 @@
     (define price-sub (make-subscriber 'price-sub 'prices broker (self)))
     (define alert-sub (make-subscriber 'alert-sub 'alerts broker (self)))
 
-    (send broker (list 'publish 'prices 100.5))
-    (send broker (list 'publish 'alerts "margin-call"))
-    (send broker (list 'publish 'prices 101.1))
+    ;; Both subscribers must be registered before anything is published.
+    (receive-match (match-list 'ready 1) 5000)
+    (receive-match (match-list 'ready 1) 5000)
 
-    (println (receive-match (match-list 'seen 3) 1000))
-    (println (receive-match (match-list 'seen 3) 1000))
-    (println (receive-match (match-list 'seen 3) 1000))
+    ;; Publish one event at a time so the output order is deterministic.
+    (defun publish-and-report (topic payload)
+      (send broker (list 'publish topic payload))
+      (println (receive-match (match-list 'seen 3) 5000)))
+
+    (publish-and-report 'prices 100.5)
+    (publish-and-report 'alerts "margin-call")
+    (publish-and-report 'prices 101.1)
 
     (send price-sub 'stop)
     (send alert-sub 'stop)
