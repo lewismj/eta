@@ -159,6 +159,11 @@ target_sources(${PROJECT_NAME} PRIVATE
     ${ETA_DAP_SRC_DIR}/eta/dap/dap_server_evaluate.cpp
     ${ETA_DAP_SRC_DIR}/eta/dap/dap_server_inspect.cpp
     ${ETA_LSP_SRC_DIR}/eta/lsp/lsp_server.cpp
+    ${ETA_LSP_SRC_DIR}/eta/lsp/lsp_server_documents.cpp
+    ${ETA_LSP_SRC_DIR}/eta/lsp/lsp_server_commands.cpp
+    ${ETA_LSP_SRC_DIR}/eta/lsp/lsp_server_navigation.cpp
+    ${ETA_LSP_SRC_DIR}/eta/lsp/lsp_server_completion.cpp
+    ${ETA_LSP_SRC_DIR}/eta/lsp/lsp_server_structure.cpp
     ${ETA_JUPYTER_SRC_DIR}/eta/jupyter/kernel_config.cpp
     ${ETA_JUPYTER_SRC_DIR}/eta/jupyter/magics.cpp
     ${ETA_INTERPRETER_SRC_DIR}/eta/interpreter/repl_wrap.cpp

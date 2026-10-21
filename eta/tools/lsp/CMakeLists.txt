@@ -4,6 +4,11 @@ project(eta_lsp LANGUAGES CXX)
 add_executable(eta_lsp
     src/eta/lsp/main_lsp.cpp
     src/eta/lsp/lsp_server.cpp
+    src/eta/lsp/lsp_server_documents.cpp
+    src/eta/lsp/lsp_server_commands.cpp
+    src/eta/lsp/lsp_server_navigation.cpp
+    src/eta/lsp/lsp_server_completion.cpp
+    src/eta/lsp/lsp_server_structure.cpp
 )
 
 target_include_directories(eta_lsp
