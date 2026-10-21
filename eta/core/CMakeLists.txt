@@ -254,6 +254,12 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT MSVC)
 
     target_link_options(${PROJECT_NAME}_sanitized PRIVATE -fsanitize=address)
 
+    # Only the sources above are instrumented; everything else they reach (the
+    # profiler hook in heap.cpp, the VM, ...) comes from the regular core. The
+    # linker sees the sanitized objects first, so the plain copies of these same
+    # files are never pulled in.
+    target_link_libraries(${PROJECT_NAME}_sanitized PUBLIC ${PROJECT_NAME})
+
     add_library(eta_cst_sanitized STATIC
         src/eta/cst/source.cpp
         src/eta/cst/parse.cpp

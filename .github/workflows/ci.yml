@@ -5,6 +5,8 @@ name: ci
 #
 #   linux-release    Release, GCC; also eta_fmt --check and eta_lint on stdlib + cookbook
 #   linux-gc-torture Release, GCC; gc_rooting_tests + cookbook, ETA_GC_TORTURE=20
+#   linux-fuzz-smoke Clang + libFuzzer/ASan; every fuzz target, seeds + 20k fixed-seed runs
+#                    (long time-boxed runs live in fuzz.yml, started by hand)
 #   windows-release  Release, MSVC
 
 on:
@@ -160,6 +162,79 @@ jobs:
           test -n "$exe" || { echo "eta_core_test not found"; exit 1; }
           "$exe" --log_level=test_suite \
             --run_test=gc_rooting_tests:example_runner_tests:compiled_example_tests
+
+  # Fuzz smoke: build every libFuzzer target and run each one deterministically
+  # (-seed=1, seeds then 20k mutations) via scripts/fuzz.sh. Catches build rot
+  # and regressions on the seed corpora; open-ended fuzzing is fuzz.yml.
+  fuzz-smoke:
+    name: linux-fuzz-smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build uuid-dev libssl-dev ccache \
+            clang-19 clang-tools-19 libclang-rt-19-dev
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-linux-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: vcpkg-linux-
+
+      - name: Install Boost via vcpkg
+        env:
+          X_VCPKG_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git /tmp/vcpkg
+          /tmp/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          /tmp/vcpkg/vcpkg install boost-test:x64-linux boost-unordered:x64-linux
+
+      - name: Cache libtorch download
+        uses: actions/cache@v4
+        with:
+          path: build/_libtorch_dl
+          key: libtorch-linux-cpu-${{ env.ETA_LIBTORCH_VER }}
+
+      - name: Cache compiler output
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-fuzz
+          max-size: 2G
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-19 \
+            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/bin/clang-scan-deps-19 \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build fuzzers
+        run: cmake --build build --target eta_fuzz_all
+
+      - name: Fuzz (deterministic smoke)
+        run: bash scripts/fuzz.sh --build-dir build --out build/fuzz-out --runs 20000
+
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-smoke-failures
+          path: |
+            build/fuzz-out/artifacts
+            build/fuzz-out/*.log
+          if-no-files-found: ignore
 
   windows:
     name: windows-release

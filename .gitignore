@@ -85,3 +85,8 @@ REVIEW.md
 
 
 
+
+# Fuzz corpora grow locally (configure copies samples/ in, libFuzzer adds finds);
+# only the curated intern_table corpus is tracked.
+eta/qa/fuzz/corpus/*
+!eta/qa/fuzz/corpus/intern_table/

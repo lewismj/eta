@@ -1,0 +1,1 @@
+{"seq":3,"type":"request","command":"setBreakpoints","arguments":{"source":{"path":"main.eta"},"breakpoints":[{"line":4},{"line":9,"condition":"(> x 1)"}]}}

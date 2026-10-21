@@ -5,3 +5,8 @@
 eta/qa/test/fixtures/linter/*.eta text eol=lf
 eta/qa/test/fixtures/linter/*.json text eol=lf
 
+
+# Fuzz seeds and dictionaries are byte-exact (CRLF framing headers, binary .etac
+# and wire-format frames); never let git convert them.
+eta/qa/fuzz/samples/** -text
+eta/qa/fuzz/dict/** -text

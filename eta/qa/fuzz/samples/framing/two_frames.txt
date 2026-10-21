@@ -1,0 +1,6 @@
+Content-Type: application/vscode-jsonrpc
+Content-Length: 13
+
+{"id":1,"a":2}Content-Length: 2
+
+[]

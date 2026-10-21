@@ -30,8 +30,14 @@ set(FUZZ_LINK_FLAGS
         -fsanitize=fuzzer,address
 )
 
-# Helper function to create fuzz targets with standardized corpus directories
+# Helper function to create fuzz targets with standardized corpus directories.
+# An optional fourth argument overrides the core library to link (default ETA_CORE_FOR_FUZZ).
 function(add_fuzz_target TARGET_NAME SOURCE_FILE CORPUS_NAME)
+    if(ARGC GREATER 3)
+        set(CORE_LIB ${ARGV3})
+    else()
+        set(CORE_LIB ${ETA_CORE_FOR_FUZZ})
+    endif()
 
     add_executable(${TARGET_NAME} ${SOURCE_FILE})
 
@@ -39,10 +45,10 @@ function(add_fuzz_target TARGET_NAME SOURCE_FILE CORPUS_NAME)
     target_link_options(${TARGET_NAME} PRIVATE ${FUZZ_LINK_FLAGS})
 
     # Link against the selected core library (sanitized if available)
-    target_link_libraries(${TARGET_NAME} PRIVATE ${ETA_CORE_FOR_FUZZ})
+    target_link_libraries(${TARGET_NAME} PRIVATE ${CORE_LIB})
 
     # Ensure the core library is built before this fuzzer
-    add_dependencies(${TARGET_NAME} ${ETA_CORE_FOR_FUZZ})
+    add_dependencies(${TARGET_NAME} ${CORE_LIB})
 
     # Create standardized corpus directory (e.g., corpus/nanbox, corpus/intern_table)
     set(CORPUS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/corpus/${CORPUS_NAME})
@@ -75,7 +81,9 @@ add_fuzz_target(eta_fuzz_heap src/fuzz_heap.cpp heap)
 if(TARGET eta_cst_sanitized)
     add_library(eta_format_sanitized STATIC
         ../../tools/formatter/src/eta/format/doc.cpp
-        ../../tools/formatter/src/eta/format/format_source.cpp)
+        ../../tools/formatter/src/eta/format/format_source.cpp
+        ../../tools/formatter/src/eta/format/forms.cpp
+        ../../tools/formatter/src/eta/format/layout.cpp)
     target_include_directories(eta_format_sanitized PUBLIC ../../tools/formatter/src)
     target_link_libraries(eta_format_sanitized PUBLIC eta_cst_sanitized)
     target_compile_options(eta_format_sanitized PRIVATE -fsanitize=address -fno-omit-frame-pointer -g -O1)
@@ -91,3 +99,28 @@ if(TARGET eta_cst_sanitized)
 else()
     target_link_libraries(eta_fuzz_cst PRIVATE eta_cst)
 endif()
+
+# Parsers of untrusted input. The parser under test is compiled into the fuzzer
+# itself (header-only, or added as a source) so it gets coverage and ASan
+# instrumentation; the rest of the runtime comes from the regular eta_core.
+set(ETA_CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../core/src)
+
+add_fuzz_target(eta_fuzz_etac src/fuzz_etac.cpp etac eta_core)
+target_sources(eta_fuzz_etac PRIVATE ${ETA_CORE_SRC_DIR}/eta/runtime/vm/bytecode_serializer.cpp)
+
+add_fuzz_target(eta_fuzz_wire_format src/fuzz_wire_format.cpp wire_format eta_core)
+target_include_directories(eta_fuzz_wire_format PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../packages/stdlib/native/nng/src)
+
+add_fuzz_target(eta_fuzz_json src/fuzz_json.cpp json)
+
+add_fuzz_target(eta_fuzz_framing src/fuzz_framing.cpp framing)
+target_sources(eta_fuzz_framing PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/shared/src/eta/tooling/framing.cpp)
+target_include_directories(eta_fuzz_framing PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/shared/src)
+
+# Every fuzz target, for `cmake --build --target eta_fuzz_all` and the fuzz workflows.
+add_custom_target(eta_fuzz_all DEPENDS
+    eta_fuzz_nanbox eta_fuzz_intern_table eta_fuzz_heap eta_fuzz_formatter eta_fuzz_cst
+    eta_fuzz_etac eta_fuzz_wire_format eta_fuzz_json eta_fuzz_framing)

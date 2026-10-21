@@ -1,0 +1,143 @@
+name: fuzz
+
+# Long, time-boxed libFuzzer runs. Not part of CI (ci.yml's linux-fuzz-smoke
+# does a short deterministic pass instead); start it from Actions > fuzz >
+# Run workflow. One job per target, each fuzzing for `minutes`.
+#
+# Each job keeps its grown corpus in the Actions cache (fuzz-corpus-<target>-*)
+# so later runs pick up where the last one stopped, and uploads the corpus,
+# the log and any crash inputs as artifacts. Reproduce a crash locally with
+#   build/eta/qa/fuzz/eta_fuzz_<target> <crash-file>
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes of fuzzing per target
+        required: true
+        default: '30'
+      targets:
+        description: Space-separated targets (empty = all)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ETA_LIBTORCH_VER: 2.11.0
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      targets: ${{ steps.targets.outputs.json }}
+    steps:
+      - id: targets
+        env:
+          REQUESTED: ${{ inputs.targets }}
+        run: |
+          all="nanbox intern_table heap formatter cst etac wire_format json framing"
+          chosen="${REQUESTED:-$all}"
+          for t in $chosen; do
+            case " $all " in *" $t "*) ;; *) echo "unknown target: $t (known: $all)"; exit 1 ;; esac
+          done
+          json="[$(printf '"%s",' $chosen | sed 's/,$//')]"
+          echo "json=$json" >> "$GITHUB_OUTPUT"
+          echo "targets: $json"
+
+  fuzz:
+    name: fuzz-${{ matrix.target }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.targets) }}
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build uuid-dev libssl-dev ccache \
+            clang-19 clang-tools-19 libclang-rt-19-dev
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-linux-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: vcpkg-linux-
+
+      - name: Install Boost via vcpkg
+        env:
+          X_VCPKG_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git /tmp/vcpkg
+          /tmp/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          /tmp/vcpkg/vcpkg install boost-test:x64-linux boost-unordered:x64-linux
+
+      - name: Cache libtorch download
+        uses: actions/cache@v4
+        with:
+          path: build/_libtorch_dl
+          key: libtorch-linux-cpu-${{ env.ETA_LIBTORCH_VER }}
+
+      - name: Cache compiler output
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-fuzz
+          max-size: 2G
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-19 \
+            -DCMAKE_CXX_COMPILER=clang++-19 \
+            -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/bin/clang-scan-deps-19 \
+            -DCMAKE_TOOLCHAIN_FILE=/tmp/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build fuzzer
+        run: cmake --build build --target eta_fuzz_${{ matrix.target }}
+
+      - name: Restore corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: build/fuzz-out/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Fuzz
+        env:
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          bash scripts/fuzz.sh --build-dir build --out build/fuzz-out \
+            --seconds "$(( MINUTES * 60 ))" ${{ matrix.target }}
+
+      - name: Save corpus
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: build/fuzz-out/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: |
+            build/fuzz-out/artifacts/${{ matrix.target }}
+            build/fuzz-out/${{ matrix.target }}.log
+            build/fuzz-out/corpus/${{ matrix.target }}
+          if-no-files-found: ignore
