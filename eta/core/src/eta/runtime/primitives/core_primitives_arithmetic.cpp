@@ -8,8 +8,8 @@
 #include "eta/runtime/primitives/core_primitives_arithmetic_helpers.h"
 #include "eta/runtime/aad_unary_helpers.h"
 #include "eta/runtime/factory.h"
+#include "eta/runtime/numeric_ops.h"
 #include "eta/runtime/numeric_value.h"
-#include "eta/runtime/overflow.h"
 #include "eta/runtime/types/tape.h"
 #include "eta/runtime/types/tape_ref.h"
 #include "eta/runtime/vm/vm.h"
@@ -40,34 +40,16 @@ void PrimReg::register_arithmetic() {
             }
             return acc;
         }
-        int64_t isum = 0;
-        bool use_float = false;
-        double fsum = 0.0;
+        NumericValue acc{NumType::Fixnum, 0, 0.0};
         for (auto v : args) {
-            auto n = classify_numeric(v, heap);
+            auto n = numeric_ops::classify(v, heap);
             if (!n.is_valid()) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError, "+: argument is not a number"}});
             }
-            if (n.is_flonum() || use_float) {
-                if (!use_float) {
-                    fsum = static_cast<double>(isum);
-                    use_float = true;
-                }
-                fsum += n.as_double();
-            } else {
-                int64_t new_sum;
-                if (detail::add_overflow(isum, n.int_val, &new_sum)) {
-                    use_float = true;
-                    fsum = static_cast<double>(isum)
-                        + static_cast<double>(n.int_val);
-                } else {
-                    isum = new_sum;
-                }
-            }
+            acc = *numeric_ops::arith(numeric_ops::ArithOp::Add, acc, n);
         }
-        if (use_float) return make_flonum(fsum);
-        return make_fixnum(heap, isum);
+        return numeric_ops::box(heap, acc);
     });
 
     env.register_builtin("-", 1, true, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -90,7 +72,7 @@ void PrimReg::register_arithmetic() {
             }
             return acc;
         }
-        auto first = classify_numeric(args[0], heap);
+        auto first = numeric_ops::classify(args[0], heap);
         if (!first.is_valid()) {
             return std::unexpected(RuntimeError{VMError{
                 RuntimeErrorCode::TypeError, "-: argument is not a number"}});
@@ -101,34 +83,16 @@ void PrimReg::register_arithmetic() {
             return make_fixnum(heap, -first.int_val);
         }
 
-        bool use_float = first.is_flonum();
-        int64_t iresult = first.int_val;
-        double fresult = first.as_double();
+        NumericValue acc = first;
         for (size_t i = 1; i < args.size(); ++i) {
-            auto n = classify_numeric(args[i], heap);
+            auto n = numeric_ops::classify(args[i], heap);
             if (!n.is_valid()) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError, "-: argument is not a number"}});
             }
-            if (n.is_flonum() || use_float) {
-                if (!use_float) {
-                    fresult = static_cast<double>(iresult);
-                    use_float = true;
-                }
-                fresult -= n.as_double();
-            } else {
-                int64_t new_result;
-                if (detail::sub_overflow(iresult, n.int_val, &new_result)) {
-                    use_float = true;
-                    fresult = static_cast<double>(iresult)
-                        - static_cast<double>(n.int_val);
-                } else {
-                    iresult = new_result;
-                }
-            }
+            acc = *numeric_ops::arith(numeric_ops::ArithOp::Sub, acc, n);
         }
-        if (use_float) return make_flonum(fresult);
-        return make_fixnum(heap, iresult);
+        return numeric_ops::box(heap, acc);
     });
 
     env.register_builtin("*", 0, true, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -142,34 +106,16 @@ void PrimReg::register_arithmetic() {
             }
             return acc;
         }
-        int64_t iprod = 1;
-        bool use_float = false;
-        double fprod = 1.0;
+        NumericValue acc{NumType::Fixnum, 1, 0.0};
         for (auto v : args) {
-            auto n = classify_numeric(v, heap);
+            auto n = numeric_ops::classify(v, heap);
             if (!n.is_valid()) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError, "*: argument is not a number"}});
             }
-            if (n.is_flonum() || use_float) {
-                if (!use_float) {
-                    fprod = static_cast<double>(iprod);
-                    use_float = true;
-                }
-                fprod *= n.as_double();
-            } else {
-                int64_t new_prod;
-                if (detail::mul_overflow(iprod, n.int_val, &new_prod)) {
-                    use_float = true;
-                    fprod = static_cast<double>(iprod)
-                        * static_cast<double>(n.int_val);
-                } else {
-                    iprod = new_prod;
-                }
-            }
+            acc = *numeric_ops::arith(numeric_ops::ArithOp::Mul, acc, n);
         }
-        if (use_float) return make_flonum(fprod);
-        return make_fixnum(heap, iprod);
+        return numeric_ops::box(heap, acc);
     });
 
     env.register_builtin("/", 1, true, [&heap, vm](Args args) -> std::expected<LispVal, RuntimeError> {
@@ -192,7 +138,7 @@ void PrimReg::register_arithmetic() {
             }
             return acc;
         }
-        auto first = classify_numeric(args[0], heap);
+        auto first = numeric_ops::classify(args[0], heap);
         if (!first.is_valid()) {
             return std::unexpected(RuntimeError{VMError{
                 RuntimeErrorCode::TypeError, "/: argument is not a number"}});
@@ -207,71 +153,34 @@ void PrimReg::register_arithmetic() {
             return make_flonum(1.0 / d);
         }
 
-        bool use_float = first.is_flonum();
-        int64_t inum = first.int_val;
-        double fnum = first.as_double();
+        NumericValue acc = first;
         for (size_t i = 1; i < args.size(); ++i) {
-            auto n = classify_numeric(args[i], heap);
+            auto n = numeric_ops::classify(args[i], heap);
             if (!n.is_valid()) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError, "/: argument is not a number"}});
             }
-            if (n.as_double() == 0.0) {
+            auto q = numeric_ops::arith(numeric_ops::ArithOp::Div, acc, n);
+            if (!q) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError, "/: division by zero"}});
             }
-            if (use_float || n.is_flonum()) {
-                if (!use_float) {
-                    fnum = static_cast<double>(inum);
-                    use_float = true;
-                }
-                fnum /= n.as_double();
-            } else if (inum % n.int_val != 0) {
-                use_float = true;
-                fnum = static_cast<double>(inum)
-                    / static_cast<double>(n.int_val);
-            } else {
-                inum /= n.int_val;
-            }
+            acc = *q;
         }
-        if (use_float) return make_flonum(fnum);
-        return make_fixnum(heap, inum);
+        return numeric_ops::box(heap, acc);
     });
 
     /**
      * Comparison: = < > <= >=
      */
 
-    env.register_builtin(
-        "=", 2, true,
-        detail::core_primitives_arithmetic::make_comparison_primitive(
-            heap, vm, "=",
-            [](int64_t a, int64_t b) { return a == b; },
-            [](double a, double b) { return a == b; }));
-    env.register_builtin(
-        "<", 2, true,
-        detail::core_primitives_arithmetic::make_comparison_primitive(
-            heap, vm, "<",
-            [](int64_t a, int64_t b) { return a < b; },
-            [](double a, double b) { return a < b; }));
-    env.register_builtin(
-        ">", 2, true,
-        detail::core_primitives_arithmetic::make_comparison_primitive(
-            heap, vm, ">",
-            [](int64_t a, int64_t b) { return a > b; },
-            [](double a, double b) { return a > b; }));
-    env.register_builtin(
-        "<=", 2, true,
-        detail::core_primitives_arithmetic::make_comparison_primitive(
-            heap, vm, "<=",
-            [](int64_t a, int64_t b) { return a <= b; },
-            [](double a, double b) { return a <= b; }));
-    env.register_builtin(
-        ">=", 2, true,
-        detail::core_primitives_arithmetic::make_comparison_primitive(
-            heap, vm, ">=",
-            [](int64_t a, int64_t b) { return a >= b; },
-            [](double a, double b) { return a >= b; }));
+    using numeric_ops::CmpOp;
+    using detail::core_primitives_arithmetic::make_comparison_primitive;
+    env.register_builtin("=",  2, true, make_comparison_primitive(heap, vm, "=",  CmpOp::NumEq));
+    env.register_builtin("<",  2, true, make_comparison_primitive(heap, vm, "<",  CmpOp::Lt));
+    env.register_builtin(">",  2, true, make_comparison_primitive(heap, vm, ">",  CmpOp::Gt));
+    env.register_builtin("<=", 2, true, make_comparison_primitive(heap, vm, "<=", CmpOp::Le));
+    env.register_builtin(">=", 2, true, make_comparison_primitive(heap, vm, ">=", CmpOp::Ge));
 
     /**
      * Equivalence: eq? eqv? not

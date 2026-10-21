@@ -46,6 +46,7 @@ namespace eta::runtime::types {
         uint32_t arity {};
         bool has_rest {};
         std::string debug_name {};          ///< Optional profiler/debug label
+        bool is_blocking {};                ///< Cached builtin_is_blocking(debug_name); set at install
         std::vector<LispVal> gc_roots {};  ///< LispVals captured by func that GC must trace
     };
 

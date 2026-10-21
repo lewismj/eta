@@ -5,7 +5,6 @@
 #include <future>
 #include <limits>
 #include "eta/runtime/actor/actor_system.h"
-#include "eta/runtime/builtin_catalog.h"
 #include "eta/runtime/factory.h"
 #include "eta/runtime/ad_error.h"
 #include "eta/runtime/types/types.h"
@@ -16,8 +15,8 @@
 #include "eta/runtime/memory/value_visit.h"
 #include "eta/runtime/memory/mark_sweep_gc.h"
 #include "eta/runtime/string_view.h"
+#include "eta/runtime/numeric_ops.h"
 #include "eta/runtime/numeric_value.h"
-#include "eta/runtime/overflow.h"
 #include "eta/runtime/port.h"
 #include "eta/runtime/clp/domain.h"
 #include "eta/runtime/prof/profiler.h"
@@ -589,8 +588,22 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
     if (!ops::is_boxed(callee)) {
         return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Callee is not boxed"}});
     }
-    
-    if (auto* closure = try_get_as<ObjectKind::Closure, Closure>(callee)) {
+
+    /// Single heap lookup: classify the callee once instead of probing each callable kind.
+    Closure* closure = nullptr;
+    Continuation* cont = nullptr;
+    Primitive* prim = nullptr;
+    if (ops::tag(callee) == Tag::HeapObject) {
+        HeapEntry entry;
+        if (heap_.try_get(ops::payload(callee), entry)) {
+            const auto kind = entry.header.kind;
+            if (kind == ObjectKind::Closure) closure = static_cast<Closure*>(entry.ptr);
+            else if (kind == ObjectKind::Continuation) cont = static_cast<Continuation*>(entry.ptr);
+            else if (kind == ObjectKind::Primitive) prim = static_cast<Primitive*>(entry.ptr);
+        }
+    }
+
+    if (closure) {
         /// Arity check early (fail fast)
         if (closure->func->has_rest) {
             if (argc < closure->func->arity) {
@@ -610,7 +623,7 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
         };
     }
 
-    if (auto* cont = try_get_as<ObjectKind::Continuation, Continuation>(callee)) {
+    if (cont) {
         if (argc != 1) {
             return route_runtime_error(RuntimeError{VMError{RuntimeErrorCode::InvalidArity, "Continuation expects 1 argument"}});
         }
@@ -711,7 +724,7 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
         return DispatchResult{DispatchAction::Continue, nullptr, 0};
     }
 
-    if (auto* prim = try_get_as<ObjectKind::Primitive, Primitive>(callee)) {
+    if (prim) {
         /// Arity check for primitives
         if (prim->has_rest) {
             if (argc < prim->arity) {
@@ -736,8 +749,7 @@ std::expected<DispatchResult, RuntimeError> VM::dispatch_callee(
                                                  static_cast<std::size_t>(argc)};
 
         const char* prim_name = prim->debug_name.empty() ? nullptr : prim->debug_name.c_str();
-        const bool blocking_builtin = prim_name != nullptr
-            && builtin_is_blocking(prim->debug_name);
+        const bool blocking_builtin = prim->is_blocking;
         const bool allow_dirty_dispatch = !is_tail
             && execute_depth_ == 1
             && !pending_blocking_primitive_.has_value()
@@ -1711,6 +1723,19 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
     LispVal b = pop();
     LispVal a = pop();
 
+    numeric_ops::ArithOp arith_op;
+    if (op == OpCode::Add)      arith_op = numeric_ops::ArithOp::Add;
+    else if (op == OpCode::Sub) arith_op = numeric_ops::ArithOp::Sub;
+    else if (op == OpCode::Mul) arith_op = numeric_ops::ArithOp::Mul;
+    else if (op == OpCode::Div) arith_op = numeric_ops::ArithOp::Div;
+    else return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "Unknown arithmetic op"}});
+
+    /// Fast path: immediate fixnums and flonums (TapeRefs and heap fixnums fall through)
+    if (LispVal fast{}; numeric_ops::try_arith_immediate(arith_op, a, b, fast)) {
+        push(fast);
+        return {};
+    }
+
     /**
      * AD Tape recording
      * If a tape is active and either operand is a TapeRef, record the
@@ -1853,72 +1878,20 @@ std::expected<void, RuntimeError> VM::do_binary_arithmetic(OpCode op) {
 #endif
 
 
-    auto num_a = classify_numeric(a, heap_);
-    auto num_b = classify_numeric(b, heap_);
+    /// General path: heap fixnums, overflow promotion, inexact division, errors
+    const auto num_a = numeric_ops::classify(a, heap_);
+    const auto num_b = numeric_ops::classify(b, heap_);
 
     if (!num_a.is_valid() || !num_b.is_valid()) {
         return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Expected a number"}});
     }
 
-    /// Double-precision path (used when either operand is a flonum, or on integer overflow)
-    auto apply_double = [](OpCode op, double a, double b) -> std::expected<double, RuntimeError> {
-        if (op == OpCode::Add) return a + b;
-        if (op == OpCode::Sub) return a - b;
-        if (op == OpCode::Mul) return a * b;
-        if (op == OpCode::Div) {
-            if (b == 0.0) return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
-            return a / b;
-        }
-        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "Unknown arithmetic op"}});
-    };
-
-    auto push_flonum = [&](double val) -> std::expected<void, RuntimeError> {
-        auto res = make_flonum(val);
-        if (!res) return std::unexpected(res.error());
-        push(*res);
-        return {};
-    };
-
-    /// If either operand is a flonum, result is flonum
-    if (num_a.is_flonum() || num_b.is_flonum()) {
-        auto result = apply_double(op, num_a.as_double(), num_b.as_double());
-        if (!result) return std::unexpected(result.error());
-        return push_flonum(*result);
+    const auto result = numeric_ops::arith(arith_op, num_a, num_b);
+    if (!result) {
+        return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
     }
 
-    int64_t int_a = num_a.int_val;
-    int64_t int_b = num_b.int_val;
-
-    /// Division: special cases for zero and non-exact results
-    if (op == OpCode::Div) {
-        if (int_b == 0) {
-            return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::TypeError, "Division by zero"}});
-        }
-        if (int_a % int_b != 0) {
-            return push_flonum(static_cast<double>(int_a) / static_cast<double>(int_b));
-        }
-        auto res = make_fixnum(heap_, int_a / int_b);
-        if (!res) return std::unexpected(res.error());
-        push(*res);
-        return {};
-    }
-
-    /// Add / Sub / Mul: overflow-checked, promote to double on overflow
-    int64_t int_result;
-    bool overflowed = false;
-
-    if (op == OpCode::Add)       overflowed = detail::add_overflow(int_a, int_b, &int_result);
-    else if (op == OpCode::Sub)  overflowed = detail::sub_overflow(int_a, int_b, &int_result);
-    else if (op == OpCode::Mul)  overflowed = detail::mul_overflow(int_a, int_b, &int_result);
-    else return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::NotImplemented, "Unknown arithmetic op"}});
-
-    if (overflowed) {
-        auto result = apply_double(op, static_cast<double>(int_a), static_cast<double>(int_b));
-        if (!result) return std::unexpected(result.error());
-        return push_flonum(*result);
-    }
-
-    auto res = make_fixnum(heap_, int_result);
+    auto res = numeric_ops::box(heap_, *result);
     if (!res) return std::unexpected(res.error());
     push(*res);
     return {};

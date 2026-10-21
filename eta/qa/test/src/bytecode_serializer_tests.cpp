@@ -11,12 +11,8 @@
 
 /// Reuse the emitter fixture for full round-trip tests
 #include "eta/reader/lexer.h"
-#include "eta/reader/parser.h"
 #include "eta/reader/expander.h"
-#include "eta/reader/module_linker.h"
 #include "eta/semantics/semantic_analyzer.h"
-#include "eta/runtime/builtin_env.h"
-#include "eta/runtime/core_primitives.h"
 
 using namespace eta;
 using namespace eta::runtime;

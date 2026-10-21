@@ -64,7 +64,10 @@ public:
             auto prim = make_primitive(heap, spec.func, spec.arity, spec.has_rest);
             if (!prim) return std::unexpected(prim.error());
             auto* prim_obj = heap.try_get_as<ObjectKind::Primitive, Primitive>(ops::payload(*prim));
-            if (prim_obj) prim_obj->debug_name = spec.name;
+            if (prim_obj) {
+                prim_obj->debug_name = spec.name;
+                prim_obj->is_blocking = builtin_is_blocking(spec.name);
+            }
             const std::size_t slot = start_slot + i;
             if (globals.size() <= slot) globals.resize(slot + 1, Nil);
             globals[slot] = *prim;
