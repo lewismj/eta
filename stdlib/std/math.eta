@@ -6,20 +6,7 @@
 ;;; This module adds constants and common helpers not provided as builtins.
 
 (module std.math
-  (export pi
-    e
-    square
-    cube
-    even?
-    odd?
-    sign
-    clamp
-    quotient
-    gcd
-    lcm
-    expt
-    sum
-    product)
+  (export pi e square cube even? odd? sign clamp quotient gcd lcm expt sum product)
   (begin
 
     ;;  Constants 
