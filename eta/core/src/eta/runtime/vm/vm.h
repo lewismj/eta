@@ -9,6 +9,7 @@
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <atomic>
 #include <cstdint>
 #include <condition_variable>
@@ -706,13 +707,22 @@ private:
     LispVal pop() {
         if (stack_.empty()) [[unlikely]] {
             /**
-             * This indicates corrupt bytecode; run_loop will catch the
-             * InvalidInstruction error returned by ops that call pop().
-             * Return Nil to avoid UB from stack_.back() on empty vector.
+             * run_loop checks each instruction's operand count before
+             * dispatch, so reaching here means a VM bug or a missed opcode.
+             * Latch the fault so run_loop aborts the instruction with
+             * InvalidInstruction rather than computing with a made-up value.
              */
+            stack_fault_ = true;
             return nanbox::Nil;
         }
         LispVal v = stack_.back(); stack_.pop_back(); return v;
+    }
+
+    /// Set by pop() on an empty stack; consumed by run_loop/take_stack_fault().
+    bool stack_fault_{false};
+
+    [[nodiscard]] bool take_stack_fault() noexcept {
+        return std::exchange(stack_fault_, false);
     }
 
     void unpack_to_stack(LispVal value);

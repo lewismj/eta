@@ -239,6 +239,8 @@ public:
     static constexpr uint32_t MAX_STRING_LEN = 64u * 1024u;  ///< 64 KiB per string/symbol
     static constexpr uint32_t MAX_VEC_LEN    = 65535u;       ///< max inline constant-vector len
     static constexpr uint32_t MAX_DEP_HASH_ENTRIES = 65535u; ///< max dep-hash table entries
+    static constexpr uint32_t MAX_FRAME_SLOTS = 1u << 20;    ///< max BytecodeFunction::stack_size
+    static constexpr uint32_t MAX_GLOBALS     = 1u << 24;    ///< max ModuleEntry::total_globals
 
 private:
     memory::heap::Heap& heap_;
@@ -287,10 +289,17 @@ private:
     void write_heap_value(std::ostream& os, nanbox::LispVal v) const;
 
     /**
-     * Lightweight structural verifier: checks that opcode bytes and index args
-     * are in bounds.  Called after deserializing each BytecodeFunction.
+     * Lightweight structural verifier: checks that opcode bytes, index args,
+     * jump targets and call arities are in bounds.  Called after
+     * deserializing each BytecodeFunction.
+     *
+     * @param registry     All functions in the file (file-relative indices).
+     * @param global_limit Exclusive bound on global slots (max total_globals).
      */
-    static std::expected<void, SerializerError> verify_function(const BytecodeFunction& func);
+    static std::expected<void, SerializerError> verify_function(
+        const BytecodeFunction& func,
+        const semantics::BytecodeFunctionRegistry& registry,
+        std::uint32_t global_limit);
 };
 
 } ///< namespace eta::runtime::vm

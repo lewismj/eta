@@ -120,6 +120,40 @@ std::string build_compiler_fingerprint_input() {
     return oss.str();
 }
 
+/**
+ * Bytes left between the read position and end of @p is.
+ * Non-seekable streams report no limit, so count checks pass through.
+ */
+uint64_t remaining_bytes(std::istream& is) {
+    const auto pos = is.tellg();
+    if (pos == std::streampos(-1)) return std::numeric_limits<uint64_t>::max();
+    is.seekg(0, std::ios::end);
+    const auto end = is.tellg();
+    is.seekg(pos);
+    if (end == std::streampos(-1) || end < pos) return std::numeric_limits<uint64_t>::max();
+    return static_cast<uint64_t>(end - pos);
+}
+
+/**
+ * True if @p count elements of at least @p min_elem_size bytes each can still
+ * be present in @p is.  Rejects crafted counts before anything is allocated.
+ */
+bool count_fits(std::istream& is, uint32_t count, uint64_t min_elem_size) {
+    return static_cast<uint64_t>(count) * min_elem_size <= remaining_bytes(is);
+}
+
+/// Minimum on-disk sizes, used to bound counts against the remaining stream.
+constexpr uint64_t kMinStr          = 4;              ///< u32 length prefix
+constexpr uint64_t kMinConst        = 1;              ///< tag byte
+constexpr uint64_t kMinInstr        = 1 + 4;          ///< opcode + arg
+constexpr uint64_t kMinSpan         = 5 * 4;          ///< file_id + 2x(line, column)
+constexpr uint64_t kMinDepHash      = kMinStr + 8;
+constexpr uint64_t kMinImportBind   = 4 + 2 * kMinStr;
+constexpr uint64_t kMinExportBind   = kMinStr + 4;
+constexpr uint64_t kMinModuleLegacy = kMinStr + 4 + 4 + 1 + 4;
+constexpr uint64_t kMinModuleV5     = kMinModuleLegacy + 5 * 4;
+constexpr uint64_t kMinFunction     = kMinStr + 4 + 1 + 4 + 4 * 4; ///< header + 4 empty tables
+
 } ///< anonymous namespace
 
 /**
@@ -134,6 +168,11 @@ void BytecodeSerializer::write_i64(std::ostream& os, int64_t  v) { v = host_to_l
 void BytecodeSerializer::write_f64(std::ostream& os, double   v) { v = host_to_le_f64(v); os.write(reinterpret_cast<const char*>(&v), 8); }
 
 void BytecodeSerializer::write_str(std::ostream& os, std::string_view s) {
+    /// Mirror read_str's limit so we never emit an artifact we cannot load.
+    if (s.size() > MAX_STRING_LEN) {
+        os.setstate(std::ios::failbit);
+        return;
+    }
     write_u32(os, static_cast<uint32_t>(s.size()));
     os.write(s.data(), static_cast<std::streamsize>(s.size()));
 }
@@ -149,7 +188,7 @@ bool BytecodeSerializer::read_str(std::istream& is, std::string& s) {
     uint32_t len;
     if (!read_u32(is, len)) return false;
     /// Reject strings that would cause unbounded allocation (DoS guard).
-    if (len > MAX_STRING_LEN) return false;
+    if (len > MAX_STRING_LEN || !count_fits(is, len, 1)) return false;
     s.resize(len);
     is.read(s.data(), len);
     return is.good();
@@ -450,6 +489,7 @@ BytecodeSerializer::read_constant(std::istream& is) const {
             if (!read_u32(is, len)) return std::unexpected(SerializerError::Truncated);
             /// Guard against unbounded vector allocation from crafted files.
             if (len > MAX_VEC_LEN) return std::unexpected(SerializerError::CorruptConstant);
+            if (!count_fits(is, len, kMinConst)) return std::unexpected(SerializerError::Truncated);
             std::vector<LispVal> elems;
             elems.reserve(len);
             auto roots = heap_.make_external_root_frame();
@@ -681,6 +721,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
             if (dep_count > MAX_DEP_HASH_ENTRIES) {
                 return std::unexpected(SerializerError::CorruptConstant);
             }
+            if (!count_fits(is, dep_count, kMinDepHash)) return std::unexpected(SerializerError::Truncated);
             result.dependency_hashes.reserve(dep_count);
             for (uint32_t i = 0; i < dep_count; ++i) {
                 DependencyHashEntry entry;
@@ -698,12 +739,15 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     /// Imports table
     uint32_t num_imports;
     if (!read_u32(is, num_imports)) return std::unexpected(SerializerError::Truncated);
+    if (!count_fits(is, num_imports, kMinStr)) return std::unexpected(SerializerError::Truncated);
     result.imports.resize(num_imports);
     for (uint32_t i = 0; i < num_imports; ++i) {
         if (!read_str(is, result.imports[i])) return std::unexpected(SerializerError::Truncated);
     }
 
     /// Module table
+    const uint64_t min_module = version >= FORMAT_VERSION_V5 ? kMinModuleV5 : kMinModuleLegacy;
+    if (!count_fits(is, num_modules, min_module)) return std::unexpected(SerializerError::Truncated);
     result.modules.resize(num_modules);
     for (uint32_t m = 0; m < num_modules; ++m) {
         auto& mod = result.modules[m];
@@ -716,36 +760,53 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         if (!read_u32(is, main_slot)) return std::unexpected(SerializerError::Truncated);
         if (has_main) mod.main_func_slot = main_slot;
 
+        if (mod.total_globals > MAX_GLOBALS
+            || mod.init_func_index >= num_functions
+            || (has_main && main_slot >= mod.total_globals)) {
+            return std::unexpected(SerializerError::InvalidBytecode);
+        }
+
         if (version >= FORMAT_VERSION_V5) {
             if (!read_u32(is, mod.first_func_index)) return std::unexpected(SerializerError::Truncated);
             if (!read_u32(is, mod.func_count)) return std::unexpected(SerializerError::Truncated);
+            if (static_cast<uint64_t>(mod.first_func_index) + mod.func_count > num_functions) {
+                return std::unexpected(SerializerError::InvalidBytecode);
+            }
 
             uint32_t owned_count = 0;
             if (!read_u32(is, owned_count)) return std::unexpected(SerializerError::Truncated);
+            if (!count_fits(is, owned_count, 4)) return std::unexpected(SerializerError::Truncated);
             mod.owned_global_slots.resize(owned_count);
             for (uint32_t i = 0; i < owned_count; ++i) {
                 if (!read_u32(is, mod.owned_global_slots[i])) {
                     return std::unexpected(SerializerError::Truncated);
                 }
+                if (mod.owned_global_slots[i] >= mod.total_globals) {
+                    return std::unexpected(SerializerError::InvalidBytecode);
+                }
             }
 
             uint32_t import_binding_count = 0;
             if (!read_u32(is, import_binding_count)) return std::unexpected(SerializerError::Truncated);
+            if (!count_fits(is, import_binding_count, kMinImportBind)) return std::unexpected(SerializerError::Truncated);
             mod.import_bindings.resize(import_binding_count);
             for (uint32_t i = 0; i < import_binding_count; ++i) {
                 auto& imp = mod.import_bindings[i];
                 if (!read_u32(is, imp.local_slot)) return std::unexpected(SerializerError::Truncated);
                 if (!read_str(is, imp.from_module)) return std::unexpected(SerializerError::Truncated);
                 if (!read_str(is, imp.remote_name)) return std::unexpected(SerializerError::Truncated);
+                if (imp.local_slot >= mod.total_globals) return std::unexpected(SerializerError::InvalidBytecode);
             }
 
             uint32_t export_binding_count = 0;
             if (!read_u32(is, export_binding_count)) return std::unexpected(SerializerError::Truncated);
+            if (!count_fits(is, export_binding_count, kMinExportBind)) return std::unexpected(SerializerError::Truncated);
             mod.export_bindings.resize(export_binding_count);
             for (uint32_t i = 0; i < export_binding_count; ++i) {
                 auto& ex = mod.export_bindings[i];
                 if (!read_str(is, ex.name)) return std::unexpected(SerializerError::Truncated);
                 if (!read_u32(is, ex.slot)) return std::unexpected(SerializerError::Truncated);
+                if (ex.slot >= mod.total_globals) return std::unexpected(SerializerError::InvalidBytecode);
             }
         }
     }
@@ -769,6 +830,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     }
 
     /// Function table
+    if (!count_fits(is, num_functions, kMinFunction)) return std::unexpected(SerializerError::Truncated);
     for (uint32_t f = 0; f < num_functions; ++f) {
         BytecodeFunction func;
 
@@ -778,10 +840,15 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         if (!read_u8(is, has_rest)) return std::unexpected(SerializerError::Truncated);
         func.has_rest = (has_rest != 0);
         if (!read_u32(is, func.stack_size)) return std::unexpected(SerializerError::Truncated);
+        /// setup_frame sizes the VM stack from these, so bound them here.
+        if (func.stack_size > MAX_FRAME_SLOTS || func.arity > MAX_FRAME_SLOTS) {
+            return std::unexpected(SerializerError::InvalidBytecode);
+        }
 
         /// Constants
         uint32_t num_consts;
         if (!read_u32(is, num_consts)) return std::unexpected(SerializerError::Truncated);
+        if (!count_fits(is, num_consts, kMinConst)) return std::unexpected(SerializerError::Truncated);
         func.constants.reserve(num_consts);
         for (uint32_t i = 0; i < num_consts; ++i) {
             auto c = read_constant(is);
@@ -793,6 +860,8 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         /// Instructions
         uint32_t num_instrs;
         if (!read_u32(is, num_instrs)) return std::unexpected(SerializerError::Truncated);
+        const uint64_t min_instr = kMinInstr + (has_debug ? kMinSpan : 0);
+        if (!count_fits(is, num_instrs, min_instr)) return std::unexpected(SerializerError::Truncated);
         func.code.reserve(num_instrs);
         for (uint32_t i = 0; i < num_instrs; ++i) {
             uint8_t op;
@@ -819,6 +888,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         /// Local names
         uint32_t num_locals;
         if (!read_u32(is, num_locals)) return std::unexpected(SerializerError::Truncated);
+        if (!count_fits(is, num_locals, kMinStr)) return std::unexpected(SerializerError::Truncated);
         func.local_names.resize(num_locals);
         for (uint32_t i = 0; i < num_locals; ++i) {
             if (!read_str(is, func.local_names[i])) return std::unexpected(SerializerError::Truncated);
@@ -827,6 +897,7 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
         /// Upval names
         uint32_t num_upvals;
         if (!read_u32(is, num_upvals)) return std::unexpected(SerializerError::Truncated);
+        if (!count_fits(is, num_upvals, kMinStr)) return std::unexpected(SerializerError::Truncated);
         func.upval_names.resize(num_upvals);
         for (uint32_t i = 0; i < num_upvals; ++i) {
             if (!read_str(is, func.upval_names[i])) return std::unexpected(SerializerError::Truncated);
@@ -836,10 +907,14 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
     }
 
     /// Lightweight structural verification of every deserialized function.
+    uint32_t global_limit = 0;
+    for (const auto& mod : result.modules) {
+        global_limit = std::max(global_limit, mod.total_globals);
+    }
     for (uint32_t f = 0; f < result.registry.size(); ++f) {
         const auto* fn = result.registry.get(f);
         if (!fn) continue;
-        auto vr = verify_function(*fn);
+        auto vr = verify_function(*fn, result.registry, global_limit);
         if (!vr) return std::unexpected(vr.error());
     }
 
@@ -855,11 +930,21 @@ BytecodeSerializer::deserialize(std::istream& is, uint32_t expected_builtins) co
 namespace eta::runtime::vm {
 
 std::expected<void, SerializerError>
-BytecodeSerializer::verify_function(const BytecodeFunction& func) {
+BytecodeSerializer::verify_function(const BytecodeFunction& func,
+                                    const semantics::BytecodeFunctionRegistry& registry,
+                                    uint32_t global_limit) {
     const auto nconsts    = static_cast<uint32_t>(func.constants.size());
     const auto stack_size = func.stack_size;
+    const auto nupvals    = static_cast<uint32_t>(func.upval_names.size());
+    const auto ncode      = static_cast<int64_t>(func.code.size());
 
-    for (const auto& instr : func.code) {
+    /// A branch target must land on an instruction of this function.
+    auto target_ok = [ncode](int64_t target) { return target >= 0 && target < ncode; };
+
+    for (std::size_t pc = 0; pc < func.code.size(); ++pc) {
+        const auto& instr = func.code[pc];
+        const auto next_pc = static_cast<int64_t>(pc) + 1;
+
         /**
          * Reject completely unknown opcode bytes.
          *
@@ -881,10 +966,65 @@ BytecodeSerializer::verify_function(const BytecodeFunction& func) {
             if (stack_size > 0 && instr.arg >= stack_size)
                 return std::unexpected(SerializerError::InvalidBytecode);
         }
-        /// MakeClosure packs (const_idx << 16 | num_upvals) into arg.
+        /**
+         * MakeClosure packs (const_idx << 16 | num_upvals) into arg.  The
+         * constant must name a function in this file, and the closure must
+         * capture exactly the upvalues that function's LoadUpval/StoreUpval
+         * were verified against.
+         */
         else if (instr.opcode == OpCode::MakeClosure) {
-            const uint32_t const_idx = instr.arg >> 16;
+            const uint32_t const_idx  = instr.arg >> 16;
+            const uint32_t num_upvals = instr.arg & 0xFFFFu;
             if (nconsts == 0 || const_idx >= nconsts)
+                return std::unexpected(SerializerError::InvalidBytecode);
+            const auto fval = func.constants[const_idx];
+            if (!is_func_index(fval))
+                return std::unexpected(SerializerError::InvalidBytecode);
+            const auto* target = registry.get(decode_func_index(fval));
+            if (!target || target->upval_names.size() != num_upvals)
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        /// Upvalue instructions: arg indexes this closure's captured upvalues.
+        else if (instr.opcode == OpCode::LoadUpval ||
+                 instr.opcode == OpCode::StoreUpval) {
+            if (instr.arg >= nupvals)
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        /// Global instructions: arg is an artifact-layout global slot.
+        else if (instr.opcode == OpCode::LoadGlobal ||
+                 instr.opcode == OpCode::StoreGlobal) {
+            if (instr.arg >= global_limit)
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        /// Jump: arg is a signed offset from the next instruction.
+        else if (instr.opcode == OpCode::Jump) {
+            if (!target_ok(next_pc + static_cast<int32_t>(instr.arg)))
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        /// JumpIfFalse: arg is an unsigned forward offset from the next instruction.
+        else if (instr.opcode == OpCode::JumpIfFalse) {
+            if (!target_ok(next_pc + static_cast<int64_t>(instr.arg)))
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        /// SetupCatch packs (tag_const_idx << 16 | handler_offset) into arg.
+        else if (instr.opcode == OpCode::SetupCatch) {
+            if ((instr.arg >> 16) >= nconsts ||
+                !target_ok(next_pc + static_cast<int64_t>(instr.arg & 0xFFFFu)))
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        /**
+         * Call/Values counts are stack operands; nothing can need more than
+         * a whole frame's worth.  Apply also needs the list operand.
+         */
+        else if (instr.opcode == OpCode::Call ||
+                 instr.opcode == OpCode::TailCall ||
+                 instr.opcode == OpCode::Values) {
+            if (instr.arg > MAX_FRAME_SLOTS)
+                return std::unexpected(SerializerError::InvalidBytecode);
+        }
+        else if (instr.opcode == OpCode::Apply ||
+                 instr.opcode == OpCode::TailApply) {
+            if (instr.arg == 0 || instr.arg > MAX_FRAME_SLOTS)
                 return std::unexpected(SerializerError::InvalidBytecode);
         }
         /// All other opcodes: no index-based args requiring static validation.

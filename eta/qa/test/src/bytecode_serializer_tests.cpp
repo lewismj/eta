@@ -255,9 +255,24 @@ BOOST_AUTO_TEST_CASE(roundtrip_all_opcodes) {
     func.constants.push_back(Nil);
     for (size_t i = 0; i < func.code.size(); ++i)
         func.source_map.push_back({});
+    /// Satisfy the verifier: upvals 3 and 4 exist, and MakeClosure (const 0,
+    /// zero upvals) names an upval-free function.
+    func.upval_names.resize(5);
+    func.constants[0] = encode_func_index(1);
     reg.add(std::move(func));
 
-    auto result = roundtrip({}, reg);
+    BytecodeFunction leaf;
+    leaf.name = "leaf";
+    leaf.code.push_back({OpCode::Return, 0});
+    leaf.source_map.push_back({});
+    reg.add(std::move(leaf));
+
+    ModuleEntry mod;
+    mod.name = "all_ops";
+    mod.total_globals = 7;   ///< LoadGlobal 5 / StoreGlobal 6
+    mod.func_count = 2;
+
+    auto result = roundtrip({mod}, reg);
     BOOST_REQUIRE(result.has_value());
     auto* f = result->registry.get(0);
     BOOST_REQUIRE(f);
@@ -1222,13 +1237,219 @@ BOOST_AUTO_TEST_CASE(deserialize_string_too_long) {
     func.source_map.push_back({});
     reg.add(std::move(func));
 
-    /**
-     * Serialize succeeds (the writer has no length cap).
-     * Deserialize must fail with Truncated to signal the rejected oversized read.
-     */
+    /// The writer enforces the same cap, so it refuses to emit the artifact.
     auto result = roundtrip({}, reg);
     BOOST_CHECK(!result.has_value());
-    BOOST_CHECK(result.error() == SerializerError::Truncated);
+    BOOST_CHECK(result.error() == SerializerError::IOError);
+}
+
+/// A string of exactly MAX_STRING_LEN is accepted by both writer and reader.
+BOOST_AUTO_TEST_CASE(roundtrip_string_at_limit) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name = std::string(BytecodeSerializer::MAX_STRING_LEN, 'x');
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.push_back({});
+    reg.add(std::move(func));
+
+    auto result = roundtrip({}, reg);
+    BOOST_REQUIRE(result.has_value());
+    BOOST_CHECK_EQUAL(result->registry.get(0)->name.size(), BytecodeSerializer::MAX_STRING_LEN);
+}
+
+/**
+ * Hostile counts: every table length is bounded by the bytes left in the
+ * stream, so a tiny file cannot request a multi-GiB allocation.
+ */
+
+namespace {
+
+void put_u8(std::string& out, uint8_t v) { out.push_back(static_cast<char>(v)); }
+void put_u16(std::string& out, uint16_t v) { for (int i = 0; i < 2; ++i) put_u8(out, static_cast<uint8_t>(v >> (8 * i))); }
+void put_u32(std::string& out, uint32_t v) { for (int i = 0; i < 4; ++i) put_u8(out, static_cast<uint8_t>(v >> (8 * i))); }
+void put_u64(std::string& out, uint64_t v) { for (int i = 0; i < 8; ++i) put_u8(out, static_cast<uint8_t>(v >> (8 * i))); }
+
+/// v6 header up to (and including) the module/function/import counts.
+std::string etac_header(uint32_t num_modules, uint32_t num_functions, uint32_t num_imports) {
+    std::string out(BytecodeSerializer::MAGIC, 4);
+    put_u16(out, BytecodeSerializer::FORMAT_VERSION);
+    put_u16(out, 0);            ///< flags
+    put_u64(out, 0);            ///< source hash
+    put_u32(out, 0);            ///< builtins
+    put_u64(out, 0);            ///< extension env hash
+    out.append(16, '\0');       ///< compiler id
+    put_u32(out, num_modules);
+    put_u32(out, num_functions);
+    put_u32(out, num_imports);
+    return out;
+}
+
+/// Function header with an empty name, followed by the constant count.
+void put_function_prefix(std::string& out, uint32_t num_consts) {
+    put_u32(out, 0);            ///< name length
+    put_u32(out, 0);            ///< arity
+    put_u8(out, 0);             ///< has_rest
+    put_u32(out, 0);            ///< stack_size
+    put_u32(out, num_consts);
+}
+
+/// One-function registry whose body is @p code followed by Return.
+semantics::BytecodeFunctionRegistry single_function(std::vector<Instruction> code,
+                                                    std::size_t upvals = 0) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction func;
+    func.name       = "verify";
+    func.stack_size = 4;
+    func.constants.push_back(Nil);
+    func.upval_names.resize(upvals);
+    func.code = std::move(code);
+    func.code.push_back({OpCode::Return, 0});
+    func.source_map.resize(func.code.size());
+    reg.add(std::move(func));
+    return reg;
+}
+
+ModuleEntry module_with_globals(uint32_t total_globals) {
+    ModuleEntry mod;
+    mod.name = "verify";
+    mod.total_globals = total_globals;
+    mod.func_count = 1;
+    return mod;
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(deserialize_rejects_counts_larger_than_stream) {
+    const uint32_t huge = 0xFFFFFFF0u;
+    std::vector<std::string> inputs;
+    inputs.push_back(etac_header(huge, 0, 0));      ///< modules
+    inputs.push_back(etac_header(0, huge, 0));      ///< functions
+    inputs.push_back(etac_header(0, 0, huge));      ///< imports
+    {
+        auto s = etac_header(0, 1, 0);              ///< constants (the fuzzer's OOM input)
+        put_function_prefix(s, huge);
+        inputs.push_back(std::move(s));
+    }
+    {
+        auto s = etac_header(0, 1, 0);              ///< instructions
+        put_function_prefix(s, 0);
+        put_u32(s, huge);
+        inputs.push_back(std::move(s));
+    }
+    {
+        auto s = etac_header(0, 0, 1);              ///< string length within MAX_STRING_LEN
+        put_u32(s, BytecodeSerializer::MAX_STRING_LEN);
+        inputs.push_back(std::move(s));
+    }
+
+    for (const auto& bytes : inputs) {
+        std::istringstream in(bytes, std::ios::binary);
+        auto result = serializer.deserialize(in);
+        BOOST_REQUIRE(!result.has_value());
+        BOOST_CHECK(result.error() == SerializerError::Truncated);
+    }
+}
+
+/**
+ * Verifier: control flow, globals, upvalues and call arity
+ */
+
+BOOST_AUTO_TEST_CASE(verifier_rejects_bad_instructions) {
+    struct Case { const char* what; std::vector<Instruction> code; };
+    const std::vector<Case> cases = {
+        {"jump past end",        {{OpCode::Jump, 5}}},
+        {"jump before start",    {{OpCode::Jump, static_cast<uint32_t>(-2)}}},
+        {"jump-if-false wraps",  {{OpCode::JumpIfFalse, 0xFFFFFFFFu}}},
+        {"setup-catch past end", {{OpCode::SetupCatch, 0x0005u}}},
+        {"setup-catch bad tag",  {{OpCode::SetupCatch, (7u << 16) | 0u}}},
+        {"load-global oob",      {{OpCode::LoadGlobal, 4}}},
+        {"store-global wraps",   {{OpCode::StoreGlobal, 0xFFFFFFFFu}}},
+        {"load-upval oob",       {{OpCode::LoadUpval, 1}}},
+        {"store-upval oob",      {{OpCode::StoreUpval, 1}}},
+        {"closure of non-func",  {{OpCode::MakeClosure, 0}}},
+        {"call argc huge",       {{OpCode::Call, 0xFFFFFFFFu}}},
+        {"values huge",          {{OpCode::Values, 0xFFFFFFFFu}}},
+        {"apply without list",   {{OpCode::Apply, 0}}},
+        {"tail-apply huge",      {{OpCode::TailApply, 0xFFFFFFFFu}}},
+    };
+    for (const auto& c : cases) {
+        BOOST_TEST_INFO(c.what);
+        auto result = roundtrip({module_with_globals(4)}, single_function(c.code, /*upvals=*/1));
+        BOOST_REQUIRE(!result.has_value());
+        BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(verifier_accepts_in_range_instructions) {
+    auto result = roundtrip({module_with_globals(4)}, single_function({
+        {OpCode::Jump, 0},          ///< to the next instruction
+        {OpCode::JumpIfFalse, 0},
+        {OpCode::SetupCatch, 0},
+        {OpCode::LoadGlobal, 3},
+        {OpCode::StoreGlobal, 3},
+        {OpCode::LoadUpval, 0},
+        {OpCode::Apply, 1},
+        {OpCode::Jump, static_cast<uint32_t>(-8)},  ///< back to pc 0
+    }, /*upvals=*/1));
+    BOOST_CHECK(result.has_value());
+}
+
+/// MakeClosure must capture exactly as many upvalues as the target declares.
+BOOST_AUTO_TEST_CASE(verifier_makeclosure_upval_count_mismatch) {
+    semantics::BytecodeFunctionRegistry reg;
+    BytecodeFunction outer;
+    outer.name = "outer";
+    outer.constants.push_back(encode_func_index(1));
+    outer.code.push_back({OpCode::MakeClosure, (0u << 16) | 3u});
+    outer.code.push_back({OpCode::Return, 0});
+    outer.source_map.resize(outer.code.size());
+    reg.add(std::move(outer));
+
+    BytecodeFunction inner;
+    inner.name = "inner";
+    inner.upval_names.resize(2);
+    inner.code.push_back({OpCode::Return, 0});
+    inner.source_map.resize(inner.code.size());
+    reg.add(std::move(inner));
+
+    auto result = roundtrip({}, reg);
+    BOOST_REQUIRE(!result.has_value());
+    BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+}
+
+/// Module metadata slots and function ranges must lie inside the artifact.
+BOOST_AUTO_TEST_CASE(deserialize_rejects_bad_module_table) {
+    auto check_rejected = [&](const ModuleEntry& mod) {
+        auto result = roundtrip({mod}, single_function({}));
+        BOOST_REQUIRE(!result.has_value());
+        BOOST_CHECK(result.error() == SerializerError::InvalidBytecode);
+    };
+
+    auto mod = module_with_globals(4);
+    mod.main_func_slot = 4;
+    check_rejected(mod);
+
+    mod = module_with_globals(4);
+    mod.init_func_index = 1;
+    check_rejected(mod);
+
+    mod = module_with_globals(4);
+    mod.first_func_index = 1;
+    check_rejected(mod);
+
+    mod = module_with_globals(4);
+    mod.owned_global_slots = {4};
+    check_rejected(mod);
+
+    mod = module_with_globals(4);
+    mod.import_bindings.push_back({.local_slot = 9, .from_module = "a", .remote_name = "b"});
+    check_rejected(mod);
+
+    mod = module_with_globals(4);
+    mod.export_bindings.push_back({.name = "x", .slot = 4});
+    check_rejected(mod);
+
+    check_rejected(module_with_globals(BytecodeSerializer::MAX_GLOBALS + 1));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

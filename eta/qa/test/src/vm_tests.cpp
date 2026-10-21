@@ -3681,6 +3681,75 @@ BOOST_FIXTURE_TEST_CASE(storelocal_oob_returns_error, BoundsCheckFixture) {
     BOOST_CHECK(!result.has_value());
 }
 
+/// Every stack-consuming opcode on an empty stack fails instead of reading Nil.
+BOOST_FIXTURE_TEST_CASE(stack_underflow_returns_error, BoundsCheckFixture) {
+    const std::vector<Instruction> underflows = {
+        {OpCode::Pop, 0u},  {OpCode::Dup, 0u},     {OpCode::Return, 0u},
+        {OpCode::Cons, 0u}, {OpCode::Call, 3u},    {OpCode::Apply, 1u},
+        {OpCode::Values, 4u}, {OpCode::MakeClosure, 2u}, {OpCode::StoreGlobal, 0u},
+    };
+    for (const auto& instr : underflows) {
+        BytecodeFunction func;
+        func.name       = "underflow";
+        func.stack_size = 0;
+        func.constants.push_back(encode_func_index(0));
+        func.code.push_back(instr);
+        func.code.push_back({OpCode::Return, 0u});
+
+        auto result = execute_func(func);
+        BOOST_TEST_INFO("opcode " << to_string(instr.opcode));
+        BOOST_CHECK(!result.has_value());
+    }
+}
+
+/// StoreGlobal past the end of globals is an error, including the wrapping UINT32_MAX slot.
+BOOST_FIXTURE_TEST_CASE(storeglobal_oob_returns_error, BoundsCheckFixture) {
+    for (const uint32_t slot : {16u, std::numeric_limits<uint32_t>::max()}) {
+        BytecodeFunction func;
+        func.name       = "oob_storeglobal";
+        func.stack_size = 1;
+        func.constants.push_back(nanbox::True);
+        func.code.push_back({OpCode::LoadConst,   0u});
+        func.code.push_back({OpCode::StoreGlobal, slot});
+        func.code.push_back({OpCode::LoadConst,   0u});
+        func.code.push_back({OpCode::Return,      0u});
+
+        auto result = execute_func(func);
+        BOOST_CHECK(!result.has_value());
+    }
+}
+
+/// Branches that leave the function body are rejected at runtime.
+BOOST_FIXTURE_TEST_CASE(branch_target_oob_returns_error, BoundsCheckFixture) {
+    for (const auto op : {OpCode::Jump, OpCode::JumpIfFalse}) {
+        BytecodeFunction func;
+        func.name       = "oob_branch";
+        func.stack_size = 1;
+        func.constants.push_back(nanbox::False);
+        func.code.push_back({OpCode::LoadConst, 0u});
+        func.code.push_back({op, 0xFFFFFFF0u});
+        func.code.push_back({OpCode::Return, 0u});
+
+        auto result = execute_func(func);
+        BOOST_TEST_INFO("opcode " << to_string(op));
+        BOOST_CHECK(!result.has_value());
+    }
+}
+
+/// Apply with argc 0 has no list operand to unpack.
+BOOST_FIXTURE_TEST_CASE(apply_zero_argc_returns_error, BoundsCheckFixture) {
+    BytecodeFunction func;
+    func.name       = "apply_zero";
+    func.stack_size = 1;
+    func.constants.push_back(nanbox::Nil);
+    func.code.push_back({OpCode::LoadConst, 0u});
+    func.code.push_back({OpCode::Apply, 0u});
+    func.code.push_back({OpCode::Return, 0u});
+
+    auto result = execute_func(func);
+    BOOST_CHECK(!result.has_value());
+}
+
 BOOST_AUTO_TEST_SUITE_END() ///< vm_bounds_check_tests
 
 /// SandboxScope enables sandbox mode and restores the previous setting, even on exceptions.

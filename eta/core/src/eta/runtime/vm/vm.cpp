@@ -48,6 +48,96 @@ constexpr std::string_view kNonLocalTransferSentinel = "__eta.non_local_transfer
                                 std::string(kNonLocalTransferSentinel)}};
 }
 
+[[nodiscard]] RuntimeError make_stack_underflow_error(OpCode op) {
+    return RuntimeError{VMError{RuntimeErrorCode::InvalidInstruction,
+                                std::string("stack underflow in ") + to_string(op)}};
+}
+
+/**
+ * Number of operands @p instr pops before it pushes anything.  run_loop
+ * checks this against the stack before dispatch, so corrupt bytecode fails
+ * before any side effect instead of reading past the bottom of the stack.
+ */
+[[nodiscard]] uint64_t stack_operands(const Instruction& instr) noexcept {
+    switch (instr.opcode) {
+        case OpCode::StoreLocal:
+        case OpCode::StoreUpval:
+        case OpCode::StoreGlobal:
+        case OpCode::Pop:
+        case OpCode::Dup:
+        case OpCode::JumpIfFalse:
+        case OpCode::Return:
+        case OpCode::Car:
+        case OpCode::Cdr:
+        case OpCode::CallCC:
+        case OpCode::DerefLogicVar:
+        case OpCode::UnwindTrail:
+        case OpCode::CopyTerm:
+            return 1;
+        case OpCode::Cons:
+        case OpCode::Add:
+        case OpCode::Sub:
+        case OpCode::Mul:
+        case OpCode::Div:
+        case OpCode::Eq:
+        case OpCode::CallWithValues:
+        case OpCode::PatchClosureUpval:
+        case OpCode::Throw:
+        case OpCode::Unify:
+            return 2;
+        case OpCode::DynamicWind:
+            return 3;
+        case OpCode::Values:
+            return instr.arg;
+        case OpCode::MakeClosure:
+            return instr.arg & 0xFFFFu;
+        case OpCode::Call:
+        case OpCode::TailCall:
+        case OpCode::Apply:
+        case OpCode::TailApply:
+            return static_cast<uint64_t>(instr.arg) + 1; ///< args + callee
+        case OpCode::Nop:
+        case OpCode::LoadConst:
+        case OpCode::LoadLocal:
+        case OpCode::LoadUpval:
+        case OpCode::LoadGlobal:
+        case OpCode::Jump:
+        case OpCode::SetupCatch:
+        case OpCode::PopCatch:
+        case OpCode::MakeLogicVar:
+        case OpCode::TrailMark:
+        case OpCode::_Reserved1:
+        case OpCode::_Reserved2:
+        case OpCode::WamGetVar:
+        case OpCode::WamGetVal:
+        case OpCode::WamGetConst:
+        case OpCode::WamGetStruct:
+        case OpCode::WamGetList:
+        case OpCode::WamPutVar:
+        case OpCode::WamPutVal:
+        case OpCode::WamPutConst:
+        case OpCode::WamPutStruct:
+        case OpCode::WamPutList:
+        case OpCode::WamUnifyVar:
+        case OpCode::WamUnifyVal:
+        case OpCode::WamUnifyConst:
+        case OpCode::WamUnifyVoid:
+        case OpCode::WamAllocate:
+        case OpCode::WamDeallocate:
+        case OpCode::WamCall:
+        case OpCode::WamExecute:
+        case OpCode::WamProceed:
+        case OpCode::WamTryMeElse:
+        case OpCode::WamRetryMeElse:
+        case OpCode::WamTrustMe:
+        case OpCode::WamSwitchOnTerm:
+        case OpCode::WamSwitchOnConst:
+        case OpCode::WamSwitchOnStruct:
+            return 0;
+    }
+    return 0; ///< unknown opcode byte; run_loop's dispatch rejects it
+}
+
 } ///< namespace
 
 VM::VM(Heap& heap, InternTable& intern_table)
@@ -257,6 +347,13 @@ std::expected<VM::ExecuteSliceResult, RuntimeError> VM::execute_with_status(
     }
 
     process_pending_finalizers();
+    if (stack_.empty()) [[unlikely]] {
+        slice_active_ = false;
+        active_slice_entry_ = nullptr;
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InvalidInstruction,
+            "execution finished without a result value"}});
+    }
     out.status = ExecuteSliceStatus::Finished;
     out.value = pop();
 
@@ -417,6 +514,13 @@ std::expected<LispVal, RuntimeError> VM::call_value(LispVal proc, std::vector<Li
     }
 
     /// On success: stack has nested_sp items + 1 result on top.
+    if (stack_.size() <= nested_sp) [[unlikely]] {
+        restore();
+        process_finalizers_if_host();
+        return std::unexpected(RuntimeError{VMError{
+            RuntimeErrorCode::InvalidInstruction,
+            "call_value: callee returned without a result value"}});
+    }
     LispVal result = pop();
     stack_.resize(nested_sp); ///< safety: ensure no stray stack entries
 
@@ -811,6 +915,9 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
             }
         }
         const auto& instr = current_func_->code[pc_++];
+        const OpCode dispatched_op = instr.opcode;
+        if (stack_.size() < stack_operands(instr)) [[unlikely]]
+            return std::unexpected(make_stack_underflow_error(dispatched_op));
         charge_reductions();
         const auto instr_span = current_func_ ? current_func_->span_at(pc_ > 0 ? pc_ - 1 : 0)
                                               : reader::lexer::Span{};
@@ -961,23 +1068,30 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
             case OpCode::StoreGlobal:
                 if (sandbox_mode_) [[unlikely]]
                     return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::SandboxViolation, "StoreGlobal blocked: sandbox is read-only"}});
-                if (instr.arg >= globals_.size()) {
-                    globals_.resize(instr.arg + 1, Nil);
-                }
+                /**
+                 * Loaders size globals_ to the module layout before running
+                 * its code, so an out-of-range slot is corrupt bytecode.
+                 * (Growing here let arg == UINT32_MAX wrap to resize(0).)
+                 */
+                if (instr.arg >= globals_.size()) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{RuntimeErrorCode::UndefinedGlobal, "StoreGlobal: global index out of range"}});
                 globals_[instr.arg] = pop();
                 break;
             case OpCode::Pop:
                 pop();
                 break;
-            case OpCode::Dup:
-                push(stack_.back());
+            case OpCode::Dup: {
+                /// Operand count is checked before dispatch; copy before push may reallocate.
+                const LispVal top = stack_.back();
+                push(top);
                 break;
+            }
             case OpCode::Jump: {
                 const auto rel = static_cast<int32_t>(instr.arg);
                 const auto target_pc =
                     static_cast<int64_t>(pc_) + static_cast<int64_t>(rel);
                 if (target_pc < 0 ||
-                    target_pc > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+                    target_pc >= static_cast<int64_t>(current_func_->code.size())) {
                     return std::unexpected(RuntimeError{
                         VMError{RuntimeErrorCode::InvalidInstruction,
                                 "Jump: target out of range"}});
@@ -998,8 +1112,14 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
                 break;
             }
             case OpCode::JumpIfFalse: {
+                const auto target_pc =
+                    static_cast<uint64_t>(pc_) + static_cast<uint64_t>(instr.arg);
+                if (target_pc >= current_func_->code.size()) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::InvalidInstruction,
+                        "JumpIfFalse: target out of range"}});
                 LispVal v = pop();
-                if (v == False) pc_ += instr.arg;
+                if (v == False) pc_ = static_cast<uint32_t>(target_pc);
                 break;
             }
             case OpCode::Call: {
@@ -1171,6 +1291,10 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
             case OpCode::TailApply: {
                 /// Stack: [arg1, ..., argN, proc] where argN (last explicit arg) is a list to unpack
                 uint32_t argc = instr.arg; ///< number of explicit args on stack (including the list)
+                if (argc == 0) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::InvalidInstruction,
+                        "Apply: missing list argument"}});
                 LispVal proc = pop();
                 temp_roots_.push_back(proc);
 
@@ -1246,6 +1370,10 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
                 /// arg = (tag_const_idx << 16) | pc_offset_to_handler
                 uint32_t const_idx  = instr.arg >> 16;
                 uint32_t pc_offset  = instr.arg & 0xFFFF;
+                if (static_cast<uint64_t>(pc_) + pc_offset >= current_func_->code.size()) [[unlikely]]
+                    return std::unexpected(RuntimeError{VMError{
+                        RuntimeErrorCode::InvalidInstruction,
+                        "SetupCatch: handler out of range"}});
                 LispVal  tag        = (const_idx < current_func_->constants.size())
                                       ? current_func_->constants[const_idx]
                                       : Nil;
@@ -1369,6 +1497,8 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
                     RuntimeErrorCode::NotImplemented,
                     std::string("OpCode not implemented: ") + to_string(instr.opcode)}});
         }
+        if (take_stack_fault()) [[unlikely]]
+            return std::unexpected(make_stack_underflow_error(dispatched_op));
     }
     pending_run_loop_status_.reset();
     return ExecuteSliceStatus::Finished;
