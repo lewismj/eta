@@ -5,6 +5,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -18,6 +19,7 @@
 
 #include "eta/interpreter/module_path.h"
 #include "eta/runtime/builtin_catalog.h"
+#include "eta/runtime/vm/bytecode.h"
 #include "eta/session/driver.h"
 #include "eta/session/runtime_config.h"
 
@@ -158,6 +160,42 @@ BOOST_AUTO_TEST_CASE(run_source_smoke_evaluates_expression) {
     const bool ok = driver.eval_string("(+ 40 2)", out);
     BOOST_REQUIRE(ok);
     BOOST_TEST(out == "42");
+}
+
+BOOST_AUTO_TEST_CASE(driver_specialises_builtin_calls_by_default) {
+    eta::session::Driver driver;
+
+    const auto names = driver.optimization_pipeline().pass_names();
+    BOOST_TEST((std::find(names.begin(), names.end(), "primitive-specialisation") != names.end()));
+
+    std::string out;
+    BOOST_REQUIRE(driver.eval_string("(define (f a b c) (if (< a b) (+ a b c) (car (cons a b))))", out));
+    BOOST_REQUIRE(driver.eval_string("(f 1 2 3)", out));
+    BOOST_TEST(out == "6");
+
+    bool saw_add = false;
+    bool saw_numcmp = false;
+    for (const auto& func : driver.registry().all()) {
+        for (const auto& instr : func.code) {
+            saw_add = saw_add || instr.opcode == eta::runtime::vm::OpCode::Add;
+            saw_numcmp = saw_numcmp || instr.opcode == eta::runtime::vm::OpCode::NumCmp;
+        }
+    }
+    BOOST_TEST(saw_add);
+    BOOST_TEST(saw_numcmp);
+}
+
+BOOST_AUTO_TEST_CASE(driver_specialised_errors_are_catchable) {
+    eta::session::Driver driver;
+
+    std::string out;
+    BOOST_REQUIRE(driver.eval_string("(define x 1)", out));
+    BOOST_REQUIRE(driver.eval_string(
+        "(if (pair? (catch 'runtime.type-error (car x))) "
+        "  (if (pair? (catch 'runtime.type-error (+ x 'a))) "
+        "    (if (pair? (catch 'runtime.type-error (< x 'a))) 1 0) 0) 0)",
+        out));
+    BOOST_TEST(out == "1");
 }
 
 BOOST_AUTO_TEST_CASE(driver_bootstrap_builtin_slots_match_catalog_order) {

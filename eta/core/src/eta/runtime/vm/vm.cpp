@@ -1225,8 +1225,13 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
             }
             case OpCode::Car: {
                 auto v = pop();
-                auto cons = get_as_or_error<ObjectKind::Cons, Cons>(v, "Not a pair");
-                if (!cons) return std::unexpected(cons.error());
+                auto cons = get_as_or_error<ObjectKind::Cons, Cons>(v, "car: not a pair");
+                if (!cons) {
+                    /// Catchable, exactly like the equivalent primitive call
+                    auto handled = do_runtime_error(cons.error(), instr_span);
+                    if (!handled) return std::unexpected(handled.error());
+                    break;
+                }
                 push((*cons)->car);
                 break;
             }
@@ -1258,8 +1263,13 @@ std::expected<VM::ExecuteSliceStatus, RuntimeError> VM::run_loop() {
             }
             case OpCode::Cdr: {
                 auto v = pop();
-                auto cons = get_as_or_error<ObjectKind::Cons, Cons>(v, "Not a pair");
-                if (!cons) return std::unexpected(cons.error());
+                auto cons = get_as_or_error<ObjectKind::Cons, Cons>(v, "cdr: not a pair");
+                if (!cons) {
+                    /// Catchable, exactly like the equivalent primitive call
+                    auto handled = do_runtime_error(cons.error(), instr_span);
+                    if (!handled) return std::unexpected(handled.error());
+                    break;
+                }
                 push((*cons)->cdr);
                 break;
             }

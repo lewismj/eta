@@ -1,5 +1,6 @@
 #include <boost/test/unit_test.hpp>
 #include <bit>
+#include <cmath>
 
 #include "eta/semantics/optimization_pass.h"
 #include "eta/semantics/optimization_pipeline.h"
@@ -442,7 +443,7 @@ BOOST_FIXTURE_TEST_CASE(primitive_specialisation_list_and_eq_opcodes, OptFixture
     BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Call), 0);
 }
 
-BOOST_FIXTURE_TEST_CASE(primitive_specialisation_keeps_variadic_plus_as_call, OptFixture) {
+BOOST_FIXTURE_TEST_CASE(primitive_specialisation_lowers_variadic_plus_to_chain, OptFixture) {
     std::vector<std::unique_ptr<OptimizationPass>> passes;
     passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
 
@@ -454,8 +455,94 @@ BOOST_FIXTURE_TEST_CASE(primitive_specialisation_keeps_variadic_plus_as_call, Op
     BOOST_REQUIRE(decoded.has_value());
     BOOST_CHECK_EQUAL(*decoded, 6);
 
+    /// (+ 1 2 3) -> (Add (Add 1 2) 3)
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Add), 2);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Call), 0);
+}
+
+namespace {
+
+/// Left-fold semantics of the variadic primitives, including inexact division.
+constexpr std::string_view kVariadicArithProgram =
+    "(module m "
+    "  (define a 10) (define b 4) (define c 2) (define d 3) "
+    "  (define result (if (= (+ a b c d) 19) "
+    "                   (if (= (- a b c d) 1) "
+    "                     (if (= (* a b c d) 240) "
+    "                       (if (= (/ a b c) 1.25) 1 0) 0) 0) 0)))";
+
+/// 2^62 + 2^62 overflows int64 part-way through the chain and promotes to flonum.
+constexpr std::string_view kVariadicOverflowProgram =
+    "(module m (define big 4611686018427387904) (define result (+ big big 1)))";
+
+} // namespace
+
+BOOST_FIXTURE_TEST_CASE(variadic_arith_chain_semantics, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    auto result = run_with_passes(kVariadicArithProgram, std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Add), 3);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Sub), 3);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Mul), 3);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Div), 2);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Call), 0);
+}
+
+BOOST_FIXTURE_TEST_CASE(variadic_arith_chain_matches_primitive, OptFixture) {
+    auto result = run_with_passes(kVariadicArithProgram, {});
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(variadic_arith_chain_overflow_matches_primitive, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+    auto chained = run_with_passes(kVariadicOverflowProgram, std::move(passes));
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Add), 2);
+
+    auto primitive = run_with_passes(kVariadicOverflowProgram, {});
+
+    BOOST_REQUIRE(!ops::is_boxed(chained));
+    BOOST_REQUIRE(!ops::is_boxed(primitive));
+    BOOST_CHECK_EQUAL(std::bit_cast<double>(chained), 9223372036854775808.0);
+    BOOST_CHECK_EQUAL(std::bit_cast<double>(chained), std::bit_cast<double>(primitive));
+}
+
+BOOST_FIXTURE_TEST_CASE(nullary_and_unary_arith_stay_calls, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    auto result = run_with_passes(
+        "(module m (define a 4) "
+        "  (define result (if (= (+) 0) (if (= (- a) -4) (if (= (/ a) 0.25) 1 0) 0) 0)))",
+        std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
     BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Add), 0);
-    BOOST_CHECK_GE(count_opcode_all(OpCode::Call), 1);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Sub), 0);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Div), 0);
+    BOOST_CHECK_GE(count_opcode_all(OpCode::Call), 3);
+}
+
+BOOST_FIXTURE_TEST_CASE(variadic_arith_chain_division_by_zero_is_catchable, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    auto result = run_with_passes(
+        "(module m (define a 6) (define z 0) "
+        "  (define p (catch 'runtime.type-error (/ a 2 z))) "
+        "  (define result (if (pair? p) 1 0)))",
+        std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Div), 2);
 }
 
 BOOST_FIXTURE_TEST_CASE(primitive_specialisation_respects_shadowed_plus, OptFixture) {
@@ -637,6 +724,86 @@ BOOST_FIXTURE_TEST_CASE(arith_opcode_type_error_is_catchable, OptFixture) {
     BOOST_CHECK_EQUAL(*decoded, 1);
     BOOST_CHECK_GE(count_opcode_all(OpCode::Add), 1);
     BOOST_CHECK_GE(count_opcode_all(OpCode::Div), 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(car_cdr_opcode_type_error_is_catchable, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+
+    auto result = run_with_passes(
+        "(module m "
+        "  (define a 1) "
+        "  (define p (catch 'runtime.type-error (car a))) "
+        "  (define q (catch 'runtime.type-error (cdr a))) "
+        "  (define result (if (pair? p) (if (pair? q) 1 0) 0)))",
+        std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Car), 1);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Cdr), 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(plus_negative_zero_matches_opcode, OptFixture) {
+    /// (+ -0.0 -0.0) is -0.0 through both the Add opcode and the primitive
+    constexpr std::string_view program =
+        "(module m (define nz -0.0) (define result (+ nz nz)))";
+
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+    auto opcode = run_with_passes(program, std::move(passes));
+    auto primitive = run_with_passes(program, {});
+
+    BOOST_REQUIRE(!ops::is_boxed(opcode));
+    BOOST_REQUIRE(!ops::is_boxed(primitive));
+    BOOST_CHECK(std::signbit(std::bit_cast<double>(opcode)));
+    BOOST_CHECK(std::signbit(std::bit_cast<double>(primitive)));
+}
+
+BOOST_FIXTURE_TEST_CASE(constant_fold_after_specialisation_folds_chain, OptFixture) {
+    /// Driver order: specialisation always runs first, then etac -O's folding
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+    passes.push_back(std::make_unique<passes::ConstantFolding>());
+    passes.push_back(std::make_unique<passes::DeadCodeElimination>());
+
+    auto result = run_with_passes(
+        "(module m (define result (* (+ 1 2 3) 2)))", std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 12);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Add), 0);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Mul), 0);
+    BOOST_CHECK_EQUAL(count_opcode_all(OpCode::Call), 0);
+}
+
+BOOST_FIXTURE_TEST_CASE(constant_fold_after_specialisation_keeps_division_by_zero, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::PrimitiveSpecialisation>());
+    passes.push_back(std::make_unique<passes::ConstantFolding>());
+
+    auto result = run_with_passes(
+        "(module m (define p (catch 'runtime.type-error (/ 1 0))) "
+        "  (define result (if (pair? p) 1 0)))",
+        std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 1);
+    BOOST_CHECK_GE(count_opcode_all(OpCode::Div), 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(constant_fold_respects_shadowed_plus, OptFixture) {
+    std::vector<std::unique_ptr<OptimizationPass>> passes;
+    passes.push_back(std::make_unique<passes::ConstantFolding>());
+
+    auto result = run_with_passes(
+        "(module m "
+        "  (define + (lambda (a b) (- a b))) "
+        "  (define result (+ 7 2)))",
+        std::move(passes));
+    auto decoded = ops::decode<int64_t>(result);
+    BOOST_REQUIRE(decoded.has_value());
+    BOOST_CHECK_EQUAL(*decoded, 5);
 }
 
 BOOST_FIXTURE_TEST_CASE(constant_fold_overflow_promotes_like_runtime, OptFixture) {

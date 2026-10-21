@@ -121,6 +121,21 @@ primitives can't drift apart.
   today it runs ConstantFolding → PrimitiveSpecialisation → DCE.
 - **Side effect:** specialised `+` and `<` no longer show up as primitive calls in the
   profiler. That's expected; note it in the commit message.
+- **Added during implementation:**
+  - **Pass order:** etac `-O` now runs PrimitiveSpecialisation → ConstantFolding → DCE.
+    ConstantFolding was changed to also fold `PrimitiveCall` Add/Sub/Mul/Div nodes, so
+    lowered chains still fold bottom-up (`(+ 1 2 3)` → `6`).
+  - **ConstantFolding and shadowed builtins:** it now folds only immutable builtin
+    bindings. Before, a user `(define (+ a b) ...)` with constant arguments was folded
+    as builtin `+`.
+  - **Catchable `Car`/`Cdr`:** errors from these opcodes go through `do_runtime_error`,
+    with the primitives' messages (`car: not a pair`). Without this, turning
+    specialisation on by default would have made `(car 5)` abort in the REPL.
+  - **`+` primitive and `-0.0`:** the fold is seeded with the first argument, not exact 0,
+    so `(+ -0.0 -0.0)` is `-0.0` and matches the `Add` opcode.
+  - **Error timing in chains:** `(+ 'x 1 (f))` used to evaluate `(f)` before raising.
+    The chain raises at the first `Add`, so `(f)` never runs. Argument values and
+    evaluation order are unchanged.
 
 ## Phase 5: Small correctness fixes (separate commit)
 

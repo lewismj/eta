@@ -21,6 +21,7 @@
 #include "eta/runtime/factory.h"
 #include "eta/runtime/types/closure.h"
 #include "eta/runtime/vm/bytecode_serializer.h"
+#include "eta/semantics/passes/primitive_specialisation.h"
 #include "eta/session/repl_input.h"
 #include "eta/session/runtime_config.h"
 #include "eta/util/path.h"
@@ -146,6 +147,14 @@ Driver::Driver(ModulePathResolver resolver,
      * heap-backed constants long before they are executed or serialized.
      */
     heap_.set_gc_callback([this]() { collect_garbage_with_registry_roots(); });
+
+    /**
+     * Always lower builtin arithmetic, comparison and pair calls to their
+     * dedicated opcodes (etai, REPL, Jupyter and plain etac alike).  The
+     * opcodes share the primitives' numeric kernel and error messages, so
+     * this is a pure performance change.  `etac -O` appends further passes.
+     */
+    optimization_pipeline_.add_pass(std::make_unique<semantics::passes::PrimitiveSpecialisation>());
 
     if (actor_system_) {
         vm_.set_actor_system(actor_system_);

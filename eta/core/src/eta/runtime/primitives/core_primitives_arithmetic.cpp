@@ -40,14 +40,16 @@ void PrimReg::register_arithmetic() {
             }
             return acc;
         }
-        NumericValue acc{NumType::Fixnum, 0, 0.0};
-        for (auto v : args) {
-            auto n = numeric_ops::classify(v, heap);
+        if (args.empty()) return make_fixnum(heap, int64_t(0));
+        /// Seed with the first argument, not exact 0, so (+ -0.0 -0.0) is -0.0 like the Add opcode
+        NumericValue acc{};
+        for (size_t i = 0; i < args.size(); ++i) {
+            auto n = numeric_ops::classify(args[i], heap);
             if (!n.is_valid()) {
                 return std::unexpected(RuntimeError{VMError{
                     RuntimeErrorCode::TypeError, "+: argument is not a number"}});
             }
-            acc = *numeric_ops::arith(numeric_ops::ArithOp::Add, acc, n);
+            acc = i == 0 ? n : *numeric_ops::arith(numeric_ops::ArithOp::Add, acc, n);
         }
         return numeric_ops::box(heap, acc);
     });

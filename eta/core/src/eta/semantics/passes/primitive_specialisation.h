@@ -17,6 +17,11 @@ namespace eta::semantics::passes {
  * The pass recognizes calls to immutable builtin globals and replaces them
  * with `core::PrimitiveCall`, which the emitter lowers directly to existing
  * VM opcodes (`Add`, `Sub`, `Mul`, `Div`, `NumCmp`, `Cons`, `Car`, `Cdr`).
+ * Arithmetic calls with three or more arguments become a left-associated
+ * chain of binary opcodes.
+ *
+ * The Driver always runs this pass, so it must preserve the semantics of
+ * the primitive call it replaces.
  */
 class PrimitiveSpecialisation : public OptimizationPass {
 public:
@@ -51,6 +56,8 @@ private:
             if (!global) return node;
 
             const auto arg_count = call->args.size();
+            if (arg_count >= 3) return lower_variadic_arith(node, *call, global->id);
+
             const auto* slot_map = primitive_map_for_arity(arg_count);
             if (!slot_map) return node;
 
@@ -65,6 +72,31 @@ private:
         }
 
     private:
+        /**
+         * (+ a b c d) -> (Add (Add (Add a b) c) d): the same left fold the
+         * variadic primitive performs.  Comparisons are not chained, since
+         * (< a b c) would need a temporary to avoid evaluating b twice.
+         */
+        core::Node* lower_variadic_arith(core::Node* node, const core::Call& call, uint32_t slot) {
+            auto it = binary_primitive_slots.find(slot);
+            if (it == binary_primitive_slots.end() || !is_arith(it->second)) return node;
+
+            core::Node* acc = call.args[0];
+            for (std::size_t i = 1; i < call.args.size(); ++i) {
+                core::PrimitiveCall step{
+                    .kind = it->second,
+                    .args = {acc, call.args[i]},
+                };
+                acc = mod.emplace<core::PrimitiveCall>(node->span, std::move(step));
+            }
+            return acc;
+        }
+
+        static bool is_arith(core::PrimitiveKind kind) {
+            return kind == core::PrimitiveKind::Add || kind == core::PrimitiveKind::Sub
+                || kind == core::PrimitiveKind::Mul || kind == core::PrimitiveKind::Div;
+        }
+
         void index_builtin_primitive_slots() {
             for (const auto& binding : mod.bindings) {
                 if (binding.kind != BindingInfo::Kind::Global) continue;

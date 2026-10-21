@@ -13,7 +13,6 @@
 #include "eta/semantics/optimization_pipeline.h"
 #include "eta/semantics/passes/constant_folding.h"
 #include "eta/semantics/passes/dead_code_elimination.h"
-#include "eta/semantics/passes/primitive_specialisation.h"
 
 namespace fs = std::filesystem;
 
@@ -95,11 +94,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    /// Configure optimization pipeline
+    /**
+     * Configure optimization pipeline.  The Driver already runs
+     * PrimitiveSpecialisation; ConstantFolding folds the lowered nodes.
+     */
     if (optimize) {
         auto& pipeline = driver.optimization_pipeline();
         pipeline.add_pass(std::make_unique<eta::semantics::passes::ConstantFolding>());
-        pipeline.add_pass(std::make_unique<eta::semantics::passes::PrimitiveSpecialisation>());
         pipeline.add_pass(std::make_unique<eta::semantics::passes::DeadCodeElimination>());
     }
 

@@ -313,8 +313,8 @@ struct CompiledExampleFixture {
 
         if (optimize) {
             auto& pipeline = compiler.optimization_pipeline();
+            /// Mirrors `etac -O`: the Driver already runs PrimitiveSpecialisation
             pipeline.add_pass(std::make_unique<eta::semantics::passes::ConstantFolding>());
-            pipeline.add_pass(std::make_unique<eta::semantics::passes::PrimitiveSpecialisation>());
             pipeline.add_pass(std::make_unique<eta::semantics::passes::DeadCodeElimination>());
         }
 
