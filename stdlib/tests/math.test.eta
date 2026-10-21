@@ -69,7 +69,9 @@
               (make-test "round exact integer" (lambda () (assert-equal 7 (round 7))))
               ;; negative inputs depend on modulo being floored; flonum in, flonum out
               (make-test "floor negative" (lambda () (assert-equal -3.0 (floor -2.5))))
-              (make-test "floor negative near integer" (lambda () (assert-equal -1.0 (floor -0.25))))
+              (make-test
+                "floor negative near integer"
+                (lambda () (assert-equal -1.0 (floor -0.25))))
               (make-test "ceiling negative" (lambda () (assert-equal -2.0 (ceiling -2.5))))
               (make-test "truncate negative" (lambda () (assert-equal -2.0 (truncate -2.5))))
               (make-test "round negative" (lambda () (assert-equal -3.0 (round -3.2))))
@@ -81,9 +83,13 @@
             "modulo-remainder"
             (list
               (make-test "modulo takes divisor sign" (lambda () (assert-equal 2 (modulo -7 3))))
-              (make-test "remainder takes dividend sign" (lambda () (assert-equal -1 (remainder -7 3))))
+              (make-test
+                "remainder takes dividend sign"
+                (lambda () (assert-equal -1 (remainder -7 3))))
               (make-test "modulo flonum floored" (lambda () (assert-equal 0.5 (modulo -7.5 2))))
-              (make-test "remainder flonum truncated" (lambda () (assert-equal 2.0 (remainder 5.0 3.0))))
+              (make-test
+                "remainder flonum truncated"
+                (lambda () (assert-equal 2.0 (remainder 5.0 3.0))))
               (make-test "gcd negative" (lambda () (assert-equal 6 (gcd -12 18))))))
 
           ;; ── Exponentiation ───────────────────────────────────────

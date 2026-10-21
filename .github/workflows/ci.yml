@@ -88,9 +88,39 @@ jobs:
 
       # Formatter/linter gates for the Eta corpora (formerly lint.yml). They run
       # even when tests fail so all problems surface in one CI pass.
+      # On failure, print the diff and the formatter version, and upload a patch
+      # that fixes it (download, then: git apply eta-fmt.patch).
       - name: Check formatting
         if: success() || failure()
-        run: ./build/eta/tools/formatter/eta_fmt --check stdlib cookbook
+        shell: bash
+        run: |
+          fmt=./build/eta/tools/formatter/eta_fmt
+          if "$fmt" --check stdlib cookbook; then exit 0; fi
+          echo "::group::eta_fmt version"
+          "$fmt" --version
+          echo "::endgroup::"
+          echo "::group::Formatting diff (apply with: git apply eta-fmt.patch)"
+          "$fmt" --diff --no-color stdlib cookbook > eta-fmt.patch || true
+          cat eta-fmt.patch
+          echo "::endgroup::"
+          echo "::group::Line endings / encoding of differing files"
+          for f in $(grep -E '^\+\+\+ ' eta-fmt.patch | sed -E 's#^\+\+\+ (b/)?##'); do
+            file "$f"
+            printf '%s: CRLF lines=%s, trailing newline=%s\n' "$f" \
+              "$(grep -c $'\r$' "$f" || true)" \
+              "$( [ -z "$(tail -c1 "$f")" ] && echo yes || echo no )"
+          done
+          echo "::endgroup::"
+          echo "::error title=eta_fmt::Formatting differs; download the eta-fmt-patch artifact and run: git apply eta-fmt.patch"
+          exit 1
+
+      - name: Upload formatting patch
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eta-fmt-patch
+          path: eta-fmt.patch
+          if-no-files-found: ignore
 
       - name: Run linter
         if: success() || failure()
