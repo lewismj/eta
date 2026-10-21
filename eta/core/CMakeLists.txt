@@ -64,6 +64,10 @@ target_sources(${PROJECT_NAME}
         src/eta/semantics/semantic_analyzer.cpp
         src/eta/semantics/emitter.cpp
         src/eta/runtime/vm/vm.cpp
+        src/eta/runtime/vm/vm_gc.cpp
+        src/eta/runtime/vm/vm_debug.cpp
+        src/eta/runtime/vm/vm_errors.cpp
+        src/eta/runtime/vm/vm_unify.cpp
         src/eta/runtime/vm/bytecode_serializer.cpp
         src/eta/runtime/vm/sandbox.cpp
         src/eta/runtime/value_formatter.cpp
