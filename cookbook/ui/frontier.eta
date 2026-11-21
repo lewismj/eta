@@ -1,0 +1,147 @@
+;;; frontier.eta -- std.ui end-to-end slice: an interactive risk/return cloud.
+;;;
+;;; Samples long-only portfolios over four assets and plots risk against
+;;; return. Every portfolio keeps its key across renders, so changing the
+;;; assumptions (buttons) or editing this file and re-running makes the
+;;; points move to their new positions instead of being redrawn.
+;;;
+;;; Run:  etai cookbook/ui/frontier.eta
+;;;       (set ETA_UI=none to print the URL without opening a browser)
+
+(module frontier
+  (import std.io std.collections std.ui std.chart)
+  (begin
+
+    ;; ------------------------------------------------------------------
+    ;; Market assumptions (annualised)
+    ;; ------------------------------------------------------------------
+
+    (define asset-names (list "Equities" "Credit" "Govts" "Commodities"))
+    (define base-mu (list 0.072 0.048 0.031 0.055))
+    (define base-vol (list 0.165 0.082 0.055 0.21))
+    ;; Correlation matrix (row-major).
+    (define corr
+      (list (list 1.0 0.55 -0.20 0.35)
+            (list 0.55 1.0 0.10 0.20)
+            (list -0.20 0.10 1.0 -0.05)
+            (list 0.35 0.20 -0.05 1.0)))
+
+    (define portfolio-count 600)
+
+    ;; ------------------------------------------------------------------
+    ;; Deterministic random numbers (Park-Miller), so a given seed always
+    ;; gives the same portfolios and keys line up across runs.
+    ;; ------------------------------------------------------------------
+
+    (defun rng-next (x) (modulo (* x 16807) 2147483647))
+
+    ;; Returns (values-list . next-state)
+    (defun uniforms (n state)
+      (let loop ((i 0) (s state) (acc '()))
+        (if (= i n)
+          (cons (reverse acc) s)
+          (let ((s2 (rng-next s)))
+            (loop (+ i 1) s2 (cons (/ s2 2147483647.0) acc))))))
+
+    ;; Random long-only weights; the power spreads samples toward corners.
+    (defun random-weights (state)
+      (let* ((u (uniforms 4 state))
+             (raw (map (lambda (x) (* x x x)) (car u)))
+             (total (foldl + 0.0 raw)))
+        (cons (map (lambda (x) (/ x total)) raw) (cdr u))))
+
+    ;; ------------------------------------------------------------------
+    ;; Portfolio maths
+    ;; ------------------------------------------------------------------
+
+    (defun dot (a b) (foldl + 0.0 (map2 * a b)))
+
+    (defun covariance (vols)
+      (map2 (lambda (row vi)
+              (map2 (lambda (rho vj) (* rho vi vj)) row vols))
+            corr vols))
+
+    (defun portfolio-risk (w cov)
+      (sqrt (dot w (map (lambda (row) (dot row w)) cov))))
+
+    (defun sample-portfolios (seed vols mu)
+      (let ((cov (covariance vols)))
+        (let loop ((i 0) (state seed) (acc '()))
+          (if (= i portfolio-count)
+            (reverse acc)
+            (let* ((ws (random-weights state))
+                   (w (car ws)))
+              (loop (+ i 1) (cdr ws)
+                    (cons (hash-map 'id i
+                                    'weights w
+                                    'risk (portfolio-risk w cov)
+                                    'ret (dot w mu))
+                          acc)))))))
+
+    (defun stressed-vols (stress?)
+      (if stress? (map2 * base-vol (list 1.8 1.4 1.0 1.6)) base-vol))
+
+    (defun stressed-mu (stress?)
+      (if stress? (map2 + base-mu (list -0.03 -0.012 0.004 -0.02)) base-mu))
+
+    ;; ------------------------------------------------------------------
+    ;; App
+    ;; ------------------------------------------------------------------
+
+    (define state (ui:state 'seed 20261121 'stress #f 'selected #f))
+
+    (defun find-portfolio (ps id)
+      (cond ((null? ps) #f)
+            ((equal? (hash-map-ref (car ps) 'id) id) (car ps))
+            (else (find-portfolio (cdr ps) id))))
+
+    (defun best-sharpe (ps)
+      (foldl (lambda (best p)
+               (if (or (not best)
+                       (> (/ (hash-map-ref p 'ret) (hash-map-ref p 'risk))
+                          (/ (hash-map-ref best 'ret) (hash-map-ref best 'risk))))
+                 p best))
+             #f ps))
+
+    (defun detail-panel (p)
+      (if (not p)
+        (ui:panel 'width 300 'title "Portfolio"
+          (ui:text "Click a point to inspect a portfolio." 'muted #t))
+        (ui:panel 'width 300 'title (string-append "Portfolio #" (number->string (hash-map-ref p 'id)))
+          (ui:row 'flex 0
+            (ui:stat "Return" (hash-map-ref p 'ret) 'format "pct")
+            (ui:stat "Risk" (hash-map-ref p 'risk) 'format "pct"))
+          (ui:stat "Return / risk" (/ (hash-map-ref p 'ret) (hash-map-ref p 'risk)) 'format "num")
+          (ui:divider)
+          (ui:kv (map2 cons asset-names (hash-map-ref p 'weights)) 'format "pct"))))
+
+    (defun view (s)
+      (let* ((stress? (ui:get s 'stress))
+             (ps (sample-portfolios (ui:get s 'seed) (stressed-vols stress?) (stressed-mu stress?)))
+             (selected (or (find-portfolio ps (ui:get s 'selected)) (best-sharpe ps))))
+        (ui:window "Portfolio explorer" 'id "eta.cookbook.frontier"
+          (ui:row
+            (ui:column
+              (ui:row 'flex 0
+                (ui:button (if stress? "Back to base case" "Apply stress scenario")
+                  'variant "primary"
+                  'on-click (lambda (ev) (ui:update! s 'stress not)))
+                (ui:button "Resample"
+                  'on-click (lambda (ev) (ui:update! s 'seed (lambda (x) (rng-next (+ x 7))))))
+                (ui:spacer)
+                (ui:text (if stress? "Stress: equity and commodity vol up, returns down"
+                                     "Base case assumptions")
+                         'muted #t))
+              (chart:plot
+                'title "Risk and return"
+                'subtitle (string-append (number->string portfolio-count) " long-only portfolios")
+                'x (chart:axis "Risk (annualised volatility)" 'format "pct")
+                'y (chart:axis "Expected return" 'format "pct")
+                (chart:points ps
+                  'x 'risk 'y 'ret 'key 'id
+                  'label (lambda (p) (string-append "Portfolio #" (number->string (hash-map-ref p 'id))))
+                  'selected (hash-map-ref selected 'id)
+                  'on-select (lambda (p) (ui:set! s 'selected (hash-map-ref p 'id))))))
+            (detail-panel selected)))))
+
+    (ui:run view state)))

@@ -91,3 +91,6 @@ eta/qa/fuzz/corpus/*
 !eta/qa/fuzz/corpus/intern_table/
 
 
+
+# std.ui front-end bundle (built from eta/tools/ui/frontend)
+packages/stdlib/native/ui/web/

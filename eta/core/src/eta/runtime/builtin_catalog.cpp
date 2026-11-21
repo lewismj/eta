@@ -45,8 +45,13 @@ namespace {
         || name == "enable-heartbeat";
 }
 
+[[nodiscard]] bool is_ui_builtin(std::string_view name) {
+    return name.starts_with("%ui-");
+}
+
 [[nodiscard]] bool is_blocking_builtin(std::string_view name) {
     return name == "%process-run"
+        || name == "%ui-recv"
         || name == "%process-wait"
         || name == "%time-sleep-ms"
         || name == "recv!"
@@ -59,6 +64,7 @@ namespace {
     if (is_stats_sidecar_builtin(name)) return "sidecar:eta-stats";
     if (is_log_builtin(name)) return "sidecar:eta-log";
     if (is_nng_builtin(name)) return "sidecar:eta-nng";
+    if (is_ui_builtin(name)) return "sidecar:eta-ui";
     return "core";
 }
 

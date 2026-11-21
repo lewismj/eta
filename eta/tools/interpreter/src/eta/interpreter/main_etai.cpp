@@ -39,6 +39,7 @@ static void print_usage(const char* prog) {
               << "  --prof-format <fmt> Report format: pretty|json|speedscope|eta-prof|chrome|pprof.\n"
               << "  --prof-out <file>   Write profiler report to a file.\n"
               << "  --disasm            Disassemble bytecode instead of executing.\n"
+              << "  --ui <mode>         std.ui apps: window | browser | none (sets ETA_UI).\n"
               << "  --help              Show this help message.\n";
 }
 
@@ -159,6 +160,29 @@ int main(int argc, char* argv[]) {
                 std::cerr << "error: --prof-hz must be a positive integer\n";
                 return 1;
             }
+            continue;
+        }
+
+        if (arg == "--ui" || arg.rfind("--ui=", 0) == 0) {
+            std::string mode;
+            if (arg == "--ui") {
+                if (i + 1 >= argc) {
+                    std::cerr << "error: --ui requires a value (window, browser or none)\n";
+                    return 1;
+                }
+                mode = argv[++i];
+            } else {
+                mode = arg.substr(5);
+            }
+            if (mode != "window" && mode != "browser" && mode != "none") {
+                std::cerr << "error: --ui must be window, browser or none\n";
+                return 1;
+            }
+#ifdef _WIN32
+            _putenv_s("ETA_UI", mode.c_str());
+#else
+            setenv("ETA_UI", mode.c_str(), 1);
+#endif
             continue;
         }
 

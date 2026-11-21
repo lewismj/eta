@@ -31,6 +31,15 @@ the distribution and is importable with `(import <name>)`.
 
 ---
 
+## Interactive Applications & Charts
+
+| Module | Import | Description |
+| :----- | :----- | :---------- |
+| [std.ui](./ui.md) | `(import std.ui)` | Declarative interactive apps served from the Eta process: layout, inputs, tables, state, events. |
+| [std.chart](./chart.md) | `(import std.chart)` | GPU-rendered charts for std.ui: points, lines, areas, bands, bars, heatmaps, 3D surfaces. |
+
+---
+
 ## Collections & Data Structures
 
 | Module | Import | Description |

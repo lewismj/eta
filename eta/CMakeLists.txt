@@ -9,6 +9,7 @@ set(ETA_STDLIB_NATIVE_TORCH_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/torch/src")
 set(ETA_STDLIB_NATIVE_NNG_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/nng/src")
 set(ETA_STDLIB_NATIVE_STATS_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/stats/src")
 set(ETA_STDLIB_NATIVE_LOG_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/log/src")
+set(ETA_STDLIB_NATIVE_UI_SRC_DIR "${ETA_STDLIB_NATIVE_DIR}/ui/src")
 set(ETA_INTERPRETER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/interpreter")
 set(ETA_COMPILER_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/compiler")
 set(ETA_CLI_DIR "${ETA_LAYOUT_ROOT_DIR}/cli")
@@ -166,6 +167,7 @@ function(eta_link_sidecar_builtin_runtime target)
         ${ETA_STDLIB_NATIVE_NNG_SRC_DIR}
         ${ETA_STDLIB_NATIVE_STATS_SRC_DIR}
         ${ETA_STDLIB_NATIVE_LOG_SRC_DIR}
+        ${ETA_STDLIB_NATIVE_UI_SRC_DIR}
     )
 
     target_include_directories(${target} SYSTEM PRIVATE
@@ -290,6 +292,81 @@ eta_add_stdlib_native_sidecar(eta_log_sidecar eta_log log)
 eta_add_stdlib_native_sidecar(eta_stats_sidecar eta_stats stats)
 eta_add_stdlib_native_sidecar(eta_torch_sidecar eta_torch torch)
 eta_add_stdlib_native_sidecar(eta_nng_sidecar eta_nng nng)
+eta_add_stdlib_native_sidecar(eta_ui_sidecar eta_ui ui)
+
+# std.ui standalone window (`etai app.eta --ui window`) via webview/webview
+# (header-only). Windows uses WebView2 (SDK headers fetched at configure);
+# Linux would need WebKitGTK development packages, so the default is on for
+# Windows and macOS only. Without it, --ui window falls back to the browser.
+if(WIN32 OR APPLE)
+    set(_eta_ui_window_default ON)
+else()
+    set(_eta_ui_window_default OFF)
+endif()
+option(ETA_UI_WINDOW "Build native window support for std.ui (webview/webview)" ${_eta_ui_window_default})
+if(ETA_UI_WINDOW)
+    include(FetchContent)
+    set(WEBVIEW_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_BUILD_STATIC_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_INSTALL_TARGETS OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_ENABLE_CHECKS OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_ENABLE_PACKAGING OFF CACHE BOOL "" FORCE)
+    set(WEBVIEW_USE_COMPAT_MINGW OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        webview
+        GIT_REPOSITORY https://github.com/webview/webview.git
+        GIT_TAG        0.12.0
+        GIT_SHALLOW    TRUE
+        EXCLUDE_FROM_ALL
+        SYSTEM
+    )
+    FetchContent_MakeAvailable(webview)
+    target_sources(eta_ui_sidecar PRIVATE "${ETA_STDLIB_NATIVE_UI_SRC_DIR}/eta/ui/ui_window.cpp")
+    target_link_libraries(eta_ui_sidecar PRIVATE webview::core)
+    target_compile_definitions(eta_ui_sidecar PRIVATE ETA_UI_HAS_WINDOW=1)
+endif()
+
+# std.ui front end: a Vite/TypeScript bundle written into the eta-ui sidecar
+# package (packages/stdlib/native/ui/web) so it ships with the runtime.
+# Needs Node.js + npm at build time only; nothing JS-related runs at run time.
+option(ETA_BUILD_UI_FRONTEND "Build the std.ui front-end bundle with npm" ON)
+set(ETA_UI_FRONTEND_DIR "${ETA_LAYOUT_ROOT_DIR}/tools/ui/frontend")
+if(ETA_BUILD_UI_FRONTEND)
+    find_program(ETA_NPM_EXECUTABLE NAMES npm.cmd npm)
+    if(ETA_NPM_EXECUTABLE)
+        file(GLOB_RECURSE ETA_UI_FRONTEND_SOURCES CONFIGURE_DEPENDS
+            "${ETA_UI_FRONTEND_DIR}/src/*"
+            "${ETA_UI_FRONTEND_DIR}/index.html")
+        set(ETA_UI_FRONTEND_DEPS_STAMP "${CMAKE_BINARY_DIR}/eta_ui_frontend_deps.stamp")
+        set(ETA_UI_FRONTEND_STAMP "${CMAKE_BINARY_DIR}/eta_ui_frontend.stamp")
+        add_custom_command(
+            OUTPUT "${ETA_UI_FRONTEND_DEPS_STAMP}"
+            COMMAND "${ETA_NPM_EXECUTABLE}" ci --no-audit --no-fund
+            COMMAND ${CMAKE_COMMAND} -E touch "${ETA_UI_FRONTEND_DEPS_STAMP}"
+            WORKING_DIRECTORY "${ETA_UI_FRONTEND_DIR}"
+            DEPENDS "${ETA_UI_FRONTEND_DIR}/package.json" "${ETA_UI_FRONTEND_DIR}/package-lock.json"
+            COMMENT "Installing std.ui front-end dependencies (npm ci)"
+            VERBATIM)
+        add_custom_command(
+            OUTPUT "${ETA_UI_FRONTEND_STAMP}"
+            COMMAND "${ETA_NPM_EXECUTABLE}" run build
+            COMMAND ${CMAKE_COMMAND} -E touch "${ETA_UI_FRONTEND_STAMP}"
+            WORKING_DIRECTORY "${ETA_UI_FRONTEND_DIR}"
+            DEPENDS "${ETA_UI_FRONTEND_DEPS_STAMP}" ${ETA_UI_FRONTEND_SOURCES}
+                    "${ETA_UI_FRONTEND_DIR}/vite.config.ts"
+            COMMENT "Building std.ui front-end bundle"
+            VERBATIM)
+        add_custom_target(eta_ui_frontend ALL DEPENDS "${ETA_UI_FRONTEND_STAMP}")
+        add_dependencies(eta_ui_sidecar eta_ui_frontend)
+    else()
+        message(WARNING "npm not found: the std.ui front end will not be built. "
+                        "Install Node.js or set -DETA_BUILD_UI_FRONTEND=OFF.")
+    endif()
+endif()
 
 # User-facing tools and protocol servers.
 add_subdirectory("${ETA_INTERPRETER_DIR}" "${CMAKE_BINARY_DIR}/eta/tools/interpreter")
@@ -341,7 +418,7 @@ set(ETA_STDLIB_BUILD_STAMP "${ETA_STDLIB_RUNTIME_DIR}/.eta_stdlib_etac.stamp")
 # the source tree (shared by every build dir), so rebuild them first; a stale
 # one fails with an undefined host symbol after any eta_core ABI change.
 set(ETA_STDLIB_SIDECAR_TARGETS)
-foreach(_t IN ITEMS eta_log_sidecar eta_stats_sidecar eta_torch_sidecar eta_nng_sidecar)
+foreach(_t IN ITEMS eta_log_sidecar eta_stats_sidecar eta_torch_sidecar eta_nng_sidecar eta_ui_sidecar)
     if(TARGET ${_t})
         list(APPEND ETA_STDLIB_SIDECAR_TARGETS ${_t})
     endif()

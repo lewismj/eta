@@ -1,0 +1,245 @@
+;;; wwr-model.eta -- Analytic wrong-way-risk CVA model for the std.ui demo.
+;;;
+;;; Pure Eta, no torch, fast enough to re-price on every slider move.
+;;;
+;;; Exposure. Each counterparty has one netting set whose value follows an
+;;; arithmetic Brownian motion V(t) ~ N(mu t, sigma^2 t). Uncollateralised
+;;; exposure is V(t)^+. Under a CSA with margin period of risk m and
+;;; threshold H, exposure is (dV_m - H)^+ with dV_m ~ N(mu m, sigma^2 m).
+;;;
+;;; Credit. Flat hazard lambda_i, scaled by macro shocks through the
+;;; counterparty's betas: lambda = lambda_0 exp(beta . shock). Recovery R_i.
+;;;
+;;; Wrong-way risk (Hull & White one-factor Gaussian copula). Default at t
+;;; means the credit latent Y equals q(t) = Phi^-1(PD(t)). With exposure
+;;; driver Z = -rho Y + sqrt(1 - rho^2) e, conditional on default at t:
+;;;     Z ~ N(-rho q(t), 1 - rho^2)
+;;; so the conditional expected exposure has a closed form,
+;;;     EE*(t) = E[(M + S Z)^+],  E[(N(m, s^2))^+] = m Phi(m/s) + s phi(m/s).
+;;; rho > 0 is wrong-way (exposure is high when the counterparty defaults),
+;;; rho < 0 right-way, rho = 0 recovers the standard independent CVA.
+;;;
+;;; CVA = (1 - R) sum_k DF(t_k) EE*(t_k) PD(t_{k-1}, t_k)
+
+(module wwr-model
+  (import std.core std.collections std.stats)
+  (export
+    drivers driver-labels horizon steps times
+    counterparties cp-name cp-ref driver-beta
+    normal-cdf normal-pdf expected-positive
+    default-assumptions assumption
+    shocked-hazard exposure-moments conditional-ee
+    cva exposure-profile exposure-surface surface-quantiles
+    elasticity elasticity-matrix portfolio-results)
+  (begin
+
+    ;; ------------------------------------------------------------------
+    ;; Grid and market
+    ;; ------------------------------------------------------------------
+
+    (define drivers (list "oil" "usd-10y" "eur-usd"))
+    (define driver-labels (list "Oil" "USD 10y" "EUR/USD"))
+    (define horizon 5.0)
+    (define steps 60)
+    (define times
+      (list->vector (map (lambda (k) (* horizon (/ k (* 1.0 steps)))) (iota steps 1))))
+
+    (defun cp-name (i)
+      (if (< i 10)
+        (string-append "CP-0" (number->string i))
+        (string-append "CP-" (number->string i))))
+
+    (define sectors (vector "Energy" "Banks" "Utilities" "Industrials" "Sovereign" "Commodities"))
+
+    ;; Betas follow cookbook/xva-wwr/market.eta (CP-17 oil-driven, CP-09 oil,
+    ;; CP-22 EUR/USD, CP-12 rates right-way).
+    (defun make-betas (i)
+      (let ((oil (+ 0.20 (* 0.06 (modulo i 5))))
+            (usd10 (+ 0.10 (* 0.04 (modulo (+ i 2) 4))))
+            (fx (+ 0.08 (* 0.05 (modulo (+ i 1) 6)))))
+        (list
+          (cond ((= i 17) 2.91) ((= i 9) 2.07) (else oil))
+          (cond ((= i 4) 1.22) ((= i 12) -0.48) (else usd10))
+          (cond ((= i 22) 1.94) (else fx)))))
+
+    (defun make-cp (i)
+      (let ((sigma (+ 80000.0 (* 12000.0 (modulo i 11)))))
+        (hash-map 'id i
+                  'name (cp-name i)
+                  'sector (vector-ref sectors (modulo i 6))
+                  'sigma sigma
+                  'mu (* 0.04 sigma (- (modulo i 5) 2))
+                  'hazard (+ 0.012 (* 0.0015 (modulo i 8)))
+                  'recovery (- 0.45 (* 0.02 (modulo i 4)))
+                  'betas (make-betas i))))
+
+    (define counterparties (map make-cp (iota 30 1)))
+
+    (defun cp-ref (name)
+      (let loop ((cps counterparties))
+        (cond ((null? cps) #f)
+              ((equal? (hash-map-ref (car cps) 'name) name) (car cps))
+              (else (loop (cdr cps))))))
+
+    (defun driver-beta (cp driver)
+      (let ((b (hash-map-ref cp 'betas)))
+        (cond ((equal? driver "oil") (list-ref b 0))
+              ((equal? driver "usd-10y") (list-ref b 1))
+              ((equal? driver "eur-usd") (list-ref b 2))
+              (else 0.0))))
+
+    ;; ------------------------------------------------------------------
+    ;; Normal distribution
+    ;; ------------------------------------------------------------------
+
+    (defun normal-pdf (x) (/ (exp (* -0.5 x x)) 2.5066282746310002))
+
+    ;; Abramowitz & Stegun 26.2.17, |error| < 7.5e-8.
+    (defun normal-cdf (x)
+      (let* ((ax (abs x))
+             (k (/ 1.0 (+ 1.0 (* 0.2316419 ax))))
+             (poly (* k (+ 0.319381530
+                           (* k (+ -0.356563782
+                                   (* k (+ 1.781477937
+                                           (* k (+ -1.821255978 (* k 1.330274429))))))))))
+             (upper (* (normal-pdf ax) poly)))
+        (if (>= x 0) (- 1.0 upper) upper)))
+
+    ;; E[(X)^+] for X ~ N(m, s^2).
+    (defun expected-positive (m s)
+      (if (<= s 0.0)
+        (max m 0.0)
+        (let ((d (/ m s)))
+          (+ (* m (normal-cdf d)) (* s (normal-pdf d))))))
+
+    ;; ------------------------------------------------------------------
+    ;; Assumptions
+    ;; ------------------------------------------------------------------
+
+    (define default-assumptions
+      (hash-map 'rho 0.35
+                'collateralised #f
+                'mpor-days 10.0
+                'threshold 0.0
+                'driver "none"
+                'shock 0.0
+                'rate 0.0325))
+
+    (defun assumption (a key) (hash-map-ref a key (hash-map-ref default-assumptions key #f)))
+
+    ;; ------------------------------------------------------------------
+    ;; Pricing
+    ;; ------------------------------------------------------------------
+
+    (defun shocked-hazard (cp a)
+      (* (hash-map-ref cp 'hazard)
+         (exp (* (driver-beta cp (assumption a 'driver)) (assumption a 'shock)))))
+
+    ;; Mean, standard deviation and threshold of the exposed quantity at t.
+    (defun exposure-moments (cp a t)
+      (let ((mu (hash-map-ref cp 'mu)) (sigma (hash-map-ref cp 'sigma)))
+        (if (assumption a 'collateralised)
+          (let ((m (/ (assumption a 'mpor-days) 250.0)))
+            (list (* mu m) (* sigma (sqrt m)) (assumption a 'threshold)))
+          (list (* mu t) (* sigma (sqrt t)) 0.0))))
+
+    ;; Expected exposure at t conditional on default at t (rho = 0: unconditional).
+    (defun conditional-ee (cp a rho t lam)
+      (let* ((mom (exposure-moments cp a t))
+             (mean (car mom)) (sd (car (cdr mom))) (h (car (cdr (cdr mom))))
+             (pd (min (max (- 1.0 (exp (- (* lam t)))) 1e-12) 0.999999))
+             (q (if (= rho 0.0) 0.0 (stats:normal-quantile pd)))
+             (shift (* -1.0 rho q))
+             (scale (sqrt (max (- 1.0 (* rho rho)) 1e-12))))
+        (expected-positive (- (+ mean (* sd shift)) h) (* sd scale))))
+
+    ;; CVA with correlation rho (0 = no wrong-way risk).
+    (defun cva (cp a rho)
+      (let ((lam (shocked-hazard cp a))
+            (lgd (- 1.0 (hash-map-ref cp 'recovery)))
+            (r (assumption a 'rate)))
+        (let loop ((k 0) (prev 0.0) (acc 0.0))
+          (if (= k steps)
+            (* lgd acc)
+            (let* ((t (vector-ref times k))
+                   (mid (* 0.5 (+ prev t)))
+                   (pd (- (exp (- (* lam prev))) (exp (- (* lam t)))))
+                   (ee (conditional-ee cp a rho mid lam)))
+              (loop (+ k 1) t (+ acc (* (exp (- (* r mid))) ee pd))))))))
+
+    ;; Exposure profile of one counterparty: vectors over `times`.
+    ;;   epe   expected positive exposure (independent)
+    ;;   wwr   expected exposure conditional on default (with rho)
+    ;;   ene   expected negative exposure, as a negative number
+    ;;   p05 / p95   5% / 95% quantiles of the exposed value
+    (defun exposure-profile (cp a)
+      (let* ((rho (assumption a 'rho))
+             (lam (shocked-hazard cp a))
+             (z05 (stats:normal-quantile 0.05))
+             (z95 (stats:normal-quantile 0.95))
+             (series
+               (map (lambda (t)
+                      (let* ((mom (exposure-moments cp a t))
+                             (mean (- (car mom) (car (cdr (cdr mom)))))
+                             (sd (car (cdr mom))))
+                        (list (expected-positive mean sd)
+                              (conditional-ee cp a rho t lam)
+                              (* -1.0 (expected-positive (* -1.0 mean) sd))
+                              (+ mean (* sd z05))
+                              (+ mean (* sd z95)))))
+                    (vector->list times)))
+             (col (lambda (i) (list->vector (map (lambda (row) (list-ref row i)) series)))))
+        (hash-map 'times times 'epe (col 0) 'wwr (col 1) 'ene (col 2) 'p05 (col 3) 'p95 (col 4))))
+
+    (define surface-quantiles (list 0.50 0.60 0.70 0.80 0.85 0.90 0.925 0.95 0.975 0.99))
+
+    ;; Exposure surface: rows = quantiles, columns = every other time step.
+    ;; z = quantile of exposure conditional on default (the WWR distribution).
+    (defun exposure-surface (cp a)
+      (let* ((rho (assumption a 'rho))
+             (lam (shocked-hazard cp a))
+             (ts (let loop ((k 1) (acc '()))
+                   (if (>= k steps) (reverse acc) (loop (+ k 2) (cons (vector-ref times k) acc)))))
+             (scale (sqrt (max (- 1.0 (* rho rho)) 1e-12)))
+             (rows
+               (map (lambda (qq)
+                      (let ((zq (stats:normal-quantile qq)))
+                        (map (lambda (t)
+                               (let* ((mom (exposure-moments cp a t))
+                                      (mean (- (car mom) (car (cdr (cdr mom)))))
+                                      (sd (car (cdr mom)))
+                                      (pd (min (max (- 1.0 (exp (- (* lam t)))) 1e-12) 0.999999))
+                                      (shift (if (= rho 0.0) 0.0 (* -1.0 rho (stats:normal-quantile pd)))))
+                                 (max 0.0 (+ mean (* sd shift) (* sd scale zq)))))
+                             ts)))
+                    surface-quantiles)))
+        (hash-map 'times (list->vector ts) 'quantiles (list->vector surface-quantiles) 'z rows)))
+
+    ;; d log CVA / d shock for one driver (central difference, shock +/- s).
+    (defun elasticity (cp a driver s)
+      (let* ((rho (assumption a 'rho))
+             (up (cva cp (hash-map-assoc (hash-map-assoc a 'driver driver) 'shock s) rho))
+             (dn (cva cp (hash-map-assoc (hash-map-assoc a 'driver driver) 'shock (- s)) rho)))
+        (if (or (<= up 0.0) (<= dn 0.0))
+          0.0
+          (/ (- (log up) (log dn)) (* 2.0 s)))))
+
+    (defun elasticity-matrix (a)
+      (map (lambda (cp) (map (lambda (d) (elasticity cp a d 0.1)) drivers)) counterparties))
+
+    ;; Per-counterparty results for the whole book (hash maps, one per CP).
+    (defun portfolio-results (a)
+      (let ((rho (assumption a 'rho)))
+        (map (lambda (cp)
+               (let* ((base (cva cp a 0.0))
+                      (wwr (cva cp a rho)))
+                 (hash-map 'name (hash-map-ref cp 'name)
+                           'sector (hash-map-ref cp 'sector)
+                           'hazard (shocked-hazard cp a)
+                           'recovery (hash-map-ref cp 'recovery)
+                           'beta-oil (driver-beta cp "oil")
+                           'base base
+                           'wwr wwr
+                           'addon (- wwr base)
+                           'addon-pct (if (> base 0.0) (/ (- wwr base) base) 0.0))))
+             counterparties)))))

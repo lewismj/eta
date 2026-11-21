@@ -106,6 +106,7 @@ required_sidecar_manifests=(
     stdlib/native/stats/eta.toml
     stdlib/native/torch/eta.toml
     stdlib/native/nng/eta.toml
+    stdlib/native/ui/eta.toml
 )
 missing_sidecar_manifests=()
 for manifest in "${required_sidecar_manifests[@]}"; do

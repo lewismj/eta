@@ -520,11 +520,12 @@ bool NativeSidecarManager::ensure_bundled_sidecars_loaded(std::span<const fs::pa
     std::unordered_map<std::string, fs::path> package_root_by_name;
     std::vector<NativeSidecarSpec> sidecar_specs;
 
-    const std::array<std::string_view, 4> builtin_sidecar_dirs{
+    const std::array<std::string_view, 5> builtin_sidecar_dirs{
         "log",
         "stats",
         "torch",
         "nng",
+        "ui",
     };
 
     for (const auto& native_root : candidate_roots) {

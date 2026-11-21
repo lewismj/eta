@@ -58,6 +58,8 @@ set(SOURCES
         src/hash_map_tests.cpp
         src/regex_tests.cpp
         src/json_tests.cpp
+        src/ui_tests.cpp
+        src/ui_app_tests.cpp
         src/log_tests.cpp
         src/nng_tests.cpp
         src/nng_session_runtime_tests.cpp

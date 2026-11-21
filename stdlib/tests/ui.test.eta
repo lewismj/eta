@@ -1,0 +1,302 @@
+;;; stdlib/tests/ui.test.eta - Tests for std.ui and std.chart (no front end needed).
+
+(module ui.tests
+  (import std.test std.ui std.chart)
+  (begin
+
+    (define test-parse-props-and-children
+      (make-test
+        "builders split properties from children"
+        (lambda ()
+          (let ((n (ui:panel 'width 240 'title "P" (ui:text "a") (list (ui:text "b") (ui:text "c")) #f)))
+            (assert-equal 'panel (ui:node-type n))
+            (assert-equal 240 (ui:prop n 'width))
+            (assert-equal "P" (ui:prop n 'title))
+            (assert-equal 3 (length (ui:node-children n)))
+            (assert-equal #f (ui:prop n 'missing))
+            (assert-equal 7 (ui:prop n 'missing 7))))))
+
+    (define test-render-wire-shape
+      (make-test
+        "ui:render produces {t, id, p, c} with stable path ids"
+        (lambda ()
+          (let* ((tree (ui:window "W" (ui:row (ui:text "x" 'key "k1") (ui:text "y"))))
+                 (wire (car (ui:render tree)))
+                 (row (car (hash-map-ref wire "c")))
+                 (kids (hash-map-ref row "c")))
+            (assert-equal "window" (hash-map-ref wire "t"))
+            (assert-equal "r" (hash-map-ref wire "id"))
+            (assert-equal "W" (hash-map-ref (hash-map-ref wire "p") "title"))
+            (assert-equal "r/0" (hash-map-ref row "id"))
+            (assert-equal "r/0/k1" (hash-map-ref (car kids) "id"))
+            (assert-equal "r/0/1" (hash-map-ref (car (cdr kids)) "id"))))))
+
+    (define test-render-handlers
+      (make-test
+        "procedure props become handler refs and are returned in the table"
+        (lambda ()
+          (let* ((f (lambda (ev) 'clicked))
+                 (r (ui:render (ui:window "W" (ui:button "Go" 'on-click f))))
+                 (button (car (hash-map-ref (car r) "c")))
+                 (ref (hash-map-ref (hash-map-ref button "p") "on-click")))
+            (assert-equal "r/0#on-click" (hash-map-ref ref "$h"))
+            (assert-equal 'clicked ((hash-map-ref (cdr r) "r/0#on-click") #f))))))
+
+    (define test-private-props
+      (make-test
+        "props starting with % are not rendered"
+        (lambda ()
+          (let* ((wire (car (ui:render (ui:node 'thing 'shown 1 '%hidden 2))))
+                 (p (hash-map-ref wire "p")))
+            (assert-equal 1 (hash-map-ref p "shown"))
+            (assert-equal #f (hash-map-ref p "%hidden" #f))))))
+
+    (define test-state
+      (make-test
+        "state reads, writes and tracks dirtiness"
+        (lambda ()
+          (let ((s (ui:state 'n 1)))
+            (ui:state-clean! s)
+            (assert-equal 1 (ui:get s 'n))
+            (assert-equal #f (ui:state-dirty? s))
+            (ui:update! s 'n (lambda (n) (+ n 1)))
+            (assert-equal 2 (ui:get s 'n))
+            (assert-true (ui:state-dirty? s))
+            (assert-equal 'none (ui:get s 'missing 'none))))))
+
+    (define test-chart-points-columns
+      (make-test
+        "chart:points extracts columns and maps selection back to rows"
+        (lambda ()
+          (let* ((rows (list (hash-map 'id 10 'x 0.1 'y 0.2)
+                             (hash-map 'id 11 'x 0.3 'y 0.4)))
+                 (picked (vector #f))
+                 (pts (chart:points rows 'x 'x 'y 'y 'key 'id
+                                    'on-select (lambda (row) (vector-set! picked 0 row))))
+                 (r (ui:render pts))
+                 (p (hash-map-ref (car r) "p"))
+                 (handler (hash-map-ref (cdr r) "r#on-select")))
+            (assert-equal "points" (hash-map-ref (car r) "t"))
+            (assert-approx-equal 0.3 (vector-ref (hash-map-ref p "xs") 1) 1e-12)
+            (assert-equal 11 (vector-ref (hash-map-ref p "keys") 1))
+            (assert-equal #f (hash-map-ref p "%rows" #f))
+            (handler (hash-map "index" 1))
+            (assert-equal 11 (hash-map-ref (vector-ref picked 0) 'id))))))
+
+    (define test-chart-field
+      (make-test
+        "chart:field reads hash maps, alists and accessors"
+        (lambda ()
+          (assert-equal 1 (chart:field (hash-map 'a 1) 'a))
+          (assert-equal 2 (chart:field (list (cons 'b 2)) 'b))
+          (assert-equal 3 (chart:field 3 (lambda (v) v))))))
+
+
+    ;; ---------------------------------------------------------------
+    ;; Helpers
+    ;; ---------------------------------------------------------------
+
+    (defun raises? (thunk)
+      (let ((r (catch (begin (thunk) '%no-error))))
+        (not (eq? r '%no-error))))
+
+    (defun wire-props (node) (hash-map-ref (car (ui:render node)) "p"))
+    (defun handler-of (node prop) (hash-map-ref (cdr (ui:render node)) (string-append "r#" prop)))
+
+    ;; ---------------------------------------------------------------
+    ;; Inputs
+    ;; ---------------------------------------------------------------
+
+    (define test-slider
+      (make-test
+        "ui:slider passes props and unwraps the value for its handler"
+        (lambda ()
+          (let* ((got (vector #f))
+                 (s (ui:slider "Correlation" 'min -1 'max 1 'step 0.05 'value 0.25
+                               'on-change (lambda (v) (vector-set! got 0 v))))
+                 (p (wire-props s)))
+            (assert-equal "slider" (hash-map-ref (car (ui:render s)) "t"))
+            (assert-equal "Correlation" (hash-map-ref p "label"))
+            (assert-equal -1 (hash-map-ref p "min"))
+            (assert-approx-equal 0.05 (hash-map-ref p "step") 1e-12)
+            ((handler-of s "on-change") (hash-map "value" 0.6))
+            (assert-approx-equal 0.6 (vector-ref got 0) 1e-12)))))
+
+    (define test-slider-without-handler
+      (make-test
+        "ui:slider without a handler sends no handler"
+        (lambda ()
+          (assert-equal #f (hash-map-ref (wire-props (ui:slider "x" 'value 1)) "on-change" #f)))))
+
+    (define test-select
+      (make-test
+        "ui:select normalises options and passes the chosen string"
+        (lambda ()
+          (let* ((got (vector #f))
+                 (s (ui:select "Driver" (list (cons "oil" "Oil") "fx") 'value "oil"
+                               'on-change (lambda (v) (vector-set! got 0 v))))
+                 (opts (hash-map-ref (wire-props s) "options")))
+            (assert-equal "oil" (car (car opts)))
+            (assert-equal "Oil" (car (cdr (car opts))))
+            (assert-equal "fx" (car (cdr opts)))
+            ((handler-of s "on-change") (hash-map "value" "fx"))
+            (assert-equal "fx" (vector-ref got 0))))))
+
+    (define test-toggle
+      (make-test
+        "ui:toggle passes booleans through"
+        (lambda ()
+          (let* ((got (vector 'unset))
+                 (t (ui:toggle "Collateralised" 'value #t 'on-change (lambda (v) (vector-set! got 0 v)))))
+            (assert-equal #t (hash-map-ref (wire-props t) "value"))
+            ((handler-of t "on-change") (hash-map "value" #f))
+            (assert-equal #f (vector-ref got 0))))))
+
+    ;; ---------------------------------------------------------------
+    ;; Fields and tables
+    ;; ---------------------------------------------------------------
+
+    (define test-ui-field
+      (make-test
+        "ui:field reads symbols and strings from hash maps and alists"
+        (lambda ()
+          (assert-equal 1 (ui:field (hash-map 'a 1) 'a))
+          (assert-equal 1 (ui:field (hash-map "a" 1) 'a))
+          (assert-equal 2 (ui:field (hash-map 'b 2) "b"))
+          (assert-equal 3 (ui:field (list (cons 'c 3)) 'c))
+          (assert-equal 4 (ui:field (list (cons "d" 4)) 'd))
+          (assert-equal #f (ui:field (hash-map 'a 1) 'zzz))
+          (assert-true (raises? (lambda () (ui:field 42 'a)))))))
+
+    (define rows3
+      (list (hash-map 'cp "CP-01" 'cva 1200.0)
+            (hash-map 'cp "CP-02" 'cva 900.0)
+            (hash-map 'cp "CP-03" 'cva 50.0)))
+
+    (define test-table-columns
+      (make-test
+        "ui:table sends column metadata, column-major data and keys"
+        (lambda ()
+          (let* ((t (ui:table rows3 '((cp "Counterparty") (cva "CVA" "int" "right")) 'key 'cp 'title "Book"))
+                 (p (wire-props t))
+                 (cols (hash-map-ref p "columns"))
+                 (data (hash-map-ref p "data")))
+            (assert-equal "cp" (hash-map-ref (car cols) "key"))
+            (assert-equal "Counterparty" (hash-map-ref (car cols) "label"))
+            (assert-equal "int" (hash-map-ref (car (cdr cols)) "format"))
+            (assert-equal "right" (hash-map-ref (car (cdr cols)) "align"))
+            (assert-equal "CP-02" (vector-ref (hash-map-ref data "cp") 1))
+            (assert-approx-equal 50.0 (vector-ref (hash-map-ref data "cva") 2) 1e-12)
+            (assert-equal "CP-03" (vector-ref (hash-map-ref p "keys") 2))
+            (assert-equal "Book" (hash-map-ref p "title"))
+            (assert-equal #f (hash-map-ref p "%rows" #f))))))
+
+    (define test-table-plain-columns-and-select
+      (make-test
+        "ui:table accepts bare field columns and maps selection back to rows"
+        (lambda ()
+          (let* ((got (vector #f))
+                 (t (ui:table rows3 '(cp cva) 'on-select (lambda (row) (vector-set! got 0 row))))
+                 (p (wire-props t)))
+            (assert-equal "cva" (hash-map-ref (car (cdr (hash-map-ref p "columns"))) "label"))
+            (assert-equal #f (hash-map-ref p "keys"))
+            ((handler-of t "on-select") (hash-map "index" 2))
+            (assert-equal "CP-03" (hash-map-ref (vector-ref got 0) 'cp))
+            ((handler-of t "on-select") (hash-map "index" 99))
+            (assert-equal "CP-03" (hash-map-ref (vector-ref got 0) 'cp))))))
+
+    ;; ---------------------------------------------------------------
+    ;; Chart marks
+    ;; ---------------------------------------------------------------
+
+    (define test-chart-line
+      (make-test
+        "chart:line converts lists to vectors and checks lengths"
+        (lambda ()
+          (let ((p (wire-props (chart:line '(0 1 2) '(1.0 1.5 1.2) 'label "EPE"))))
+            (assert-true (vector? (hash-map-ref p "xs")))
+            (assert-equal 3 (vector-length (hash-map-ref p "ys")))
+            (assert-equal "EPE" (hash-map-ref p "label")))
+          (assert-true (raises? (lambda () (chart:line '(0 1) '(1.0)))))
+          (assert-true (raises? (lambda () (chart:line 5 '(1.0))))))))
+
+    (define test-chart-area-and-band
+      (make-test
+        "chart:area and chart:band set edges, fill and opacity"
+        (lambda ()
+          (let ((a (wire-props (chart:area '(0 1) '(2.0 3.0) 'series "EPE")))
+                (b (wire-props (chart:band '(0 1) '(0.0 1.0) '(2.0 3.0) 'series "EPE"))))
+            (assert-equal #f (hash-map-ref a "y0s"))
+            (assert-equal "EPE" (hash-map-ref a "series"))
+            (assert-equal "band" (hash-map-ref b "fill"))
+            (assert-approx-equal 0.18 (hash-map-ref b "opacity") 1e-12)
+            (assert-approx-equal 1.0 (vector-ref (hash-map-ref b "y0s") 1) 1e-12)
+            (assert-approx-equal 3.0 (vector-ref (hash-map-ref b "y1s") 1) 1e-12))
+          (assert-true (raises? (lambda () (chart:band '(0 1) '(0.0) '(2.0 3.0))))))))
+
+    (define test-chart-bars
+      (make-test
+        "chart:bars pairs categories with values and reports the category"
+        (lambda ()
+          (let* ((got (vector #f))
+                 (b (chart:bars '("CP-01" "CP-02") '(1200 900) 'label "CVA" 'selected "CP-02"
+                                'on-select (lambda (c) (vector-set! got 0 c))))
+                 (p (wire-props b)))
+            (assert-equal "CP-02" (vector-ref (hash-map-ref p "categories") 1))
+            (assert-equal "CP-02" (hash-map-ref p "selected"))
+            ((handler-of b "on-select") (hash-map "index" 0))
+            (assert-equal "CP-01" (vector-ref got 0)))
+          (assert-true (raises? (lambda () (chart:bars '("a" "b") '(1))))))))
+
+    (define test-chart-heatmap
+      (make-test
+        "chart:heatmap flattens rows and passes row and column labels"
+        (lambda ()
+          (let* ((got (vector #f #f))
+                 (h (chart:heatmap '("CP-01" "CP-02") '("oil" "fx") '((0.5 -0.2) (2.9 0.1))
+                                   'on-select (lambda (r c) (vector-set! got 0 r) (vector-set! got 1 c))))
+                 (p (wire-props h))
+                 (v (hash-map-ref p "values")))
+            (assert-equal 4 (vector-length v))
+            (assert-approx-equal 2.9 (vector-ref v 2) 1e-12)
+            ((handler-of h "on-select") (hash-map "row" 1 "col" 0))
+            (assert-equal "CP-02" (vector-ref got 0))
+            (assert-equal "oil" (vector-ref got 1)))
+          (assert-true (raises? (lambda () (chart:heatmap '("a") '("x" "y") '((1.0))))))
+          (assert-true (raises? (lambda () (chart:heatmap '("a" "b") '("x") (vector 1.0))))))))
+
+    (define test-chart-surface
+      (make-test
+        "chart:surface flattens a grid row-major and checks its shape"
+        (lambda ()
+          (let* ((p (wire-props (chart:surface '(0 1 2) '(0 1) '((0 1 2) (3 4 5)))))
+                 (z (hash-map-ref p "zs")))
+            (assert-equal 6 (vector-length z))
+            (assert-equal 5 (vector-ref z 5)))
+          (assert-true (raises? (lambda () (chart:surface '(0 1) '(0 1) '((0 1)))))))))
+
+    (define suite
+      (make-group
+        "std.ui"
+        (list
+          test-parse-props-and-children
+          test-render-wire-shape
+          test-render-handlers
+          test-private-props
+          test-state
+          test-chart-points-columns
+          test-chart-field
+          test-slider
+          test-slider-without-handler
+          test-select
+          test-toggle
+          test-ui-field
+          test-table-columns
+          test-table-plain-columns-and-select
+          test-chart-line
+          test-chart-area-and-band
+          test-chart-bars
+          test-chart-heatmap
+          test-chart-surface)))
+
+    (print-tap (run suite))))

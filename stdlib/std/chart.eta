@@ -1,0 +1,238 @@
+;;; std/chart.eta - GPU-rendered charts for std.ui.
+;;;
+;;;   (chart:plot
+;;;     'title "Exposure profile"
+;;;     'x (chart:axis "Years" 'format "num")
+;;;     'y (chart:axis "Exposure" 'format "int")
+;;;     (chart:band times pfe05 pfe95 'series "EPE")
+;;;     (chart:line times epe 'label "EPE")
+;;;     (chart:line times ene 'label "ENE"))
+;;;
+;;; Marks inside one plot share its axes. Colours follow series order (eight
+;;; validated slots; a band shares the colour of the line named by 'series).
+;;; Numeric columns of 16 or more values travel as binary Float64 buffers.
+;;;
+;;; Keys identify scatter points and bars across renders: when data changes,
+;;; marks with the same key move or resize to their new values instead of
+;;; being redrawn. Lines and areas morph point by point when their length is
+;;; unchanged and cross-fade otherwise.
+
+(module std.chart
+  (import std.core std.collections std.ui)
+  (export chart:plot chart:axis chart:points chart:field
+          chart:line chart:area chart:band chart:bars chart:heatmap
+          chart:surface)
+  (begin
+
+    ;;@doc (chart:field row spec)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; Read `spec` from `row` (alias of ui:field).
+    ;;@example
+    ;; (chart:field (hash-map 'x 1.0) 'x)
+    (defun chart:field (row spec) (ui:field row spec))
+
+    (defun %chart-column (rows spec)
+      (list->vector (map (lambda (r) (ui:field r spec)) rows)))
+
+    (defun %chart-opt (opts name default)
+      (let ((hit (member name opts)))
+        (if (and hit (pair? (cdr hit))) (car (cdr hit)) default)))
+
+    ;; Remove the given property names (and their values) from an option list.
+    (defun %chart-without (opts names)
+      (let loop ((xs opts) (acc '()))
+        (cond
+          ((null? xs) (reverse acc))
+          ((and (symbol? (car xs)) (member (car xs) names) (pair? (cdr xs)))
+           (loop (cdr (cdr xs)) acc))
+          (else (loop (cdr xs) (cons (car xs) acc))))))
+
+    ;; Lists and vectors of numbers -> vector (so long series become buffers).
+    (defun %chart-vec (v who)
+      (cond ((vector? v) v)
+            ((null? v) (vector))
+            ((pair? v) (list->vector v))
+            (else (error (string-append who ": expected a list or vector of numbers") v))))
+
+    (defun %chart-same-length (who a b)
+      (unless (= (vector-length a) (vector-length b))
+        (error (string-append who ": x and y must have the same length")
+               (vector-length a) (vector-length b))))
+
+    ;;@doc (chart:plot . props-and-marks)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; A 2D plot area. Props: 'title, 'subtitle, 'x and 'y (chart:axis),
+    ;; 'height (pixels), 'flex. Wheel zooms x, drag pans, double-click resets.
+    ;;@example
+    ;; (chart:plot 'title "Prices")
+    (defun chart:plot args (apply ui:node 'plot args))
+
+    ;;@doc (chart:axis label . props)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; Axis description. Props: 'format ("num", "pct", "bp", "int", "usd"),
+    ;; 'min, 'max, 'zero (include zero in the domain).
+    ;;@example
+    ;; (chart:axis "Return" 'format "pct")
+    (defun chart:axis (label . args) (apply ui:node 'axis 'label label args))
+
+    ;;@doc (chart:points rows . props)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; Scatter mark. Props: 'x, 'y, 'key (field specs, required),
+    ;; 'label (field spec, optional), 'size (pixels), 'selected (a key),
+    ;; 'on-select (called with the selected row).
+    ;;@example
+    ;; (chart:points (list (hash-map 'id 1 'x 0.1 'y 0.2)) 'x 'x 'y 'y 'key 'id)
+    (defun chart:points (rows . opts)
+      (let* ((x-spec (%chart-opt opts 'x #f))
+             (y-spec (%chart-opt opts 'y #f))
+             (key-spec (%chart-opt opts 'key #f))
+             (label-spec (%chart-opt opts 'label #f))
+             (on-select (%chart-opt opts 'on-select #f))
+             (row-vec (list->vector rows)))
+        (unless (and x-spec y-spec key-spec)
+          (error "chart:points needs 'x, 'y and 'key field specs"))
+        (apply ui:node 'points
+          'xs (%chart-column rows x-spec)
+          'ys (%chart-column rows y-spec)
+          'keys (%chart-column rows key-spec)
+          'labels (if label-spec (%chart-column rows label-spec) #f)
+          '%rows row-vec
+          'on-select (and on-select
+                          (lambda (ev)
+                            (let ((i (ui:event-ref ev "index" #f)))
+                              (when (and (integer? i) (>= i 0) (< i (vector-length row-vec)))
+                                (on-select (vector-ref row-vec i))))))
+          (%chart-without opts '(x y key label on-select)))))
+
+    ;;@doc (chart:line xs ys . props)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; A line through (xs[i], ys[i]); xs should be ascending for the
+    ;; crosshair. Non-numbers break the line. Props: 'label (legend and
+    ;; tooltip), 'width (pixels, default 2), 'emphasis, 'slot (colour 0-7).
+    ;;@example
+    ;; (chart:line '(0 1 2) '(1.0 1.5 1.2) 'label "EPE")
+    (defun chart:line (xs ys . opts)
+      (let ((xv (%chart-vec xs "chart:line")) (yv (%chart-vec ys "chart:line")))
+        (%chart-same-length "chart:line" xv yv)
+        (apply ui:node 'line 'xs xv 'ys yv opts)))
+
+    ;;@doc (chart:area xs ys . props)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; Filled area between 'lower (a series; default: 'baseline, 0) and ys.
+    ;; Props: 'fill ("gradient" default, or "band"), 'opacity (0-1),
+    ;; 'series (share the colour of the line with that label), 'label.
+    ;;@example
+    ;; (chart:area '(0 1 2) '(1.0 1.5 1.2) 'series "EPE")
+    (defun chart:area (xs ys . opts)
+      (let* ((xv (%chart-vec xs "chart:area"))
+             (yv (%chart-vec ys "chart:area"))
+             (lower (%chart-opt opts 'lower #f))
+             (lv (and lower (%chart-vec lower "chart:area"))))
+        (%chart-same-length "chart:area" xv yv)
+        (when lv (%chart-same-length "chart:area" xv lv))
+        (apply ui:node 'area 'xs xv 'y1s yv 'y0s (or lv #f)
+          (%chart-without opts '(lower)))))
+
+    ;;@doc (chart:band xs lo hi . props)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; A flat band between two series (e.g. a 5%-95% quantile range).
+    ;; Same props as chart:area; 'opacity defaults to 0.18.
+    ;;@example
+    ;; (chart:band '(0 1) '(0.0 0.5) '(1.0 2.0) 'series "EPE")
+    (defun chart:band (xs lo hi . opts)
+      (apply chart:area xs hi 'lower lo 'fill "band"
+        'opacity (%chart-opt opts 'opacity 0.18)
+        (%chart-without opts '(opacity fill lower))))
+
+    ;;@doc (chart:bars categories values . props)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; Horizontal bars, one per category (top to bottom in the given order).
+    ;; Bars are keyed by category, so re-ordering slides them. Props:
+    ;; 'selected (a category), 'on-select (called with the category), 'label.
+    ;;@example
+    ;; (chart:bars '("CP-01" "CP-02") '(1200 900) 'label "CVA")
+    (defun chart:bars (categories amounts . opts)
+      (let* ((cats (%chart-vec categories "chart:bars"))
+             (vals (%chart-vec amounts "chart:bars"))
+             (on-select (%chart-opt opts 'on-select #f)))
+        (%chart-same-length "chart:bars" cats vals)
+        (apply ui:node 'bars
+          'categories cats
+          'values vals
+          'on-select (and on-select
+                          (lambda (ev)
+                            (let ((i (ui:event-ref ev "index" #f)))
+                              (when (and (integer? i) (>= i 0) (< i (vector-length cats)))
+                                (on-select (vector-ref cats i))))))
+          (%chart-without opts '(on-select)))))
+
+    ;; Row-major flattening of a list of rows (each a list or vector).
+    (defun %chart-flatten-rows (rows ncols)
+      (let ((out (make-vector (* (length rows) ncols) 0.0)))
+        (let loop ((rs rows) (r 0))
+          (if (null? rs)
+            out
+            (let ((row (%chart-vec (car rs) "chart:heatmap")))
+              (unless (= (vector-length row) ncols)
+                (error "chart:heatmap: every row needs one value per column" r))
+              (let fill ((c 0))
+                (when (< c ncols)
+                  (vector-set! out (+ (* r ncols) c) (vector-ref row c))
+                  (fill (+ c 1))))
+              (loop (cdr rs) (+ r 1)))))))
+
+    ;;@doc (chart:heatmap row-labels col-labels values . props)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; A matrix of coloured cells. `values` is a list of rows (one value per
+    ;; column) or a flat row-major vector. Props: 'scale ("diverging"
+    ;; default, symmetric around 0; or "sequential"), 'min, 'max, 'format,
+    ;; 'show-values, 'selected-row (a row label), 'on-select (called with
+    ;; the row label and the column label), 'title.
+    ;;@example
+    ;; (chart:heatmap '("CP-01") '("oil" "fx") '((0.5 -0.2)))
+    (defun chart:heatmap (row-labels col-labels cells . opts)
+      (let* ((rows (%chart-vec row-labels "chart:heatmap"))
+             (cols (%chart-vec col-labels "chart:heatmap"))
+             (flat (if (vector? cells) cells (%chart-flatten-rows cells (vector-length cols))))
+             (on-select (%chart-opt opts 'on-select #f)))
+        (unless (= (vector-length flat) (* (vector-length rows) (vector-length cols)))
+          (error "chart:heatmap: expected rows x cols values"
+                 (vector-length rows) (vector-length cols) (vector-length flat)))
+        (apply ui:node 'heatmap
+          'rows rows
+          'cols cols
+          'values flat
+          'on-select (and on-select
+                          (lambda (ev)
+                            (let ((r (ui:event-ref ev "row" #f)) (c (ui:event-ref ev "col" #f)))
+                              (when (and (integer? r) (>= r 0) (< r (vector-length rows))
+                                         (integer? c) (>= c 0) (< c (vector-length cols)))
+                                (on-select (vector-ref rows r) (vector-ref cols c))))))
+          (%chart-without opts '(on-select)))))
+
+    ;;@doc (chart:surface xs ys zs . props)
+    ;;@category Chart
+    ;;@module std.chart
+    ;; A lit 3D surface z = f(x, y) over a grid. `xs` (length nx) and `ys`
+    ;; (length ny) are the grid coordinates; `zs` is a list of ny rows of nx
+    ;; values, or a flat row-major vector. Props: 'title, 'x 'y 'z (axis
+    ;; labels via chart:axis), 'height. Drag to orbit, wheel to zoom.
+    ;;@example
+    ;; (chart:surface '(0 1) '(0 1) '((0 1) (1 2)))
+    (defun chart:surface (xs ys zs . opts)
+      (let* ((xv (%chart-vec xs "chart:surface"))
+             (yv (%chart-vec ys "chart:surface"))
+             (flat (if (vector? zs) zs (%chart-flatten-rows zs (vector-length xv)))))
+        (unless (= (vector-length flat) (* (vector-length xv) (vector-length yv)))
+          (error "chart:surface: expected (length ys) rows of (length xs) values"
+                 (vector-length xv) (vector-length yv) (vector-length flat)))
+        (apply ui:node 'surface 'xs xv 'ys yv 'zs flat opts)))))

@@ -268,6 +268,8 @@ static bool requires_net(const fs::path& file) {
         if (line.find("nng-socket")      != std::string::npos) return true;
         if (line.find("nng-dial")        != std::string::npos) return true;
         if (line.find("nng-listen")      != std::string::npos) return true;
+        /// std.ui apps serve a page and block until it closes.
+        if (line.find("(ui:run ")        != std::string::npos) return true;
     }
     return false;
 }

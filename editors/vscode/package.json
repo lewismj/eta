@@ -2,7 +2,7 @@
     "name": "eta-scheme-lang",
     "displayName": "Eta (Scheme) Language",
     "description": "Language support for the Eta-Scheme programming language",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "publisher": "eta-schema-lang",
     "icon": "media/eta_logo.png",
     "repository": {
@@ -38,6 +38,7 @@
         "onLanguage:eta",
         "onDebugResolve:eta",
         "workspaceContains:**/*.test.eta",
+        "onCommand:eta.openApp",
         "onCommand:eta.formatDocument",
         "onCommand:eta.lintFile",
         "onCommand:eta.lintWorkspace"
@@ -288,6 +289,12 @@
             }
         ],
         "commands": [
+            {
+                "command": "eta.openApp",
+                "title": "Open App",
+                "icon": "$(preview)",
+                "category": "Eta"
+            },
             {
                 "command": "eta.runFile",
                 "title": "Run Eta File",

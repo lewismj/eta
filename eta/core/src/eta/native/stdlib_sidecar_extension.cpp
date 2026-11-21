@@ -9,6 +9,7 @@
 #include "eta/nng/nng_primitives.h"
 #include "eta/stats/stats_primitives.h"
 #include "eta/torch/torch_primitives.h"
+#include "eta/ui/ui_primitives.h"
 
 #include <cstdint>
 #include <memory>
@@ -34,6 +35,7 @@ std::vector<std::unique_ptr<PrimitiveBatch>> g_log_primitive_batches;
 std::vector<std::unique_ptr<PrimitiveBatch>> g_stats_primitive_batches;
 std::vector<std::unique_ptr<PrimitiveBatch>> g_torch_primitive_batches;
 std::vector<std::unique_ptr<PrimitiveBatch>> g_nng_primitive_batches;
+std::vector<std::unique_ptr<PrimitiveBatch>> g_ui_primitive_batches;
 
 void fill_extension_info(EtaExtensionInfoV1* out_info,
                          const char* abi,
@@ -100,6 +102,10 @@ int register_builtin_symbol_metadata(const EtaNativeApiV1* api, Predicate&& pred
         || name == "monitor"
         || name == "demonitor"
         || name == "enable-heartbeat";
+}
+
+[[nodiscard]] bool is_ui_primitive_name(const std::string_view name) {
+    return name.rfind("%ui-", 0u) == 0u;
 }
 
 [[nodiscard]] eta::native::SidecarRuntimeBindingV1* runtime_binding_or_null(
@@ -217,6 +223,21 @@ int register_nng_bound_symbols(const EtaNativeApiV1* api,
         g_nng_primitive_batches);
 }
 
+int register_ui_bound_symbols(const EtaNativeApiV1* api,
+                              const eta::native::SidecarRuntimeBindingV1& binding) {
+    const std::string module_search_path =
+        binding.module_search_path ? *binding.module_search_path : std::string{};
+    const std::string etai_path = binding.etai_path ? *binding.etai_path : std::string{};
+    return register_bound_symbol_set(
+        api,
+        [&](eta::runtime::BuiltinEnvironment& env) {
+            eta::ui::register_ui_primitives(
+                env, *binding.heap, *binding.intern_table, module_search_path, etai_path);
+        },
+        is_ui_primitive_name,
+        g_ui_primitive_batches);
+}
+
 } // namespace
 
 extern "C" ETA_NATIVE_EXPORT int eta_register_log_extension_v1(const EtaNativeApiV1* api,
@@ -257,4 +278,14 @@ extern "C" ETA_NATIVE_EXPORT int eta_register_nng_extension_v1(const EtaNativeAp
         return register_builtin_symbol_metadata(api, is_nng_primitive_name);
     }
     return register_nng_bound_symbols(api, *binding);
+}
+
+extern "C" ETA_NATIVE_EXPORT int eta_register_ui_extension_v1(const EtaNativeApiV1* api,
+                                                              EtaExtensionInfoV1* out_info) {
+    fill_extension_info(out_info, ETA_NATIVE_ABI_ID_V1, "eta.ui.sidecar");
+    const auto* binding = runtime_binding_or_null(api);
+    if (binding == nullptr) {
+        return register_builtin_symbol_metadata(api, is_ui_primitive_name);
+    }
+    return register_ui_bound_symbols(api, *binding);
 }

@@ -33,6 +33,7 @@ import {
     Executable,
 } from 'vscode-languageclient/node';
 import { HeapInspectorPanel } from './heapView';
+import { openEtaApp } from './appPanel';
 import { EnvironmentInspectorPanel } from './environmentView';
 import {
     EnvironmentTreeProvider,
@@ -241,6 +242,7 @@ export function activate(context: ExtensionContext) {
             },
         }),
         debug.registerDebugConfigurationProvider('eta', new EtaDebugConfigurationProvider()),
+        commands.registerCommand('eta.openApp', () => openEtaApp()),
         commands.registerCommand('eta.runFile', (uri?: Uri) => {
             const target = resolveEtaTarget(uri);
             if (!target) return;

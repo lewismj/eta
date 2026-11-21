@@ -214,6 +214,7 @@ foreach(_t IN ITEMS
     eta_stats_sidecar
     eta_torch_sidecar
     eta_nng_sidecar
+    eta_ui_sidecar
     eta_lsp
     eta_dap
     eta_jupyter

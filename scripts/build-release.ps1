@@ -603,7 +603,8 @@ $requiredSidecarManifests = @(
     "packages\stdlib\native\log\eta.toml",
     "packages\stdlib\native\stats\eta.toml",
     "packages\stdlib\native\torch\eta.toml",
-    "packages\stdlib\native\nng\eta.toml"
+    "packages\stdlib\native\nng\eta.toml",
+    "packages\stdlib\native\ui\eta.toml"
 )
 foreach ($manifest in $requiredSidecarManifests) {
     $path = Join-Path $Prefix $manifest
@@ -618,7 +619,8 @@ $requiredSidecarArtifacts = @(
     "packages\stdlib\native\log\native\windows-x64\eta_log.dll",
     "packages\stdlib\native\stats\native\windows-x64\eta_stats.dll",
     "packages\stdlib\native\torch\native\windows-x64\eta_torch.dll",
-    "packages\stdlib\native\nng\native\windows-x64\eta_nng.dll"
+    "packages\stdlib\native\nng\native\windows-x64\eta_nng.dll",
+    "packages\stdlib\native\ui\native\windows-x64\eta_ui.dll"
 )
 foreach ($artifact in $requiredSidecarArtifacts) {
     $path = Join-Path $Prefix $artifact

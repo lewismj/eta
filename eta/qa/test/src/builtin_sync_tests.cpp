@@ -179,12 +179,13 @@ BOOST_AUTO_TEST_CASE(catalog_matches_analysis_registration_metadata) {
     const auto catalog = builtin_catalog();
     BOOST_REQUIRE_EQUAL(catalog.size(), specs_env.size());
 
-    constexpr std::array<std::string_view, 5> allowed_owners = {
+    constexpr std::array<std::string_view, 6> allowed_owners = {
         "core",
         "sidecar:eta-torch",
         "sidecar:eta-stats",
         "sidecar:eta-log",
-        "sidecar:eta-nng"
+        "sidecar:eta-nng",
+        "sidecar:eta-ui"
     };
 
     for (std::size_t i = 0; i < catalog.size(); ++i) {

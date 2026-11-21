@@ -655,6 +655,17 @@ inline void register_builtin_specs_seed(BuiltinEnvironment& env) {
     r("monitor",             1, false);
     r("demonitor",           1, false);
     r("enable-heartbeat",    2, false);
+
+    /**
+     * ui_primitives.h  (must match registration order exactly)
+     */
+    r("%ui-start",        1, false);
+    r("%ui-send",         2, false);
+    r("%ui-recv",         1, false);
+    r("%ui-open",         1, false);
+    r("%ui-stop",         0, false);
+    r("%ui-client-count", 0, false);
+    r("%ui-window",       4, false);
 }
 
 } // namespace detail

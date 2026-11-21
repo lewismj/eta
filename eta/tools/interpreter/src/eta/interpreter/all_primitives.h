@@ -19,6 +19,7 @@
  *   8. stats_primitives.h
  *   9. log_primitives.h
  *  10. nng_primitives.h  (placeholder registration only)
+ *  11. ui_primitives.h   (placeholder registration only)
  *
  * For analysis-only tools (LSP), register_builtin_specs() provides null-func
  */
@@ -87,6 +88,10 @@ inline void register_nng_sidecar_placeholders(runtime::BuiltinEnvironment& env) 
     register_sidecar_placeholders(env, "eta-nng");
 }
 
+inline void register_ui_sidecar_placeholders(runtime::BuiltinEnvironment& env) {
+    register_sidecar_placeholders(env, "eta-ui");
+}
+
 } // namespace detail
 
 /**
@@ -111,6 +116,7 @@ inline void register_all_primitives(
     detail::register_stats_sidecar_placeholders(env);
     detail::register_log_sidecar_placeholders(env);
     detail::register_nng_sidecar_placeholders(env);
+    detail::register_ui_sidecar_placeholders(env);
 }
 
 } ///< namespace eta::interpreter

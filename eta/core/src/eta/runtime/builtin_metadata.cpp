@@ -38,6 +38,10 @@ namespace {
         || name == "enable-heartbeat";
 }
 
+[[nodiscard]] bool is_ui_builtin(std::string_view name) {
+    return name.starts_with("%ui-");
+}
+
 [[nodiscard]] bool is_actor_builtin(std::string_view name) {
     return name.starts_with("%actor-");
 }
@@ -118,6 +122,7 @@ namespace {
     }
     if (is_actor_builtin(name)) return "Actor";
     if (is_nng_builtin(name)) return "NNG";
+    if (is_ui_builtin(name)) return "UI";
     return "Builtin";
 }
 
@@ -201,6 +206,7 @@ namespace {
     if (name == "%actor-disconnect-node") return "Disconnect one remote distributed actor node.";
     if (is_actor_builtin(name)) return "Local actor runtime primitive.";
     if (is_nng_builtin(name)) return "NNG/message-passing primitive.";
+    if (is_ui_builtin(name)) return "Visual environment (std.ui) primitive.";
     return "Builtin primitive.";
 }
 
