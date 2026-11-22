@@ -8,7 +8,15 @@
       (make-test
         "builders split properties from children"
         (lambda ()
-          (let ((n (ui:panel 'width 240 'title "P" (ui:text "a") (list (ui:text "b") (ui:text "c")) #f)))
+          (let ((n
+                  (ui:panel
+                    'width
+                    240
+                    'title
+                    "P"
+                    (ui:text "a")
+                    (list (ui:text "b") (ui:text "c"))
+                    #f)))
             (assert-equal 'panel (ui:node-type n))
             (assert-equal 240 (ui:prop n 'width))
             (assert-equal "P" (ui:prop n 'title))
@@ -68,11 +76,19 @@
       (make-test
         "chart:points extracts columns and maps selection back to rows"
         (lambda ()
-          (let* ((rows (list (hash-map 'id 10 'x 0.1 'y 0.2)
-                             (hash-map 'id 11 'x 0.3 'y 0.4)))
+          (let* ((rows (list (hash-map 'id 10 'x 0.1 'y 0.2) (hash-map 'id 11 'x 0.3 'y 0.4)))
                  (picked (vector #f))
-                 (pts (chart:points rows 'x 'x 'y 'y 'key 'id
-                                    'on-select (lambda (row) (vector-set! picked 0 row))))
+                 (pts
+                   (chart:points
+                     rows
+                     'x
+                     'x
+                     'y
+                     'y
+                     'key
+                     'id
+                     'on-select
+                     (lambda (row) (vector-set! picked 0 row))))
                  (r (ui:render pts))
                  (p (hash-map-ref (car r) "p"))
                  (handler (hash-map-ref (cdr r) "r#on-select")))
@@ -96,9 +112,7 @@
     ;; Helpers
     ;; ---------------------------------------------------------------
 
-    (defun raises? (thunk)
-      (let ((r (catch (begin (thunk) '%no-error))))
-        (not (eq? r '%no-error))))
+    (defun raises? (thunk) (let ((r (catch (begin (thunk) '%no-error)))) (not (eq? r '%no-error))))
 
     (defun wire-props (node) (hash-map-ref (car (ui:render node)) "p"))
     (defun handler-of (node prop) (hash-map-ref (cdr (ui:render node)) (string-append "r#" prop)))
@@ -112,8 +126,19 @@
         "ui:slider passes props and unwraps the value for its handler"
         (lambda ()
           (let* ((got (vector #f))
-                 (s (ui:slider "Correlation" 'min -1 'max 1 'step 0.05 'value 0.25
-                               'on-change (lambda (v) (vector-set! got 0 v))))
+                 (s
+                   (ui:slider
+                     "Correlation"
+                     'min
+                     -1
+                     'max
+                     1
+                     'step
+                     0.05
+                     'value
+                     0.25
+                     'on-change
+                     (lambda (v) (vector-set! got 0 v))))
                  (p (wire-props s)))
             (assert-equal "slider" (hash-map-ref (car (ui:render s)) "t"))
             (assert-equal "Correlation" (hash-map-ref p "label"))
@@ -133,8 +158,14 @@
         "ui:select normalises options and passes the chosen string"
         (lambda ()
           (let* ((got (vector #f))
-                 (s (ui:select "Driver" (list (cons "oil" "Oil") "fx") 'value "oil"
-                               'on-change (lambda (v) (vector-set! got 0 v))))
+                 (s
+                   (ui:select
+                     "Driver"
+                     (list (cons "oil" "Oil") "fx")
+                     'value
+                     "oil"
+                     'on-change
+                     (lambda (v) (vector-set! got 0 v))))
                  (opts (hash-map-ref (wire-props s) "options")))
             (assert-equal "oil" (car (car opts)))
             (assert-equal "Oil" (car (cdr (car opts))))
@@ -147,7 +178,13 @@
         "ui:toggle passes booleans through"
         (lambda ()
           (let* ((got (vector 'unset))
-                 (t (ui:toggle "Collateralised" 'value #t 'on-change (lambda (v) (vector-set! got 0 v)))))
+                 (t
+                   (ui:toggle
+                     "Collateralised"
+                     'value
+                     #t
+                     'on-change
+                     (lambda (v) (vector-set! got 0 v)))))
             (assert-equal #t (hash-map-ref (wire-props t) "value"))
             ((handler-of t "on-change") (hash-map "value" #f))
             (assert-equal #f (vector-ref got 0))))))
@@ -169,15 +206,23 @@
           (assert-true (raises? (lambda () (ui:field 42 'a)))))))
 
     (define rows3
-      (list (hash-map 'cp "CP-01" 'cva 1200.0)
-            (hash-map 'cp "CP-02" 'cva 900.0)
-            (hash-map 'cp "CP-03" 'cva 50.0)))
+      (list
+        (hash-map 'cp "CP-01" 'cva 1200.0)
+        (hash-map 'cp "CP-02" 'cva 900.0)
+        (hash-map 'cp "CP-03" 'cva 50.0)))
 
     (define test-table-columns
       (make-test
         "ui:table sends column metadata, column-major data and keys"
         (lambda ()
-          (let* ((t (ui:table rows3 '((cp "Counterparty") (cva "CVA" "int" "right")) 'key 'cp 'title "Book"))
+          (let* ((t
+                   (ui:table
+                     rows3
+                     '((cp "Counterparty") (cva "CVA" "int" "right"))
+                     'key
+                     'cp
+                     'title
+                     "Book"))
                  (p (wire-props t))
                  (cols (hash-map-ref p "columns"))
                  (data (hash-map-ref p "data")))
@@ -239,8 +284,16 @@
         "chart:bars pairs categories with values and reports the category"
         (lambda ()
           (let* ((got (vector #f))
-                 (b (chart:bars '("CP-01" "CP-02") '(1200 900) 'label "CVA" 'selected "CP-02"
-                                'on-select (lambda (c) (vector-set! got 0 c))))
+                 (b
+                   (chart:bars
+                     '("CP-01" "CP-02")
+                     '(1200 900)
+                     'label
+                     "CVA"
+                     'selected
+                     "CP-02"
+                     'on-select
+                     (lambda (c) (vector-set! got 0 c))))
                  (p (wire-props b)))
             (assert-equal "CP-02" (vector-ref (hash-map-ref p "categories") 1))
             (assert-equal "CP-02" (hash-map-ref p "selected"))
@@ -253,8 +306,13 @@
         "chart:heatmap flattens rows and passes row and column labels"
         (lambda ()
           (let* ((got (vector #f #f))
-                 (h (chart:heatmap '("CP-01" "CP-02") '("oil" "fx") '((0.5 -0.2) (2.9 0.1))
-                                   'on-select (lambda (r c) (vector-set! got 0 r) (vector-set! got 1 c))))
+                 (h
+                   (chart:heatmap
+                     '("CP-01" "CP-02")
+                     '("oil" "fx")
+                     '((0.5 -0.2) (2.9 0.1))
+                     'on-select
+                     (lambda (r c) (vector-set! got 0 r) (vector-set! got 1 c))))
                  (p (wire-props h))
                  (v (hash-map-ref p "values")))
             (assert-equal 4 (vector-length v))

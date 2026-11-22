@@ -19,9 +19,16 @@
 
 (module std.chart
   (import std.core std.collections std.ui)
-  (export chart:plot chart:axis chart:points chart:field
-          chart:line chart:area chart:band chart:bars chart:heatmap
-          chart:surface)
+  (export chart:plot
+    chart:axis
+    chart:points
+    chart:field
+    chart:line
+    chart:area
+    chart:band
+    chart:bars
+    chart:heatmap
+    chart:surface)
   (begin
 
     ;;@doc (chart:field row spec)
@@ -32,18 +39,17 @@
     ;; (chart:field (hash-map 'x 1.0) 'x)
     (defun chart:field (row spec) (ui:field row spec))
 
-    (defun %chart-column (rows spec)
-      (list->vector (map (lambda (r) (ui:field r spec)) rows)))
+    (defun %chart-column (rows spec) (list->vector (map (lambda (r) (ui:field r spec)) rows)))
 
     (defun %chart-opt (opts name default)
-      (let ((hit (member name opts)))
-        (if (and hit (pair? (cdr hit))) (car (cdr hit)) default)))
+      (let ((hit (member name opts))) (if (and hit (pair? (cdr hit))) (car (cdr hit)) default)))
 
     ;; Remove the given property names (and their values) from an option list.
     (defun %chart-without (opts names)
-      (let loop ((xs opts) (acc '()))
-        (cond
-          ((null? xs) (reverse acc))
+      (let
+        loop
+        ((xs opts) (acc '()))
+        (cond ((null? xs) (reverse acc))
           ((and (symbol? (car xs)) (member (car xs) names) (pair? (cdr xs)))
            (loop (cdr (cdr xs)) acc))
           (else (loop (cdr xs) (cons (car xs) acc))))))
@@ -51,14 +57,16 @@
     ;; Lists and vectors of numbers -> vector (so long series become buffers).
     (defun %chart-vec (v who)
       (cond ((vector? v) v)
-            ((null? v) (vector))
-            ((pair? v) (list->vector v))
-            (else (error (string-append who ": expected a list or vector of numbers") v))))
+        ((null? v) (vector))
+        ((pair? v) (list->vector v))
+        (else (error (string-append who ": expected a list or vector of numbers") v))))
 
     (defun %chart-same-length (who a b)
       (unless (= (vector-length a) (vector-length b))
-        (error (string-append who ": x and y must have the same length")
-               (vector-length a) (vector-length b))))
+        (error
+          (string-append who ": x and y must have the same length")
+          (vector-length a)
+          (vector-length b))))
 
     ;;@doc (chart:plot . props-and-marks)
     ;;@category Chart
@@ -95,17 +103,26 @@
              (row-vec (list->vector rows)))
         (unless (and x-spec y-spec key-spec)
           (error "chart:points needs 'x, 'y and 'key field specs"))
-        (apply ui:node 'points
-          'xs (%chart-column rows x-spec)
-          'ys (%chart-column rows y-spec)
-          'keys (%chart-column rows key-spec)
-          'labels (if label-spec (%chart-column rows label-spec) #f)
-          '%rows row-vec
-          'on-select (and on-select
-                          (lambda (ev)
-                            (let ((i (ui:event-ref ev "index" #f)))
-                              (when (and (integer? i) (>= i 0) (< i (vector-length row-vec)))
-                                (on-select (vector-ref row-vec i))))))
+        (apply
+          ui:node
+          'points
+          'xs
+          (%chart-column rows x-spec)
+          'ys
+          (%chart-column rows y-spec)
+          'keys
+          (%chart-column rows key-spec)
+          'labels
+          (if label-spec (%chart-column rows label-spec) #f)
+          '%rows
+          row-vec
+          'on-select
+          (and
+            on-select
+            (lambda (ev)
+              (let ((i (ui:event-ref ev "index" #f)))
+                (when (and (integer? i) (>= i 0) (< i (vector-length row-vec)))
+                  (on-select (vector-ref row-vec i))))))
           (%chart-without opts '(x y key label on-select)))))
 
     ;;@doc (chart:line xs ys . props)
@@ -136,8 +153,7 @@
              (lv (and lower (%chart-vec lower "chart:area"))))
         (%chart-same-length "chart:area" xv yv)
         (when lv (%chart-same-length "chart:area" xv lv))
-        (apply ui:node 'area 'xs xv 'y1s yv 'y0s (or lv #f)
-          (%chart-without opts '(lower)))))
+        (apply ui:node 'area 'xs xv 'y1s yv 'y0s (or lv #f) (%chart-without opts '(lower)))))
 
     ;;@doc (chart:band xs lo hi . props)
     ;;@category Chart
@@ -147,8 +163,16 @@
     ;;@example
     ;; (chart:band '(0 1) '(0.0 0.5) '(1.0 2.0) 'series "EPE")
     (defun chart:band (xs lo hi . opts)
-      (apply chart:area xs hi 'lower lo 'fill "band"
-        'opacity (%chart-opt opts 'opacity 0.18)
+      (apply
+        chart:area
+        xs
+        hi
+        'lower
+        lo
+        'fill
+        "band"
+        'opacity
+        (%chart-opt opts 'opacity 0.18)
         (%chart-without opts '(opacity fill lower))))
 
     ;;@doc (chart:bars categories values . props)
@@ -164,26 +188,36 @@
              (vals (%chart-vec amounts "chart:bars"))
              (on-select (%chart-opt opts 'on-select #f)))
         (%chart-same-length "chart:bars" cats vals)
-        (apply ui:node 'bars
-          'categories cats
-          'values vals
-          'on-select (and on-select
-                          (lambda (ev)
-                            (let ((i (ui:event-ref ev "index" #f)))
-                              (when (and (integer? i) (>= i 0) (< i (vector-length cats)))
-                                (on-select (vector-ref cats i))))))
+        (apply
+          ui:node
+          'bars
+          'categories
+          cats
+          'values
+          vals
+          'on-select
+          (and
+            on-select
+            (lambda (ev)
+              (let ((i (ui:event-ref ev "index" #f)))
+                (when (and (integer? i) (>= i 0) (< i (vector-length cats)))
+                  (on-select (vector-ref cats i))))))
           (%chart-without opts '(on-select)))))
 
     ;; Row-major flattening of a list of rows (each a list or vector).
     (defun %chart-flatten-rows (rows ncols)
       (let ((out (make-vector (* (length rows) ncols) 0.0)))
-        (let loop ((rs rows) (r 0))
+        (let
+          loop
+          ((rs rows) (r 0))
           (if (null? rs)
             out
             (let ((row (%chart-vec (car rs) "chart:heatmap")))
               (unless (= (vector-length row) ncols)
                 (error "chart:heatmap: every row needs one value per column" r))
-              (let fill ((c 0))
+              (let
+                fill
+                ((c 0))
                 (when (< c ncols)
                   (vector-set! out (+ (* r ncols) c) (vector-ref row c))
                   (fill (+ c 1))))
@@ -205,18 +239,33 @@
              (flat (if (vector? cells) cells (%chart-flatten-rows cells (vector-length cols))))
              (on-select (%chart-opt opts 'on-select #f)))
         (unless (= (vector-length flat) (* (vector-length rows) (vector-length cols)))
-          (error "chart:heatmap: expected rows x cols values"
-                 (vector-length rows) (vector-length cols) (vector-length flat)))
-        (apply ui:node 'heatmap
-          'rows rows
-          'cols cols
-          'values flat
-          'on-select (and on-select
-                          (lambda (ev)
-                            (let ((r (ui:event-ref ev "row" #f)) (c (ui:event-ref ev "col" #f)))
-                              (when (and (integer? r) (>= r 0) (< r (vector-length rows))
-                                         (integer? c) (>= c 0) (< c (vector-length cols)))
-                                (on-select (vector-ref rows r) (vector-ref cols c))))))
+          (error
+            "chart:heatmap: expected rows x cols values"
+            (vector-length rows)
+            (vector-length cols)
+            (vector-length flat)))
+        (apply
+          ui:node
+          'heatmap
+          'rows
+          rows
+          'cols
+          cols
+          'values
+          flat
+          'on-select
+          (and
+            on-select
+            (lambda (ev)
+              (let ((r (ui:event-ref ev "row" #f)) (c (ui:event-ref ev "col" #f)))
+                (when (and
+                        (integer? r)
+                        (>= r 0)
+                        (< r (vector-length rows))
+                        (integer? c)
+                        (>= c 0)
+                        (< c (vector-length cols)))
+                  (on-select (vector-ref rows r) (vector-ref cols c))))))
           (%chart-without opts '(on-select)))))
 
     ;;@doc (chart:surface xs ys zs . props)
@@ -233,6 +282,9 @@
              (yv (%chart-vec ys "chart:surface"))
              (flat (if (vector? zs) zs (%chart-flatten-rows zs (vector-length xv)))))
         (unless (= (vector-length flat) (* (vector-length xv) (vector-length yv)))
-          (error "chart:surface: expected (length ys) rows of (length xs) values"
-                 (vector-length xv) (vector-length yv) (vector-length flat)))
+          (error
+            "chart:surface: expected (length ys) rows of (length xs) values"
+            (vector-length xv)
+            (vector-length yv)
+            (vector-length flat)))
         (apply ui:node 'surface 'xs xv 'ys yv 'zs flat opts)))))

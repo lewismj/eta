@@ -48,7 +48,11 @@
           (assert-approx-equal 50.0 (expected-positive 50.0 1.0) 1e-6)
           ;; E[X+] - E[(-X)+] = E[X]
           (for-each
-            (lambda (m) (assert-approx-equal m (- (expected-positive m 1.7) (expected-positive (- m) 1.7)) 1e-6))
+            (lambda (m)
+              (assert-approx-equal
+                m
+                (- (expected-positive m 1.7) (expected-positive (- m) 1.7))
+                1e-6))
             (list -2.0 -0.3 0.0 0.4 3.0)))))
 
     ;; --------------------------------------------------------------
@@ -94,11 +98,11 @@
       (make-test
         "with rho = 0 the conditional exposure equals the unconditional EPE"
         (lambda ()
-          (let* ((lam (shocked-hazard cp01 base))
-                 (t 2.5)
-                 (mom (exposure-moments cp01 base t)))
-            (assert-approx-equal (expected-positive (car mom) (car (cdr mom)))
-                                 (conditional-ee cp01 base 0.0 t lam) 1e-6)))))
+          (let* ((lam (shocked-hazard cp01 base)) (t 2.5) (mom (exposure-moments cp01 base t)))
+            (assert-approx-equal
+              (expected-positive (car mom) (car (cdr mom)))
+              (conditional-ee cp01 base 0.0 t lam)
+              1e-6)))))
 
     (define test-wrong-way-raises-cva
       (make-test
@@ -121,13 +125,21 @@
                  (lam (shocked-hazard cp01 a))
                  (lgd (- 1.0 (hash-map-ref cp01 'recovery)))
                  (dt (/ 5.0 60.0))
-                 (approx (* lgd lam dt
-                            (foldl + 0.0
-                                   (map (lambda (t)
-                                          (let ((mom (exposure-moments cp01 a (- t (* 0.5 dt)))))
-                                            (* (exp (* -0.0325 (- t (* 0.5 dt))))
-                                               (expected-positive (car mom) (car (cdr mom))))))
-                                        (vector->list times))))))
+                 (approx
+                   (*
+                     lgd
+                     lam
+                     dt
+                     (foldl
+                       +
+                       0.0
+                       (map
+                         (lambda (t)
+                           (let ((mom (exposure-moments cp01 a (- t (* 0.5 dt)))))
+                             (*
+                               (exp (* -0.0325 (- t (* 0.5 dt))))
+                               (expected-positive (car mom) (car (cdr mom))))))
+                         (vector->list times))))))
             (assert-approx-equal 1.0 (/ (cva cp01 a 0.0) approx) 0.05)))))
 
     (define test-collateral-reduces-cva
@@ -170,10 +182,16 @@
             (assert-equal steps (vector-length (hash-map-ref p 'epe)))
             (assert-true (vec-all? (lambda (x) (>= x 0.0)) (hash-map-ref p 'epe)))
             (assert-true (vec-all? (lambda (x) (<= x 0.0)) (hash-map-ref p 'ene)))
-            (let loop ((k 0))
+            (let
+              loop
+              ((k 0))
               (when (< k steps)
-                (assert-true (<= (vector-ref (hash-map-ref p 'p05) k) (vector-ref (hash-map-ref p 'p95) k)))
-                (assert-true (>= (+ (vector-ref (hash-map-ref p 'wwr) k) 1e-6) (vector-ref (hash-map-ref p 'epe) k)))
+                (assert-true
+                  (<= (vector-ref (hash-map-ref p 'p05) k) (vector-ref (hash-map-ref p 'p95) k)))
+                (assert-true
+                  (>=
+                    (+ (vector-ref (hash-map-ref p 'wwr) k) 1e-6)
+                    (vector-ref (hash-map-ref p 'epe) k)))
                 (loop (+ k 1))))))))
 
     (define test-profile-rho-zero
@@ -181,9 +199,14 @@
         "with rho = 0 the WWR profile equals the EPE profile"
         (lambda ()
           (let ((p (exposure-profile cp01 (with base 'rho 0.0))))
-            (let loop ((k 0))
+            (let
+              loop
+              ((k 0))
               (when (< k steps)
-                (assert-approx-equal (vector-ref (hash-map-ref p 'epe) k) (vector-ref (hash-map-ref p 'wwr) k) 1e-6)
+                (assert-approx-equal
+                  (vector-ref (hash-map-ref p 'epe) k)
+                  (vector-ref (hash-map-ref p 'wwr) k)
+                  1e-6)
                 (loop (+ k 1))))))))
 
     (define test-surface
@@ -197,18 +220,21 @@
             (assert-equal 30 nt)
             (assert-true (all? (lambda (row) (= nt (length row))) rows))
             (assert-true (all? (lambda (row) (all? (lambda (z) (>= z 0.0)) row)) rows))
-            (let loop ((rs rows))
+            (let
+              loop
+              ((rs rows))
               (when (and (pair? rs) (pair? (cdr rs)))
-                (assert-true (all? (lambda (pair) (<= (car pair) (cdr pair)))
-                                   (map2 cons (car rs) (car (cdr rs)))))
+                (assert-true
+                  (all?
+                    (lambda (pair) (<= (car pair) (cdr pair)))
+                    (map2 cons (car rs) (car (cdr rs)))))
                 (loop (cdr rs))))))))
 
     (define test-portfolio-results
       (make-test
         "portfolio results: one row per counterparty, add-on sign follows rho"
         (lambda ()
-          (let ((wrong (portfolio-results base))
-                (right (portfolio-results (with base 'rho -0.4))))
+          (let ((wrong (portfolio-results base)) (right (portfolio-results (with base 'rho -0.4))))
             (assert-equal 30 (length wrong))
             (assert-true (all? (lambda (r) (> (hash-map-ref r 'addon) 0.0)) wrong))
             (assert-true (all? (lambda (r) (< (hash-map-ref r 'addon) 0.0)) right))
