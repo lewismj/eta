@@ -14,27 +14,49 @@
   (begin
 
     (define state
-      (ui:state 'cp "CP-17"
-                'rho 0.35
-                'collateralised #f
-                'mpor 10.0
-                'threshold 0.0
-                'driver "none"
-                'shock 0.0
-                'view "profile"))
+      (ui:state
+        'cp
+        "CP-17"
+        'rho
+        0.35
+        'collateralised
+        #f
+        'mpor
+        10.0
+        'threshold
+        0.0
+        'driver
+        "none"
+        'shock
+        0.0
+        'view
+        "profile"))
 
     (defun assumptions-of (s)
-      (hash-map 'rho (ui:get s 'rho)
-                'collateralised (ui:get s 'collateralised)
-                'mpor-days (ui:get s 'mpor)
-                'threshold (ui:get s 'threshold)
-                'driver (ui:get s 'driver)
-                'shock (ui:get s 'shock)
-                'rate 0.0325))
+      (hash-map
+        'rho
+        (ui:get s 'rho)
+        'collateralised
+        (ui:get s 'collateralised)
+        'mpor-days
+        (ui:get s 'mpor)
+        'threshold
+        (ui:get s 'threshold)
+        'driver
+        (ui:get s 'driver)
+        'shock
+        (ui:get s 'shock)
+        'rate
+        0.0325))
 
     (defun assumptions-key (s)
-      (list (ui:get s 'rho) (ui:get s 'collateralised) (ui:get s 'mpor)
-            (ui:get s 'threshold) (ui:get s 'driver) (ui:get s 'shock)))
+      (list
+        (ui:get s 'rho)
+        (ui:get s 'collateralised)
+        (ui:get s 'mpor)
+        (ui:get s 'threshold)
+        (ui:get s 'driver)
+        (ui:get s 'shock)))
 
     ;; ------------------------------------------------------------------
     ;; Book results, recomputed only when an assumption changes (selecting
@@ -47,10 +69,15 @@
       (let* ((rows (portfolio-results a))
              (elastic (elasticity-matrix a))
              (total (lambda (k) (foldl (lambda (acc r) (+ acc (hash-map-ref r k))) 0.0 rows))))
-        (hash-map 'rows rows
-                  'elastic (map2 cons (map (lambda (r) (hash-map-ref r 'name)) rows) elastic)
-                  'base (total 'base)
-                  'wwr (total 'wwr))))
+        (hash-map
+          'rows
+          rows
+          'elastic
+          (map2 cons (map (lambda (r) (hash-map-ref r 'name)) rows) elastic)
+          'base
+          (total 'base)
+          'wwr
+          (total 'wwr))))
 
     (defun book (s)
       (let ((key (assumptions-key s)))
@@ -70,78 +97,176 @@
     ;; Panels
     ;; ------------------------------------------------------------------
 
-    (define shock-options
-      (cons (cons "none" "No macro shock")
-            (map2 cons drivers driver-labels)))
+    (define shock-options (cons (cons "none" "No macro shock") (map2 cons drivers driver-labels)))
 
     (defun assumptions-panel (s b)
       (let* ((coll (ui:get s 'collateralised))
              (addon (- (hash-map-ref b 'wwr) (hash-map-ref b 'base))))
-        (ui:panel 'width 300 'title "Assumptions"
-          (ui:slider "Wrong-way correlation (rho)"
-            'min -0.6 'max 0.9 'step 0.05 'value (ui:get s 'rho) 'format "num"
-            'on-change (lambda (v) (ui:set! s 'rho v)))
-          (ui:select "Macro shock" shock-options
-            'value (ui:get s 'driver)
-            'on-change (lambda (v) (ui:set! s 'driver v)))
-          (ui:slider "Shock size"
-            'min -0.3 'max 0.3 'step 0.01 'value (ui:get s 'shock) 'format "pct"
-            'on-change (lambda (v) (ui:set! s 'shock v)))
-          (ui:toggle "Collateralised (CSA)"
-            'value coll
-            'on-change (lambda (v) (ui:set! s 'collateralised v)))
+        (ui:panel
+          'width
+          300
+          'title
+          "Assumptions"
+          (ui:slider
+            "Wrong-way correlation (rho)"
+            'min
+            -0.6
+            'max
+            0.9
+            'step
+            0.05
+            'value
+            (ui:get s 'rho)
+            'format
+            "num"
+            'on-change
+            (lambda (v) (ui:set! s 'rho v)))
+          (ui:select
+            "Macro shock"
+            shock-options
+            'value
+            (ui:get s 'driver)
+            'on-change
+            (lambda (v) (ui:set! s 'driver v)))
+          (ui:slider
+            "Shock size"
+            'min
+            -0.3
+            'max
+            0.3
+            'step
+            0.01
+            'value
+            (ui:get s 'shock)
+            'format
+            "pct"
+            'on-change
+            (lambda (v) (ui:set! s 'shock v)))
+          (ui:toggle
+            "Collateralised (CSA)"
+            'value
+            coll
+            'on-change
+            (lambda (v) (ui:set! s 'collateralised v)))
           (if coll
             (list
-              (ui:slider "Margin period of risk (days)"
-                'min 2 'max 20 'step 1 'value (ui:get s 'mpor) 'format "int"
-                'on-change (lambda (v) (ui:set! s 'mpor v)))
-              (ui:slider "Threshold"
-                'min 0 'max 100000 'step 5000 'value (ui:get s 'threshold) 'format "usd"
-                'on-change (lambda (v) (ui:set! s 'threshold v))))
+              (ui:slider
+                "Margin period of risk (days)"
+                'min
+                2
+                'max
+                20
+                'step
+                1
+                'value
+                (ui:get s 'mpor)
+                'format
+                "int"
+                'on-change
+                (lambda (v) (ui:set! s 'mpor v)))
+              (ui:slider
+                "Threshold"
+                'min
+                0
+                'max
+                100000
+                'step
+                5000
+                'value
+                (ui:get s 'threshold)
+                'format
+                "usd"
+                'on-change
+                (lambda (v) (ui:set! s 'threshold v))))
             #f)
           (ui:divider)
           (ui:stat "Book CVA with wrong-way risk" (hash-map-ref b 'wwr) 'format "usd")
-          (ui:kv (list (cons "Independent CVA" (hash-map-ref b 'base))
-                       (cons "Wrong-way add-on" addon))
-                 'format "usd")
-          (ui:text (string-append
-                     "Hull-White one-factor copula: exposure conditional on default at t "
-                     "is shifted by -rho * InvNormal(PD(t)).")
-                   'muted #t))))
+          (ui:kv
+            (list (cons "Independent CVA" (hash-map-ref b 'base)) (cons "Wrong-way add-on" addon))
+            'format
+            "usd")
+          (ui:text
+            (string-append
+              "Hull-White one-factor copula: exposure conditional on default at t "
+              "is shifted by -rho * InvNormal(PD(t)).")
+            'muted
+            #t))))
 
     (defun profile-plot (s cp-name)
       (let* ((cp (cp-ref cp-name))
              (p (exposure-profile cp (assumptions-of s)))
              (ts (hash-map-ref p 'times)))
         (chart:plot
-          'title (string-append "Exposure profile - " cp-name)
-          'subtitle (string-append (hash-map-ref cp 'sector) ", 5-year horizon")
-          'x (chart:axis "Years" 'format "num")
-          'y (chart:axis "Exposure" 'format "usd")
-          (chart:band ts (hash-map-ref p 'p05) (hash-map-ref p 'p95)
-                      'series "Expected exposure" 'key "band")
-          (chart:area ts (hash-map-ref p 'epe) 'series "Expected exposure" 'opacity 0.22 'key "fill")
+          'title
+          (string-append "Exposure profile - " cp-name)
+          'subtitle
+          (string-append (hash-map-ref cp 'sector) ", 5-year horizon")
+          'x
+          (chart:axis "Years" 'format "num")
+          'y
+          (chart:axis "Exposure" 'format "usd")
+          (chart:band
+            ts
+            (hash-map-ref p 'p05)
+            (hash-map-ref p 'p95)
+            'series
+            "Expected exposure"
+            'key
+            "band")
+          (chart:area
+            ts
+            (hash-map-ref p 'epe)
+            'series
+            "Expected exposure"
+            'opacity
+            0.22
+            'key
+            "fill")
           (chart:line ts (hash-map-ref p 'epe) 'label "Expected exposure" 'key "epe")
-          (chart:line ts (hash-map-ref p 'wwr) 'label "Conditional on default" 'emphasis #t 'key "wwr")
+          (chart:line
+            ts
+            (hash-map-ref p 'wwr)
+            'label
+            "Conditional on default"
+            'emphasis
+            #t
+            'key
+            "wwr")
           (chart:line ts (hash-map-ref p 'ene) 'label "Expected negative exposure" 'key "ene"))))
 
     (defun surface-plot (s cp-name)
       (let* ((sf (exposure-surface (cp-ref cp-name) (assumptions-of s))))
-        (chart:surface (hash-map-ref sf 'times) (hash-map-ref sf 'quantiles) (hash-map-ref sf 'z)
-          'title (string-append "Exposure distribution conditional on default - " cp-name)
-          'subtitle "Quantile of exposure by time; drag to orbit"
-          'x (chart:axis "Years" 'format "num")
-          'y (chart:axis "Quantile" 'format "pct")
-          'z (chart:axis "Exposure" 'format "usd"))))
+        (chart:surface
+          (hash-map-ref sf 'times)
+          (hash-map-ref sf 'quantiles)
+          (hash-map-ref sf 'z)
+          'title
+          (string-append "Exposure distribution conditional on default - " cp-name)
+          'subtitle
+          "Quantile of exposure by time; drag to orbit"
+          'x
+          (chart:axis "Years" 'format "num")
+          'y
+          (chart:axis "Quantile" 'format "pct")
+          'z
+          (chart:axis "Exposure" 'format "usd"))))
 
     (defun view-switch (s)
-      (ui:row 'flex 0
-        (ui:button "Exposure profile"
-          'variant (if (equal? (ui:get s 'view) "profile") "primary" "default")
-          'on-click (lambda (ev) (ui:set! s 'view "profile")))
-        (ui:button "Exposure surface (3D)"
-          'variant (if (equal? (ui:get s 'view) "surface") "primary" "default")
-          'on-click (lambda (ev) (ui:set! s 'view "surface")))))
+      (ui:row
+        'flex
+        0
+        (ui:button
+          "Exposure profile"
+          'variant
+          (if (equal? (ui:get s 'view) "profile") "primary" "default")
+          'on-click
+          (lambda (ev) (ui:set! s 'view "profile")))
+        (ui:button
+          "Exposure surface (3D)"
+          'variant
+          (if (equal? (ui:get s 'view) "surface") "primary" "default")
+          'on-click
+          (lambda (ev) (ui:set! s 'view "surface")))))
 
     (define table-columns
       '((name "Counterparty")
@@ -159,29 +284,60 @@
              (top (top-by rows 'wwr 12))
              (top-names (map (lambda (r) (hash-map-ref r 'name)) top))
              (elastic (map (lambda (name) (cdr (assoc name (hash-map-ref b 'elastic)))) top-names)))
-        (ui:window "Wrong-way risk explorer" 'id "eta.cookbook.wwr"
+        (ui:window
+          "Wrong-way risk explorer"
+          'id
+          "eta.cookbook.wwr"
           (ui:row
             (assumptions-panel s b)
             (ui:column
               (view-switch s)
-              (if (equal? (ui:get s 'view) "surface")
-                (surface-plot s cp)
-                (profile-plot s cp))
-              (ui:table rows table-columns
-                'key 'name 'selected cp 'title "Counterparties" 'height 300
-                'on-select (lambda (row) (ui:set! s 'cp (hash-map-ref row 'name)))))
-            (ui:column 'width 440
+              (if (equal? (ui:get s 'view) "surface") (surface-plot s cp) (profile-plot s cp))
+              (ui:table
+                rows
+                table-columns
+                'key
+                'name
+                'selected
+                cp
+                'title
+                "Counterparties"
+                'height
+                300
+                'on-select
+                (lambda (row) (ui:set! s 'cp (hash-map-ref row 'name)))))
+            (ui:column
+              'width
+              440
               (chart:plot
-                'title "CVA by counterparty"
-                'subtitle "Top 12 with wrong-way risk"
-                'x (chart:axis "CVA" 'format "usd")
-                (chart:bars top-names (map (lambda (r) (hash-map-ref r 'wwr)) top)
-                  'label "CVA" 'selected cp 'on-select (select-cp s)))
-              (chart:heatmap top-names driver-labels elastic
-                'title "CVA elasticity to macro shocks"
-                'subtitle "d log CVA / d shock"
-                'format "num"
-                'selected-row cp
-                'on-select (lambda (row col) (ui:set! s 'cp row))))))))
+                'title
+                "CVA by counterparty"
+                'subtitle
+                "Top 12 with wrong-way risk"
+                'x
+                (chart:axis "CVA" 'format "usd")
+                (chart:bars
+                  top-names
+                  (map (lambda (r) (hash-map-ref r 'wwr)) top)
+                  'label
+                  "CVA"
+                  'selected
+                  cp
+                  'on-select
+                  (select-cp s)))
+              (chart:heatmap
+                top-names
+                driver-labels
+                elastic
+                'title
+                "CVA elasticity to macro shocks"
+                'subtitle
+                "d log CVA / d shock"
+                'format
+                "num"
+                'selected-row
+                cp
+                'on-select
+                (lambda (row col) (ui:set! s 'cp row))))))))
 
     (ui:run view state)))

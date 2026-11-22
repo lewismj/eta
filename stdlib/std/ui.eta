@@ -25,18 +25,45 @@
 (module std.ui
   (import std.core std.collections std.json std.os std.time)
   (export
-    ;; nodes
-    ui:node ui:node? ui:node-type ui:node-props ui:node-children ui:prop
-    ui:window ui:row ui:column ui:panel ui:card ui:heading ui:text ui:stat
-    ui:kv ui:button ui:spacer ui:divider
+  ;; nodes
+  ui:node
+    ui:node?
+    ui:node-type
+    ui:node-props
+    ui:node-children
+    ui:prop
+    ui:window
+    ui:row
+    ui:column
+    ui:panel
+    ui:card
+    ui:heading
+    ui:text
+    ui:stat
+    ui:kv
+    ui:button
+    ui:spacer
+    ui:divider
     ;; inputs and data
-    ui:slider ui:select ui:toggle ui:table ui:field
+    ui:slider
+    ui:select
+    ui:toggle
+    ui:table
+    ui:field
     ;; state
-    ui:state ui:state? ui:get ui:set! ui:update! ui:state-dirty? ui:state-clean!
+    ui:state
+    ui:state?
+    ui:get
+    ui:set!
+    ui:update!
+    ui:state-dirty?
+    ui:state-clean!
     ;; events
     ui:event-ref
     ;; running
-    ui:run ui:render ui:url)
+    ui:run
+    ui:render
+    ui:url)
   (begin
 
     ;; ------------------------------------------------------------------
@@ -54,9 +81,10 @@
     ;; child nodes. Lists of nodes are spliced; #f and '() are ignored so
     ;; that (if cond node #f) and (map ...) can be used inline.
     (defun %ui-parse-args (args)
-      (let loop ((xs args) (props '()) (kids '()))
-        (cond
-          ((null? xs) (cons (reverse props) (reverse kids)))
+      (let
+        loop
+        ((xs args) (props '()) (kids '()))
+        (cond ((null? xs) (cons (reverse props) (reverse kids)))
           ((symbol? (car xs))
            (if (null? (cdr xs))
              (error "ui: missing value for property" (car xs))
@@ -75,8 +103,7 @@
     ;;@example
     ;; (ui:node 'panel 'width 240 (ui:text "hello"))
     (defun ui:node (type . args)
-      (let ((pc (%ui-parse-args args)))
-        (%make-ui-node type (car pc) (cdr pc))))
+      (let ((pc (%ui-parse-args args))) (%make-ui-node type (car pc) (cdr pc))))
 
     ;;@doc (ui:prop node name [default])
     ;;@category UI
@@ -86,9 +113,7 @@
     ;; (ui:prop (ui:panel 'width 240) 'width)
     (defun ui:prop (node name . default)
       (let ((hit (assq name (ui:node-props node))))
-        (cond (hit (cdr hit))
-              ((pair? default) (car default))
-              (else #f))))
+        (cond (hit (cdr hit)) ((pair? default) (car default)) (else #f))))
 
     ;;@doc (ui:window title . props-and-children)
     ;;@category UI
@@ -125,9 +150,7 @@
     ;;@example
     ;; (ui:kv (list (cons "Assets" 4) (cons "Seed" 7)))
     (defun ui:kv (rows . args)
-      (apply ui:node 'kv
-        'rows (map (lambda (r) (list (car r) (cdr r))) rows)
-        args))
+      (apply ui:node 'kv 'rows (map (lambda (r) (list (car r) (cdr r))) rows) args))
 
     ;; ------------------------------------------------------------------
     ;; Inputs
@@ -137,19 +160,18 @@
     ;; {"value": v}; these builders unwrap it).
 
     (defun %ui-opt (opts name default)
-      (let ((hit (member name opts)))
-        (if (and hit (pair? (cdr hit))) (car (cdr hit)) default)))
+      (let ((hit (member name opts))) (if (and hit (pair? (cdr hit))) (car (cdr hit)) default)))
 
     (defun %ui-without (opts names)
-      (let loop ((xs opts) (acc '()))
-        (cond
-          ((null? xs) (reverse acc))
+      (let
+        loop
+        ((xs opts) (acc '()))
+        (cond ((null? xs) (reverse acc))
           ((and (symbol? (car xs)) (member (car xs) names) (pair? (cdr xs)))
            (loop (cdr (cdr xs)) acc))
           (else (loop (cdr xs) (cons (car xs) acc))))))
 
-    (defun %ui-value-handler (f)
-      (and f (lambda (ev) (f (ui:event-ref ev "value" #f)))))
+    (defun %ui-value-handler (f) (and f (lambda (ev) (f (ui:event-ref ev "value" #f)))))
 
     ;;@doc (ui:slider label . props)
     ;;@category UI
@@ -159,8 +181,13 @@
     ;;@example
     ;; (ui:slider "Correlation" 'min -1 'max 1 'step 0.05 'value 0.3)
     (defun ui:slider (label . opts)
-      (apply ui:node 'slider 'label label
-        'on-change (%ui-value-handler (%ui-opt opts 'on-change #f))
+      (apply
+        ui:node
+        'slider
+        'label
+        label
+        'on-change
+        (%ui-value-handler (%ui-opt opts 'on-change #f))
         (%ui-without opts '(on-change))))
 
     ;;@doc (ui:select label options . props)
@@ -171,9 +198,15 @@
     ;;@example
     ;; (ui:select "Driver" (list (cons "oil" "Oil") "fx") 'value "oil")
     (defun ui:select (label options . opts)
-      (apply ui:node 'select 'label label
-        'options (map (lambda (o) (if (pair? o) (list (car o) (cdr o)) o)) options)
-        'on-change (%ui-value-handler (%ui-opt opts 'on-change #f))
+      (apply
+        ui:node
+        'select
+        'label
+        label
+        'options
+        (map (lambda (o) (if (pair? o) (list (car o) (cdr o)) o)) options)
+        'on-change
+        (%ui-value-handler (%ui-opt opts 'on-change #f))
         (%ui-without opts '(on-change))))
 
     ;;@doc (ui:toggle label . props)
@@ -183,8 +216,13 @@
     ;;@example
     ;; (ui:toggle "Collateralised" 'value #t)
     (defun ui:toggle (label . opts)
-      (apply ui:node 'toggle 'label label
-        'on-change (%ui-value-handler (%ui-opt opts 'on-change #f))
+      (apply
+        ui:node
+        'toggle
+        'label
+        label
+        'on-change
+        (%ui-value-handler (%ui-opt opts 'on-change #f))
         (%ui-without opts '(on-change))))
 
     ;; ------------------------------------------------------------------
@@ -199,24 +237,25 @@
     ;;@example
     ;; (ui:field (hash-map 'x 1.0) 'x)
     (defun ui:field (row spec)
-      (cond
-        ((procedure? spec) (spec row))
+      (cond ((procedure? spec) (spec row))
         ((hash-map? row)
          (let ((v (hash-map-ref row spec '%ui-missing)))
            (if (eq? v '%ui-missing)
              (hash-map-ref row (if (symbol? spec) (symbol->string spec) (string->symbol spec)) #f)
              v)))
         ((pair? row)
-         (let ((hit (or (assoc spec row)
-                        (assoc (if (symbol? spec) (symbol->string spec) (string->symbol spec)) row))))
+         (let ((hit
+                 (or
+                   (assoc spec row)
+                   (assoc (if (symbol? spec) (symbol->string spec) (string->symbol spec)) row))))
            (and hit (cdr hit))))
         (else (error "ui: cannot read field from row" spec))))
 
     (defun %ui-column-key (spec)
       (let ((k (if (pair? spec) (car spec) spec)))
         (cond ((symbol? k) (symbol->string k))
-              ((string? k) k)
-              (else (error "ui:table: column key must be a symbol or string" k)))))
+          ((string? k) k)
+          (else (error "ui:table: column key must be a symbol or string" k)))))
 
     ;; Column spec: key | (key label) | (key label format) | (key label format align)
     (defun %ui-column-meta (spec)
@@ -228,10 +267,12 @@
                  (fmt (if (pair? rest2) (car rest2) #f))
                  (rest3 (if (pair? rest2) (cdr rest2) '()))
                  (align (if (pair? rest3) (car rest3) #f)))
-            (apply hash-map
-              (append (list "key" key "label" label)
-                      (if fmt (list "format" fmt) '())
-                      (if align (list "align" align) '()))))
+            (apply
+              hash-map
+              (append
+                (list "key" key "label" label)
+                (if fmt (list "format" fmt) '())
+                (if align (list "align" align) '()))))
           (hash-map "key" key "label" key))))
 
     ;;@doc (ui:table rows columns . props)
@@ -247,28 +288,43 @@
       (let* ((key-spec (%ui-opt opts 'key #f))
              (on-select (%ui-opt opts 'on-select #f))
              (row-vec (list->vector rows))
-             (data (apply hash-map
-                     (let loop ((cs columns) (acc '()))
-                       (if (null? cs)
-                         acc
-                         (let ((spec (car cs)))
-                           (loop (cdr cs)
-                                 (cons (%ui-column-key spec)
-                                       (cons (list->vector
-                                               (map (lambda (r)
-                                                      (ui:field r (if (pair? spec) (car spec) spec)))
-                                                    rows))
-                                             acc)))))))))
-        (apply ui:node 'table
-          'columns (map %ui-column-meta columns)
-          'data data
-          'keys (if key-spec (list->vector (map (lambda (r) (ui:field r key-spec)) rows)) #f)
-          '%rows row-vec
-          'on-select (and on-select
-                          (lambda (ev)
-                            (let ((i (ui:event-ref ev "index" #f)))
-                              (when (and (integer? i) (>= i 0) (< i (vector-length row-vec)))
-                                (on-select (vector-ref row-vec i))))))
+             (data
+               (apply
+                 hash-map
+                 (let
+                   loop
+                   ((cs columns) (acc '()))
+                   (if (null? cs)
+                     acc
+                     (let ((spec (car cs)))
+                       (loop
+                         (cdr cs)
+                         (cons
+                           (%ui-column-key spec)
+                           (cons
+                             (list->vector
+                               (map
+                                 (lambda (r) (ui:field r (if (pair? spec) (car spec) spec)))
+                                 rows))
+                             acc)))))))))
+        (apply
+          ui:node
+          'table
+          'columns
+          (map %ui-column-meta columns)
+          'data
+          data
+          'keys
+          (if key-spec (list->vector (map (lambda (r) (ui:field r key-spec)) rows)) #f)
+          '%rows
+          row-vec
+          'on-select
+          (and
+            on-select
+            (lambda (ev)
+              (let ((i (ui:event-ref ev "index" #f)))
+                (when (and (integer? i) (>= i 0) (< i (vector-length row-vec)))
+                  (on-select (vector-ref row-vec i))))))
           (%ui-without opts '(key on-select)))))
 
     ;; ------------------------------------------------------------------
@@ -328,9 +384,7 @@
     ;; (ui:event-ref (hash-map "index" 3) "index")
     (defun ui:event-ref (ev key . default)
       (let ((d (if (pair? default) (car default) #f)))
-        (if (hash-map? ev)
-          (hash-map-ref ev (if (symbol? key) (symbol->string key) key) d)
-          d)))
+        (if (hash-map? ev) (hash-map-ref ev (if (symbol? key) (symbol->string key) key) d) d)))
 
     ;; ------------------------------------------------------------------
     ;; Rendering to the wire format
@@ -343,54 +397,64 @@
     ;; stay stable across renders and let the front end animate changes.
 
     (defun %ui-private-prop? (name)
-      (let ((s (symbol->string name)))
-        (and (> (string-length s) 0) (eq? (string-ref s 0) #\%))))
+      (let ((s (symbol->string name))) (and (> (string-length s) 0) (eq? (string-ref s 0) #\%))))
 
     (defun %ui-key->string (k)
       (cond ((string? k) k)
-            ((symbol? k) (symbol->string k))
-            ((number? k) (number->string k))
-            (else (error "ui: 'key must be a string, symbol or number" k))))
+        ((symbol? k) (symbol->string k))
+        ((number? k) (number->string k))
+        (else (error "ui: 'key must be a string, symbol or number" k))))
 
     ;; handlers: a one-element vector holding a hash map id -> procedure.
     (defun %ui-value (v path handlers)
-      (cond
-        ((procedure? v)
-         (vector-set! handlers 0 (hash-map-assoc (vector-ref handlers 0) path v))
-         (hash-map "$h" path))
+      (cond ((procedure? v)
+             (vector-set! handlers 0 (hash-map-assoc (vector-ref handlers 0) path v))
+             (hash-map "$h" path))
         ((ui:node? v) (%ui-render-node v path handlers))
         ((pair? v)
-         (let loop ((xs v) (i 0) (acc '()))
+         (let
+           loop
+           ((xs v) (i 0) (acc '()))
            (if (null? xs)
              (reverse acc)
-             (loop (cdr xs) (+ i 1)
-                   (cons (%ui-value (car xs) (string-append path "." (number->string i)) handlers)
-                         acc)))))
+             (loop
+               (cdr xs)
+               (+ i 1)
+               (cons (%ui-value (car xs) (string-append path "." (number->string i)) handlers) acc)))))
         (else v)))
 
     (defun %ui-render-props (props path handlers)
-      (let loop ((ps props) (flat '()))
-        (cond
-          ((null? ps) (apply hash-map flat))
+      (let
+        loop
+        ((ps props) (flat '()))
+        (cond ((null? ps) (apply hash-map flat))
           ((%ui-private-prop? (car (car ps))) (loop (cdr ps) flat))
           (else
-           (let* ((name (symbol->string (car (car ps))))
-                  (value (%ui-value (cdr (car ps)) (string-append path "#" name) handlers)))
-             (loop (cdr ps) (cons name (cons value flat))))))))
+            (let* ((name (symbol->string (car (car ps))))
+                   (value (%ui-value (cdr (car ps)) (string-append path "#" name) handlers)))
+              (loop (cdr ps) (cons name (cons value flat))))))))
 
     (defun %ui-render-node (node path handlers)
-      (let loop ((kids (ui:node-children node)) (i 0) (acc '()))
+      (let
+        loop
+        ((kids (ui:node-children node)) (i 0) (acc '()))
         (if (null? kids)
           (hash-map
-            "t" (symbol->string (ui:node-type node))
-            "id" path
-            "p" (%ui-render-props (ui:node-props node) path handlers)
-            "c" (reverse acc))
+            "t"
+            (symbol->string (ui:node-type node))
+            "id"
+            path
+            "p"
+            (%ui-render-props (ui:node-props node) path handlers)
+            "c"
+            (reverse acc))
           (let* ((kid (car kids))
                  (key (ui:prop kid 'key))
                  (seg (if key (%ui-key->string key) (number->string i))))
-            (loop (cdr kids) (+ i 1)
-                  (cons (%ui-render-node kid (string-append path "/" seg) handlers) acc))))))
+            (loop
+              (cdr kids)
+              (+ i 1)
+              (cons (%ui-render-node kid (string-append path "/" seg) handlers) acc))))))
 
     ;;@doc (ui:render node)
     ;;@category UI
@@ -400,8 +464,7 @@
     ;;@example
     ;; (car (ui:render (ui:text "hi")))
     (defun ui:render (node)
-      (let* ((handlers (vector (hash-map)))
-             (wire (%ui-render-node node "r" handlers)))
+      (let* ((handlers (vector (hash-map))) (wire (%ui-render-node node "r" handlers)))
         (cons wire (vector-ref handlers 0))))
 
     ;; ------------------------------------------------------------------
@@ -421,22 +484,22 @@
     (defun %ui-open-mode ()
       (let ((v (os:getenv "ETA_UI")))
         (cond ((not v) 'browser)
-              ((equal? v "none") 'none)
-              ((equal? v "window") 'window)
-              (else 'browser))))
+          ((equal? v "none") 'none)
+          ((equal? v "window") 'window)
+          (else 'browser))))
 
     ;; Open the browser unless a page (e.g. one left open by a previous run)
     ;; connects within ~1.5 s.
     (defun %ui-open-browser-unless-connected (url)
-      (let wait ((n 0))
+      (let
+        wait
+        ((n 0))
         (cond ((> (%ui-client-count) 0) #t)
-              ((> n 15) (%ui-open url))
-              (else (time:sleep-ms 100) (wait (+ n 1))))))
+          ((> n 15) (%ui-open url))
+          (else (time:sleep-ms 100) (wait (+ n 1))))))
 
     (defun %ui-error->string (e)
-      (let ((p (open-output-string)))
-        (display e p)
-        (get-output-string p)))
+      (let ((p (open-output-string))) (display e p) (get-output-string p)))
 
     ;; Call a handler, turning any raised error into a message for the page.
     ;; Returns #f on success or an error string.
@@ -464,65 +527,70 @@
         (display "eta-ui: ")
         (display url)
         (newline)
-
-        (letrec
-          ((send-tree!
-             (lambda (tree)
-               (let ((r (ui:render tree)))
-                 (vector-set! rev 0 (+ (vector-ref rev 0) 1))
-                 (vector-set! handlers 0 (cdr r))
-                 (ui:state-clean! state)
-                 (%ui-send (hash-map "type" "render" "rev" (vector-ref rev 0) "tree" (car r)) #t))))
-           (send-error!
-             (lambda (message)
-               (display "eta-ui: handler error: ")
-               (display message)
-               (newline)
-               (%ui-send (hash-map "type" "error" "message" message) #f)))
-           (dispatch!
-             (lambda (msg)
-               (let ((type (hash-map-ref msg "type" "")))
-                 (cond
-                   ((equal? type "event")
-                    (let ((proc (hash-map-ref (vector-ref handlers 0) (hash-map-ref msg "h" "") #f)))
-                      (when proc
-                        (let ((err (%ui-call-handler proc (hash-map-ref msg "data" (hash-map)))))
-                          (when err (send-error! err))))
-                      'continue))
-                   ((equal? type "quit") 'quit)
-                   (else 'continue)))))
-           (loop
-             (lambda (had-client idle-since)
-               (let* ((raw (%ui-recv 100))
-                      (msg (and raw (json:read-string raw 'keep-integers-exact? #t)))
-                      (action (if msg (dispatch! msg) 'continue)))
-                 (when (ui:state-dirty? state) (send-tree! (view state)))
-                 (if (eq? action 'quit)
-                   'quit
-                   (let* ((clients (%ui-client-count))
-                          (had (or had-client (> clients 0)))
-                          (now (time-ms)))
-                     (cond
-                       ((> clients 0) (loop had #f))
-                       ((not had) (loop #f #f))
-                       ;; Last page closed: allow a few seconds for a reload.
-                       ((not idle-since) (loop had now))
-                       ((> (- now idle-since) 3000) 'closed)
-                       (else (loop had idle-since))))))))
-           (time-ms (lambda () (time:monotonic-ms))))
-
+        (letrec ((send-tree!
+                   (lambda (tree)
+                     (let ((r (ui:render tree)))
+                       (vector-set! rev 0 (+ (vector-ref rev 0) 1))
+                       (vector-set! handlers 0 (cdr r))
+                       (ui:state-clean! state)
+                       (%ui-send
+                         (hash-map "type" "render" "rev" (vector-ref rev 0) "tree" (car r))
+                         #t))))
+                 (send-error!
+                   (lambda (message)
+                     (display "eta-ui: handler error: ")
+                     (display message)
+                     (newline)
+                     (%ui-send (hash-map "type" "error" "message" message) #f)))
+                 (dispatch!
+                   (lambda (msg)
+                     (let ((type (hash-map-ref msg "type" "")))
+                       (cond ((equal? type "event")
+                              (let ((proc
+                                      (hash-map-ref
+                                        (vector-ref handlers 0)
+                                        (hash-map-ref msg "h" "")
+                                        #f)))
+                                (when proc
+                                  (let ((err
+                                          (%ui-call-handler
+                                            proc
+                                            (hash-map-ref msg "data" (hash-map)))))
+                                    (when err (send-error! err))))
+                                'continue))
+                         ((equal? type "quit") 'quit)
+                         (else 'continue)))))
+                 (loop
+                   (lambda (had-client idle-since)
+                     (let* ((raw (%ui-recv 100))
+                            (msg (and raw (json:read-string raw 'keep-integers-exact? #t)))
+                            (action (if msg (dispatch! msg) 'continue)))
+                       (when (ui:state-dirty? state) (send-tree! (view state)))
+                       (if (eq? action 'quit)
+                         'quit
+                         (let* ((clients (%ui-client-count))
+                                (had (or had-client (> clients 0)))
+                                (now (time-ms)))
+                           (cond ((> clients 0) (loop had #f))
+                             ((not had) (loop #f #f))
+                             ;; Last page closed: allow a few seconds for a reload.
+                             ((not idle-since) (loop had now))
+                             ((> (- now idle-since) 3000) 'closed)
+                             (else (loop had idle-since))))))))
+                 (time-ms (lambda () (time:monotonic-ms))))
           (send-tree! first-tree)
           ;; A page left open from a previous run reconnects by itself;
           ;; only open a browser if nothing connects quickly.
           (let ((mode (%ui-open-mode)))
-            (cond
-              ((eq? mode 'browser) (%ui-open-browser-unless-connected url))
+            (cond ((eq? mode 'browser) (%ui-open-browser-unless-connected url))
               ((eq? mode 'window)
-               (unless (%ui-window url
-                                   (or (ui:prop first-tree 'title) "Eta")
-                                   (or (ui:prop first-tree 'window-width) 1440)
-                                   (or (ui:prop first-tree 'window-height) 900))
-                 (display "eta-ui: native window support not available in this build; opening the browser")
+               (unless (%ui-window
+                         url
+                         (or (ui:prop first-tree 'title) "Eta")
+                         (or (ui:prop first-tree 'window-width) 1440)
+                         (or (ui:prop first-tree 'window-height) 900))
+                 (display
+                   "eta-ui: native window support not available in this build; opening the browser")
                  (newline)
                  (%ui-open-browser-unless-connected url)))
               (else #t)))
