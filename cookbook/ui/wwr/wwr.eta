@@ -99,6 +99,53 @@
 
     (define shock-options (cons (cons "none" "No macro shock") (map2 cons drivers driver-labels)))
 
+    (defun collateral-controls (s)
+      (list
+        (ui:slider
+          "Margin period of risk (days)"
+          'min
+          2
+          'max
+          20
+          'step
+          1
+          'value
+          (ui:get s 'mpor)
+          'format
+          "int"
+          'on-change
+          (lambda (v) (ui:set! s 'mpor v)))
+        (ui:slider
+          "Threshold"
+          'min
+          0
+          'max
+          100000
+          'step
+          5000
+          'value
+          (ui:get s 'threshold)
+          'format
+          "usd"
+          'on-change
+          (lambda (v) (ui:set! s 'threshold v)))))
+
+    (defun correlation-control (s)
+      (ui:slider
+        "Wrong-way correlation (rho)"
+        'min
+        -0.6
+        'max
+        0.9
+        'step
+        0.05
+        'value
+        (ui:get s 'rho)
+        'format
+        "num"
+        'on-change
+        (lambda (v) (ui:set! s 'rho v))))
+
     (defun assumptions-panel (s b)
       (let* ((coll (ui:get s 'collateralised))
              (addon (- (hash-map-ref b 'wwr) (hash-map-ref b 'base))))
@@ -107,20 +154,7 @@
           300
           'title
           "Assumptions"
-          (ui:slider
-            "Wrong-way correlation (rho)"
-            'min
-            -0.6
-            'max
-            0.9
-            'step
-            0.05
-            'value
-            (ui:get s 'rho)
-            'format
-            "num"
-            'on-change
-            (lambda (v) (ui:set! s 'rho v)))
+          (correlation-control s)
           (ui:select
             "Macro shock"
             shock-options
@@ -148,37 +182,7 @@
             coll
             'on-change
             (lambda (v) (ui:set! s 'collateralised v)))
-          (if coll
-            (list
-              (ui:slider
-                "Margin period of risk (days)"
-                'min
-                2
-                'max
-                20
-                'step
-                1
-                'value
-                (ui:get s 'mpor)
-                'format
-                "int"
-                'on-change
-                (lambda (v) (ui:set! s 'mpor v)))
-              (ui:slider
-                "Threshold"
-                'min
-                0
-                'max
-                100000
-                'step
-                5000
-                'value
-                (ui:get s 'threshold)
-                'format
-                "usd"
-                'on-change
-                (lambda (v) (ui:set! s 'threshold v))))
-            #f)
+          (if coll (collateral-controls s) #f)
           (ui:divider)
           (ui:stat "Book CVA with wrong-way risk" (hash-map-ref b 'wwr) 'format "usd")
           (ui:kv
@@ -277,6 +281,41 @@
         (hazard "Hazard" "pct")
         (beta-oil "Oil beta" "num")))
 
+    (defun summary-column (s cp top top-names elastic)
+      (ui:column
+        'width
+        440
+        (chart:plot
+          'title
+          "CVA by counterparty"
+          'subtitle
+          "Top 12 with wrong-way risk"
+          'x
+          (chart:axis "CVA" 'format "usd")
+          (chart:bars
+            top-names
+            (map (lambda (r) (hash-map-ref r 'wwr)) top)
+            'label
+            "CVA"
+            'selected
+            cp
+            'on-select
+            (select-cp s)))
+        (chart:heatmap
+          top-names
+          driver-labels
+          elastic
+          'title
+          "CVA elasticity to macro shocks"
+          'subtitle
+          "d log CVA / d shock"
+          'format
+          "num"
+          'selected-row
+          cp
+          'on-select
+          (lambda (row col) (ui:set! s 'cp row)))))
+
     (defun view (s)
       (let* ((b (book s))
              (cp (ui:get s 'cp))
@@ -306,38 +345,6 @@
                 300
                 'on-select
                 (lambda (row) (ui:set! s 'cp (hash-map-ref row 'name)))))
-            (ui:column
-              'width
-              440
-              (chart:plot
-                'title
-                "CVA by counterparty"
-                'subtitle
-                "Top 12 with wrong-way risk"
-                'x
-                (chart:axis "CVA" 'format "usd")
-                (chart:bars
-                  top-names
-                  (map (lambda (r) (hash-map-ref r 'wwr)) top)
-                  'label
-                  "CVA"
-                  'selected
-                  cp
-                  'on-select
-                  (select-cp s)))
-              (chart:heatmap
-                top-names
-                driver-labels
-                elastic
-                'title
-                "CVA elasticity to macro shocks"
-                'subtitle
-                "d log CVA / d shock"
-                'format
-                "num"
-                'selected-row
-                cp
-                'on-select
-                (lambda (row col) (ui:set! s 'cp row))))))))
+            (summary-column s cp top top-names elastic)))))
 
     (ui:run view state)))

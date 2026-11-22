@@ -507,6 +507,36 @@
       (let ((r (catch (begin (proc data) '%ui-handler-ok))))
         (if (eq? r '%ui-handler-ok) #f (%ui-error->string r))))
 
+    (defun %ui-dispatch (msg handlers)
+      (let ((type (hash-map-ref msg "type" "")))
+        (cond ((equal? type "event")
+               (let ((proc (hash-map-ref (vector-ref handlers 0) (hash-map-ref msg "h" "") #f)))
+                 (when proc
+                   (let ((err (%ui-call-handler proc (hash-map-ref msg "data" (hash-map)))))
+                     (when err
+                       (display "eta-ui: handler error: ")
+                       (display err)
+                       (newline)
+                       (%ui-send (hash-map "type" "error" "message" err) #f))))
+                 'continue))
+          ((equal? type "quit") 'quit)
+          (else 'continue))))
+
+    (defun %ui-open-app (url first-tree)
+      (let ((mode (%ui-open-mode)))
+        (cond ((eq? mode 'browser) (%ui-open-browser-unless-connected url))
+          ((eq? mode 'window)
+           (unless (%ui-window
+                     url
+                     (or (ui:prop first-tree 'title) "Eta")
+                     (or (ui:prop first-tree 'window-width) 1440)
+                     (or (ui:prop first-tree 'window-height) 900))
+             (display
+               "eta-ui: native window support not available in this build; opening the browser")
+             (newline)
+             (%ui-open-browser-unless-connected url)))
+          (else #t))))
+
     ;;@doc (ui:run view state . opts)
     ;;@category UI
     ;;@module std.ui
@@ -536,35 +566,11 @@
                        (%ui-send
                          (hash-map "type" "render" "rev" (vector-ref rev 0) "tree" (car r))
                          #t))))
-                 (send-error!
-                   (lambda (message)
-                     (display "eta-ui: handler error: ")
-                     (display message)
-                     (newline)
-                     (%ui-send (hash-map "type" "error" "message" message) #f)))
-                 (dispatch!
-                   (lambda (msg)
-                     (let ((type (hash-map-ref msg "type" "")))
-                       (cond ((equal? type "event")
-                              (let ((proc
-                                      (hash-map-ref
-                                        (vector-ref handlers 0)
-                                        (hash-map-ref msg "h" "")
-                                        #f)))
-                                (when proc
-                                  (let ((err
-                                          (%ui-call-handler
-                                            proc
-                                            (hash-map-ref msg "data" (hash-map)))))
-                                    (when err (send-error! err))))
-                                'continue))
-                         ((equal? type "quit") 'quit)
-                         (else 'continue)))))
                  (loop
                    (lambda (had-client idle-since)
                      (let* ((raw (%ui-recv 100))
                             (msg (and raw (json:read-string raw 'keep-integers-exact? #t)))
-                            (action (if msg (dispatch! msg) 'continue)))
+                            (action (if msg (%ui-dispatch msg handlers) 'continue)))
                        (when (ui:state-dirty? state) (send-tree! (view state)))
                        (if (eq? action 'quit)
                          'quit
@@ -581,19 +587,7 @@
           (send-tree! first-tree)
           ;; A page left open from a previous run reconnects by itself;
           ;; only open a browser if nothing connects quickly.
-          (let ((mode (%ui-open-mode)))
-            (cond ((eq? mode 'browser) (%ui-open-browser-unless-connected url))
-              ((eq? mode 'window)
-               (unless (%ui-window
-                         url
-                         (or (ui:prop first-tree 'title) "Eta")
-                         (or (ui:prop first-tree 'window-width) 1440)
-                         (or (ui:prop first-tree 'window-height) 900))
-                 (display
-                   "eta-ui: native window support not available in this build; opening the browser")
-                 (newline)
-                 (%ui-open-browser-unless-connected url)))
-              (else #t)))
+          (%ui-open-app url first-tree)
           (loop #f #f)
           (%ui-stop)
           (vector-set! %ui-current-url 0 #f)

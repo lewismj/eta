@@ -296,7 +296,13 @@ BOOST_AUTO_TEST_CASE(wwr_app_reprices_on_assumption_changes) {
     BOOST_TEST(find_one(third["tree"], "slider", with_label("Margin period of risk (days)")) != nullptr);
     const double cva2 = number(find_one(third["tree"], "stat", with_label("Book CVA with wrong-way risk"))->operator[]("p")["value"]);
     BOOST_TEST(cva2 < 0.5 * cva1);
-
+    const auto* threshold = find_one(third["tree"], "slider", with_label("Threshold"));
+    BOOST_REQUIRE(threshold);
+    app.event(handler_id(*threshold, "on-change"), "{\"value\":10000}");
+    third = app.next_render();
+    threshold = find_one(third["tree"], "slider", with_label("Threshold"));
+    BOOST_REQUIRE(threshold);
+    BOOST_TEST(number((*threshold)["p"]["value"]) == 10000.0);
     // A positive oil shock raises CVA.
     const auto* shock_driver = find_one(third["tree"], "select", with_label("Macro shock"));
     BOOST_REQUIRE(shock_driver);
